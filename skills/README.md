@@ -6,7 +6,7 @@ Repository-specific agent skills belong in `skills/<skill-name>/SKILL.md`. Use a
 
 - [Marketplace product content](marketplace-product-content/SKILL.md): Author personalized AWS AMI listing content from the temporary Contentful catalog, vendor policy and AWS listing rules, validate drafts, and prepare revision-bound Catalog API metadata updates.
 
-- [Application content generation](app-content-generation/SKILL.md): Generate and update marketplace keywords, use cases, overview, and summary for a specified application in `catalog.json`.
+- [Application content generation](app-content-generation/SKILL.md): Interactively pull the catalog, choose applications and fields, generate or update keywords, use cases, related apps, overview, summary, and the `hasEnterprise` edition flag, then optionally push to Contentful.
 - [Aliyun marketplace image version check](aliyun-product-freshness/SKILL.md): Check a supplier's published and visible image products and summarize outdated versions in one GitHub issue.
 - [Marketplace search visibility](marketplace-search-visibility/SKILL.md): Search a marketplace for keywords and report whether and where Websoft9 products appear. Preliminary framework.
 - [Product expressiveness](product-expressiveness/SKILL.md): Check a marketplace product's expression and compliance evidence, such as demo images, videos, cases, qualifications, and versions. Preliminary placeholder.

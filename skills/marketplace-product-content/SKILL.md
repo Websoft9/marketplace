@@ -47,7 +47,7 @@ Contentful.
    `{catalog.keywords}`, `{versions.version}`, and `{vendor.*}`.
    `SearchKeywords` uses the whole array placeholder
    `{catalog.keywords}`; `Highlights` uses `{vendor.highlights[0..]}`.
-   Arrays rendered into text use the explicit `join` filter. `components` is
+   Arrays rendered into text use the explicit `join` filter. `relatedApps` is
    inserted before the fixed Nginx/Docker text; an optional second `join`
    argument supplies a suffix only for non-empty lists. Multi-version
    applications use the `Choose from ... at launch` short description with every
@@ -79,7 +79,7 @@ application facts to Contentful, not to `data/offer/products`.
 
 ## Stopping conditions
 
-- Stop publication if identity, edition, components or material claims conflict.
+- Stop publication if identity, edition, related apps or material claims conflict.
 - Missing required facts or Catalog identity block publication.
 - Stop if credentials, catalog data or current seller entity are unavailable.
 - Refuse stale/modified plans; regenerate rather than removing checks.

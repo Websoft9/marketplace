@@ -61,7 +61,7 @@ includes drafts; linked fields may remain as link objects in that mode.
 | `--content-type` | `product` | Content type id |
 | `--locale` | `en-US` | English locale |
 | `--id-field` | `key` | Contentful field containing the app id (`wordpress`) |
-| `--fields` | `trademark,overview,keywords,usecases,components,summary,hasenterprise` | Requested field ids |
+| `--fields` | `trademark,overview,keywords,usecases,relatedApps,summary,hasenterprise` | Requested field ids |
 | `--catalog` | configured `product_en.json` URL | Target application list (URL or local file) |
 | `--offer` | configured `offer.json` URL | Marketplace offer source used to add per-platform `offerCodes` |
 | `--apps` | all catalog applications | Comma-separated application ids to export; must exist in the target catalog |
@@ -74,7 +74,10 @@ includes drafts; linked fields may remain as link objects in that mode.
 | `--timeout` | 30 | HTTP timeout in seconds |
 
 `usecases` also matches the Contentful field id `useCases` (and `use_cases`).
-`components` also matches the Contentful field id `Component`.
+`relatedApps` maps to the Contentful `relatedApps` field, a linked `product`
+array resolved to each entry's Trademark. Results are filtered to applications
+present in the target catalog, removing self-references and duplicates; use
+`--raw` to keep the unfiltered links.
 `hasenterprise` also matches `hasEnterprise` and `has_enterprise`.
 `keywords` is the default for search/tag-like metadata; the older `tags` field is
 still available explicitly via `--fields` and also matches `tag`. Use `--fields`
@@ -97,7 +100,7 @@ catalog order is used; with `--apps`, the requested order is used:
       "overview": "...",
       "keywords": ["open source", "website"],
       "usecases": [],
-      "components": ["PostgreSQL", "pgAdmin"],
+      "relatedApps": ["PostgreSQL", "pgAdmin"],
       "summary": "...",
       "hasenterprise": false,
       "offerCodes": {

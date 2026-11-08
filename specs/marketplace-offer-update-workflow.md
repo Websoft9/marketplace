@@ -60,5 +60,44 @@ Required repository configuration:
 The plan job uses read-only credentials. Its summary lists every pending field
 with before/after values. The apply job starts only after environment approval,
 rechecks source snapshots and live revisions, and fails closed if either
-changed. The reviewed artifact contains
+changed. It runs `mk offer apply --wait-seconds 0`: success means AWS accepted
+the ChangeSet and returned a ChangeSetId, not that review, approval or
+publication has completed. The summary records the ChangeSetId and plan hash;
+final status must be checked separately.
+
+## Security boundary
+
+`workflow_dispatch` requires repository write permission; read-only users and
+anonymous visitors cannot start this workflow. The `plan` and `apply` jobs also
+require the repository `Websoft9/marketplace` and `refs/heads/main`, as
+defense in depth.
+
+Write collaborators can still push a branch that modifies a workflow and
+dispatch it, so workflow YAML is not the only security boundary. Protect `main`
+with pull-request review, grant write access only to trusted maintainers, keep
+the apply environment's required reviewers and prevent self-review, and scope
+the Contentful token as narrowly as practical. Do not rely on the job-level
+branch guard alone.
+
+A job that uses a GitHub Environment has a different OIDC subject from a normal
+branch job. The exact `sub` depends on the organization's OIDC subject template.
+With the default template it is:
+
+```text
+repo:Websoft9/marketplace:environment:aws-marketplace-production
+```
+
+With immutable/custom subject claims it can include organization and repository
+IDs, for example:
+
+```text
+repo:Websoft9@36851177/marketplace@326841278:environment:aws-marketplace-production
+```
+
+The apply workflow requests a short-lived OIDC token and prints only its decoded
+`sub` and `aud`; copy that exact `sub` into the role trust policy. A plan role
+may use the branch subject. Prefer separate read-only plan and write-only apply
+roles. If one role is used for both, allow both subjects in its trust policy.
+Re-run the workflow after updating the trust relationship; no workflow change
+can bypass the IAM trust condition. The reviewed artifact contains
 `catalog.json`, `apps-verson.json`, `preview.json` and `plan.json`.

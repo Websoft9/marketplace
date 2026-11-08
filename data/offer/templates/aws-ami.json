@@ -25,14 +25,14 @@
   ],
   "content": {
     "ProductTitle": "{catalog.trademark} on AWS - Preconfigured, Hardened, Ready in Minutes",
-    "ShortDescription": "{versions.multi ? 'Choose from ' : 'Deploy '}{catalog.trademark} {versions.multi ? versions.shortChoices : versions.version}{versions.multi ? ' at launch' : ''} for self-hosting without upstream forks, backed by a 24-hour response SLA on business days. Use the Websoft9 Console to manage HTTPS, backups, monitoring, upgrades, and rollback.",
+    "ShortDescription": "{versions.multi ? 'Choose from ' : 'Deploy '}{catalog.trademark} {versions.multi ? versions.shortChoices : versions.version}{versions.multi ? ' at launch' : ''} for self-hosting directly from upstream release, backed by a 24-hour response SLA on business days. Use the Websoft9 Console to manage HTTPS, backups, monitoring, upgrades, and rollback.",
     "Highlights": [
       "{vendor.highlights[0]}",
       "{vendor.highlights[1]}",
       "{vendor.highlights[2]}"
     ],
     "SearchKeywords": "{catalog.keywords}",
-    "SupportDescription": "{vendor.supportSummary}\nContact: {vendor.supportContact}\n{vendor.supportScope} AWS infrastructure is billed separately."
+    "SupportDescription": "Docs: https://support.websoft9.com/en/docs/{catalog.id}\nEmail: help@websoft9.com\nSLA: 24-hour response on business days"
   },
   "longDescriptionSections": [
     {
@@ -41,7 +41,7 @@
     },
     {
       "heading": "What is included?",
-      "text": "{catalog.trademark}{catalog.hasenterprise ? ' Community Edition' : ''}{versions.selection}, {catalog.components | join: ', ', ', '}Nginx, Docker and {vendor.vendor} Console."
+      "text": "{catalog.trademark}{catalog.hasenterprise ? ' Community Edition' : ''}{versions.selection}, {catalog.relatedApps | join: ', ', ', '}Nginx, Docker and {vendor.vendor} Console."
     },
     {
       "heading": "Use cases",

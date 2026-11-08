@@ -279,8 +279,12 @@ def apply_command(app, catalog_source, versions, vendor, template, plan_path, pr
 
 def poll(client, change_id, wait_seconds, value=None):
     deadline = time.monotonic() + wait_seconds
+    last_status = None
     while True:
         status = service.change_status(service.aws_call(client, "describe_change_set", ChangeSetId=change_id))
+        if status["status"] != last_status:
+            click.echo(f"ChangeSet {change_id}: {status['status']}", err=True)
+            last_status = status["status"]
         if status["status"] in {"SUCCEEDED", "FAILED", "CANCELLED"}:
             output(status)
             if status["status"] != "SUCCEEDED":

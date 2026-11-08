@@ -4,7 +4,7 @@
   "aboutVendor": "Websoft9 productionizes open-source software on public clouds: official upstream releases, wrapped with our self-developed management panel, operations toolset, and expert support. The result is a self-hosted deployment that is easier to run and maintain.",
   "consoleSummary": "Websoft9 Console helps configure HTTPS, backups, monitoring, and application maintenance.",
   "highlights": [
-    "Upstream packages in a hardened image, no forks, no lock-in.",
+    "Upstream release packages in a hardened image, no forks, no lock-in.",
     "Websoft9 Console: HTTPS, backup, monitoring, and upgrades with rollback; SSH optional.",
     "Support: 24-hour response SLA on business days."
   ],

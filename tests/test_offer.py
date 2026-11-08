@@ -125,8 +125,8 @@ class OfferTests(unittest.TestCase):
             "to manage HTTPS, backups, monitoring, upgrades, and rollback.",
         )
 
-    def test_components_are_inserted_before_nginx_and_docker(self):
-        self.item["components"] = []
+    def test_related_apps_are_inserted_before_nginx_and_docker(self):
+        self.item["relatedApps"] = []
         self.item["hasenterprise"] = True
         self.write()
         empty_included = next(
@@ -138,7 +138,7 @@ class OfferTests(unittest.TestCase):
             empty_included,
             "Odoo Community Edition, Nginx, Docker and Websoft9 Console.",
         )
-        self.item["components"] = ["PostgreSQL", "pgAdmin"]
+        self.item["relatedApps"] = ["PostgreSQL", "pgAdmin"]
         self.write()
         included = next(
             section["text"]
@@ -277,6 +277,15 @@ class OfferTests(unittest.TestCase):
             descriptions.add(offer.render(item, "20.0")["content"]["ShortDescription"])
         self.assertEqual(len(descriptions), 1)
         self.assertNotIn("Community Edition", descriptions.pop())
+
+    def test_support_description_uses_line_separated_docs_email_and_sla(self):
+        value = self.render()
+        self.assertEqual(
+            value["content"]["SupportDescription"],
+            "Docs: https://support.websoft9.com/en/docs/odoo\n"
+            "Email: help@websoft9.com\n"
+            "SLA: 24-hour response on business days",
+        )
 
     def test_publish_ready_does_not_require_separate_verification_records(self):
         self.set_entity_id()

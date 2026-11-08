@@ -37,6 +37,7 @@ concurrency:
 
 jobs:
   plan:
+    if: github.repository == 'Websoft9/marketplace' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -187,6 +188,13 @@ jobs:
             --versions /tmp/opencode/offer-run/apps-verson.json \
             --output /tmp/opencode/offer-run/plan.json
 
+      - name: Show target entity ARN
+        run: |
+          account_id="$(aws sts get-caller-identity --query Account --output text)"
+          entity_id="$(python3 -c 'import json; print(json.load(open("/tmp/opencode/offer-run/plan.json"))["baseRevision"].split("@")[0])')"
+          entity_arn="arn:aws:aws-marketplace:us-east-1:${account_id}:AWSMarketplace/AmiProduct/${entity_id}"
+          printf 'Target entity ARN: `%s`\n' "$entity_arn" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Summarize plan
         run: |
           python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
@@ -252,6 +260,7 @@ jobs:
 
   apply:
     needs: plan
+    if: github.repository == 'Websoft9/marketplace' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment:
@@ -298,6 +307,25 @@ jobs:
             exit 1
           fi
 
+      - name: Show actual OIDC subject
+        run: |
+          token_json="$(curl -fsSL \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com")"
+          export OIDC_TOKEN_JSON="$token_json"
+          python3 - <<'PY'
+          import base64
+          import json
+          import os
+
+          token = json.loads(os.environ["OIDC_TOKEN_JSON"])["value"]
+          payload = token.split(".")[1]
+          payload += "=" * (-len(payload) % 4)
+          claims = json.loads(base64.urlsafe_b64decode(payload))
+          print(f"OIDC subject: {claims.get('sub')}")
+          print(f"OIDC audience: {claims.get('aud')}")
+          PY
+
       - name: Configure write AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.3.0
         with:
@@ -305,11 +333,30 @@ jobs:
           aws-region: us-east-1
           role-session-name: MarketplaceOfferApply-${{ github.run_id }}
 
-      - name: Apply reviewed plan
+      - name: Submit reviewed plan
         run: |
           mk offer apply \
             --app "$APP" \
             --catalog /tmp/opencode/offer-run/catalog.json \
             --versions /tmp/opencode/offer-run/apps-verson.json \
             --plan /tmp/opencode/offer-run/plan.json \
-            --wait-seconds 600
+            --wait-seconds 0 > /tmp/opencode/offer-run/apply.json
+          cat /tmp/opencode/offer-run/apply.json
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from pathlib import Path
+
+          result = json.loads(Path("/tmp/opencode/offer-run/apply.json").read_text(encoding="utf-8"))
+          if result.get("changeSetId"):
+              print("### ChangeSet submitted")
+              print()
+              print(f"- ChangeSetId: `{result['changeSetId']}`")
+              print(f"- Status: `{result.get('status', 'unknown')}`")
+              print(f"- Plan hash: `{result.get('planHash', '')}`")
+              print()
+              print("Workflow success confirms AWS accepted the ChangeSet. It does not await review, approval, or publication.")
+          else:
+              print("### No ChangeSet submitted")
+              print()
+              print(f"- Status: `{result.get('status', 'unknown')}`")
+          PY

@@ -23,7 +23,7 @@ SCHEMA = {
     "overview": {"type": "Text", "localized": True},
     "keywords": {"type": "Array", "localized": True, "items": {"type": "Symbol"}},
     "useCases": {"type": "Array", "localized": False, "items": {"type": "Symbol"}},
-    "components": {"type": "Array", "localized": False, "items": {"type": "Symbol"}},
+    "relatedApps": {"type": "Array", "localized": False, "items": {"type": "Link", "linkType": "Entry"}},
     "summary": {"type": "Symbol", "localized": True},
     "hasenterprise": {"type": "Boolean", "localized": False},
     "other": {"type": "Symbol", "localized": False},
@@ -36,7 +36,7 @@ ENTRY = {
         "overview": {"en-US": "Old overview"},
         "keywords": {"en-US": ["old"]},
         "useCases": {"en-US": ["old"]},
-        "components": {"en-US": ["old component"]},
+        "relatedApps": {"en-US": [{"sys": {"type": "Link", "linkType": "Entry", "id": "old-link"}}]},
         "summary": {"en-US": "Old summary"},
         "hasenterprise": {"en-US": False},
         "other": "keep",
@@ -48,23 +48,33 @@ ITEM = {
     "overview": "New overview",
     "keywords": ["site", "cms"],
     "usecases": ["publishing"],
-    "components": ["PostgreSQL", "pgAdmin"],
+    "relatedApps": ["PostgreSQL", "pgAdmin"],
     "summary": "New summary",
     "hasenterprise": True,
 }
+RELATED_APP_IDS = {"PostgreSQL": "pg-entry", "pgAdmin": "pgadmin-entry"}
+RELATED_PRODUCTS = [
+    {"sys": {"id": "pg-entry"}, "fields": {"trademark": {"en-US": "PostgreSQL"}}},
+    {"sys": {"id": "pgadmin-entry"}, "fields": {"trademark": {"en-US": "pgAdmin"}}},
+]
 
 
 class BuildChangesTests(unittest.TestCase):
     def test_merges_only_target_locale_and_preserves_other_fields(self) -> None:
-        fields, changed, skipped, unchanged = cma.build_changes(ITEM, ENTRY, SCHEMA)
-        self.assertEqual(changed, ["trademark", "overview", "keywords", "usecases", "components", "summary", "hasenterprise"])
+        fields, changed, skipped, unchanged = cma.build_changes(
+            ITEM, ENTRY, SCHEMA, related_app_ids=RELATED_APP_IDS,
+            allowed_related_apps=set(RELATED_APP_IDS))
+        self.assertEqual(changed, ["trademark", "overview", "keywords", "usecases", "relatedApps", "summary", "hasenterprise"])
         self.assertEqual(skipped, [])
         self.assertEqual(unchanged, [])
         self.assertEqual(fields["trademark"], {"en-US": "WordPress", "zh-CN": "旧"})
         self.assertEqual(fields["overview"], {"en-US": "New overview"})
         self.assertEqual(fields["keywords"], {"en-US": ["site", "cms"]})
         self.assertEqual(fields["useCases"], {"en-US": ["publishing"]})
-        self.assertEqual(fields["components"], {"en-US": ["PostgreSQL", "pgAdmin"]})
+        self.assertEqual(fields["relatedApps"], {"en-US": [
+            {"sys": {"type": "Link", "linkType": "Entry", "id": "pg-entry"}},
+            {"sys": {"type": "Link", "linkType": "Entry", "id": "pgadmin-entry"}},
+        ]})
         self.assertEqual(fields["summary"], {"en-US": "New summary"})
         self.assertEqual(fields["hasenterprise"], {"en-US": True})
         self.assertEqual(fields["other"], "keep")
@@ -100,6 +110,22 @@ class BuildChangesTests(unittest.TestCase):
             cma.build_changes({"id": "wordpress", "summary": ["bad"]}, ENTRY, SCHEMA)
         with self.assertRaisesRegex(contentful.ContentfulError, "must be a boolean"):
             cma.build_changes({"id": "wordpress", "hasenterprise": "yes"}, ENTRY, SCHEMA)
+        with self.assertRaisesRegex(contentful.ContentfulError, "array of application Trademarks"):
+            cma.build_changes({"id": "wordpress", "relatedApps": "PostgreSQL"}, ENTRY, SCHEMA,
+                              related_app_ids=RELATED_APP_IDS, allowed_related_apps=set(RELATED_APP_IDS))
+        with self.assertRaisesRegex(contentful.ContentfulError, "not found in Contentful"):
+            cma.build_changes({"id": "wordpress", "relatedApps": ["Missing"]}, ENTRY, SCHEMA,
+                              related_app_ids=RELATED_APP_IDS, allowed_related_apps={"Missing"})
+
+    def test_related_apps_drop_non_store_and_duplicates(self) -> None:
+        item = {"id": "wordpress", "relatedApps": ["PostgreSQL", "NotInStore", "PostgreSQL"]}
+        fields, changed, _, _ = cma.build_changes(
+            item, ENTRY, SCHEMA, related_app_ids=RELATED_APP_IDS,
+            allowed_related_apps={"PostgreSQL"})
+        self.assertEqual(fields["relatedApps"], {"en-US": [
+            {"sys": {"type": "Link", "linkType": "Entry", "id": "pg-entry"}},
+        ]})
+        self.assertIn("relatedApps", changed)
 
 
 class InputTests(unittest.TestCase):
@@ -126,6 +152,12 @@ class InputTests(unittest.TestCase):
         with self.assertRaisesRegex(contentful.ContentfulError, "unsupported input field"):
             cma.load_input(str(self.path))
 
+    def test_pull_offer_codes_are_ignored(self) -> None:
+        self.write({"items": [{**ITEM, "offerCodes": {"aws": ["example"]}}]})
+        by_id, order = cma.load_input(str(self.path))
+        self.assertEqual(order, ["wordpress"])
+        self.assertIn("offerCodes", by_id["wordpress"])
+
     def test_duplicate_and_missing_ids_fail(self) -> None:
         self.write({"items": [ITEM, ITEM]})
         with self.assertRaisesRegex(contentful.ContentfulError, "duplicate"):
@@ -143,12 +175,21 @@ class PushTests(unittest.TestCase):
         self.update = mock.Mock(return_value={"sys": {"version": 4}})
         self.publish = mock.Mock(return_value={})
         self.schema = mock.Mock(return_value=SCHEMA)
-        self.entries = mock.Mock(return_value=[ENTRY])
+        self.entries = mock.Mock(side_effect=self.fetch_entries)
+
+    def fetch_entries(self, **kwargs):
+        if kwargs.get("select"):
+            return RELATED_PRODUCTS
+        if kwargs.get("keys"):
+            return [ENTRY]
+        return [ENTRY, *RELATED_PRODUCTS]
 
     def tearDown(self) -> None:
         self.temp.cleanup()
 
     def run_push(self, **kwargs):
+        kwargs.setdefault("allowed_related_apps", set(RELATED_APP_IDS))
+        kwargs.setdefault("catalog_keys", ("wordpress", "postgresql", "pgadmin"))
         with mock.patch.object(cma, "fetch_schema", self.schema), \
              mock.patch.object(cma, "fetch_entries", self.entries), \
              mock.patch.object(cma, "update_entry", self.update), \
@@ -166,7 +207,32 @@ class PushTests(unittest.TestCase):
         self.assertEqual(kwargs["fields"]["trademark"], {"en-US": "WordPress", "zh-CN": "旧"})
         self.assertEqual(kwargs["fields"]["useCases"], {"en-US": ["publishing"]})
         self.assertEqual(self.publish.call_args.kwargs["version"], 4)
-        self.assertEqual(self.entries.call_args.kwargs["keys"], ("wordpress",))
+        self.assertIn(("wordpress",), [call.kwargs.get("keys") for call in self.entries.call_args_list])
+
+    def test_related_apps_resolve_to_linked_entries(self) -> None:
+        summary = self.run_push()
+        self.assertEqual(summary["updated"], 1)
+        related = self.update.call_args.kwargs["fields"]["relatedApps"]
+        self.assertEqual(related, {"en-US": [
+            {"sys": {"type": "Link", "linkType": "Entry", "id": "pg-entry"}},
+            {"sys": {"type": "Link", "linkType": "Entry", "id": "pgadmin-entry"}},
+        ]})
+
+    def test_unresolved_related_app_is_reported(self) -> None:
+        self.path.write_text(json.dumps({"items": [{"id": "wordpress", "relatedApps": ["Missing"]}]}),
+                             encoding="utf-8")
+        summary = self.run_push(allowed_related_apps={"Missing"})
+        self.assertEqual(summary["updated"], 0)
+        self.assertIn("not found in Contentful", summary["errors"][0])
+
+    def test_non_store_related_apps_are_dropped_and_deduped(self) -> None:
+        self.path.write_text(json.dumps(
+            {"items": [{"id": "wordpress", "relatedApps": ["PostgreSQL", "NotInStore", "PostgreSQL"]}]}),
+            encoding="utf-8")
+        summary = self.run_push()
+        self.assertEqual(summary["updated"], 1)
+        related = self.update.call_args.kwargs["fields"]["relatedApps"]["en-US"]
+        self.assertEqual([link["sys"]["id"] for link in related], ["pg-entry"])
 
     def test_dry_run_never_writes(self) -> None:
         summary = self.run_push(dry_run=True)
@@ -188,6 +254,7 @@ class PushTests(unittest.TestCase):
         self.update.assert_not_called()
 
     def test_missing_entry_fails_or_is_allowed(self) -> None:
+        self.entries.side_effect = None
         self.entries.return_value = []
         summary = self.run_push()
         self.assertEqual(len(summary["errors"]), 1)

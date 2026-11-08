@@ -66,7 +66,7 @@ placeholder, for example `"SearchKeywords": "{catalog.keywords}"`. Arrays
 interpolated into text use an explicit filter such as
 `{catalog.usecases | join: '; '}`. The optional second `join` argument adds a
 suffix only when the list is non-empty, so
-`{catalog.components | join: ', ', ', '}` inserts components before fixed text
+`{catalog.relatedApps | join: ', ', ', '}` inserts related apps before fixed text
 without leaving a leading comma. Source data values are literal; placeholders
 belong only in templates. For example, the template combines
 `{catalog.trademark}` with `{vendor.trademarkStatement}` instead of embedding a
@@ -145,7 +145,9 @@ until resolved.
 `support.websoft9.com/en/docs/<key>`, and `Install Websoft9 on AWS`. A product's
 non-empty `listings.aws.additionalResources` overrides those defaults.
 `SupportDescription` is the AWS Marketplace Support details field; the two
-AdditionalResources entries are the Learning resources rows.
+AdditionalResources entries are the Learning resources rows. The support text
+uses LF-separated lines for Docs, Email and SLA. AWS allows `\n` (0x0A) but
+rejects other control characters including `\r` (0x0D), so use `\n` only.
 
 Existing entity values are read from `Description`, `PromotionalResources` and
 `SupportInformation`; the read shape is not the update shape. The AWS adapter
@@ -215,7 +217,7 @@ Save the **reviewed plan output** in an access-controlled location outside Git
 (for example under `/tmp/opencode/` for a local trial), then submit exactly it:
 
 ```sh
-mk offer apply --app odoo --plan /tmp/opencode/odoo-plan.json --profile marketplace-seller --wait-seconds 600
+mk offer apply --app odoo --plan /tmp/opencode/odoo-plan.json --profile marketplace-seller --wait-seconds 0
 mk offer status <change-set-id> --profile marketplace-seller --wait-seconds 600
 ```
 
@@ -226,8 +228,10 @@ It submits only changed fields, uses the live `EntityId@RevisionId` and a
 deterministic plan hash as `ClientRequestToken`. A no-op plan submits nothing.
 Each product gets one ChangeSet; AWS locks the entity while it processes it.
 
-`--wait-seconds` bounds polling. Timeout means the change is still in progress,
-not that it was cancelled or failed. `apply` reads back metadata on success when
+`--wait-seconds` bounds polling. Use `0` to submit and exit without waiting; the
+workflow uses this mode. For synchronous local verification, set a longer value.
+Timeout means the change is still in progress, not that it was cancelled or
+failed. `apply` reads back metadata on success when
 waiting; `status` only reports the ChangeSet status. Run `plan` again to verify
 the desired values after an asynchronously completed submission. Failed or
 cancelled terminal states produce a nonzero exit status. Store the plan hash,
@@ -245,6 +249,38 @@ Read access needs `aws-marketplace:ListEntities`, `DescribeEntity` and
 to the intended `AmiProduct` ARN and `ChangeSet/*` ARN, with the
 `catalog:ChangeType` condition set to `UpdateInformation`. Do not use an
 administrator policy for this workflow. SDK calls expose error codes only.
+
+A minimally scoped UpdateInformation statement looks like this (replace the
+entity id):
+
+```json
+{
+  "Effect": "Allow",
+  "Action": "aws-marketplace:StartChangeSet",
+  "Resource": [
+    "arn:aws:aws-marketplace:us-east-1:797851739507:AWSMarketplace/AmiProduct/prod-REPLACE_ME",
+    "arn:aws:aws-marketplace:us-east-1:797851739507:AWSMarketplace/ChangeSet/*"
+  ],
+  "Condition": {
+    "StringEquals": {
+      "catalog:ChangeType": "UpdateInformation"
+    }
+  }
+}
+```
+
+Use `AmiProduct`, not `AmiProduct@1.0`, in the ARN. The target entity ARN is
+printed in the plan summary. An `AccessDeniedException` from `StartChangeSet`
+usually means the action is missing, the entity/ChangeSet ARN does not match,
+the condition key or change type is wrong, or an SCP/permissions boundary
+denies the write.
+
+The managed policies `AWSMarketplaceSellerOfferManagement` and
+`AWSPrivateMarketplaceRequests` are not sufficient for this workflow. The
+former allows `StartChangeSet` only for `Offer/*` and `ChangeSet/*` (plus
+`CreateOfferOnProduct`); the latter covers procurement requests. Add an inline
+or customer-managed policy for `AmiProduct/*` with the `catalog:ChangeType`
+condition shown above.
 
 The API's `Intent: VALIDATE` is documented for adding single-AMI versions;
 it is not a general dry-run for `UpdateInformation`. Local `validate` and

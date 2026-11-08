@@ -47,14 +47,23 @@ multi-app data use the same file shape; only the number of `items` changes.
 | `overview` | `overview` | `--locale` |
 | `keywords` | `keywords` | `--locale` |
 | `usecases` | `useCases` | Non-localized |
-| `components` | `Component` | Non-localized |
+| `relatedApps` | `relatedApps` | Non-localized |
 | `summary` | `summary` | `--locale` |
 | `hasenterprise` | `hasEnterprise` | Non-localized |
 
 The field IDs and localization flags come from the Contentful content-type
 schema. The full entry is fetched first and only the target locale/fields are
 merged; other locales, `tags`, references and unknown fields are preserved.
-Input fields outside the table are rejected instead of silently ignored.
+Input fields outside the table are rejected instead of silently ignored, except
+pull metadata such as `offerCodes`, which is ignored.
+
+`relatedApps` input is an array of application Trademarks. Push validates it
+against the store catalog: names that are not sold in the store are dropped,
+duplicates are removed, and the result is not truncated. Remaining Trademarks
+are resolved to linked `product` entries by `trademark`; an allowed but unknown
+or ambiguous Trademark fails that application instead of writing a wrong link.
+Only the store products' `sys.id` and `fields.trademark` are fetched, once per
+push.
 
 ## Empty values and clearing
 
@@ -85,7 +94,7 @@ write `""` for text fields, `[]` for array fields or `false` for Boolean fields.
 
 - English locale only per invocation (`--locale`).
 - Existing `product` entries only; no create/delete.
-- `tags` and other linked fields are intentionally not pushed.
+- `tags` and other linked fields except `relatedApps` are not pushed.
 - Factual accuracy is not validated; the input dataset must be reviewed.
 
 ## Validation

@@ -12,7 +12,7 @@ assignees: 'morning-tan'
 
 - [ ] Wordpress-centos77
 
-需提供image name \ components
+需提供image name \ related apps
 
 **Steps**
 

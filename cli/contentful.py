@@ -14,7 +14,7 @@ from typing import Any, Callable
 from .marketplace import load_json
 
 DEFAULT_API_URL = "https://cdn.contentful.com"
-DEFAULT_FIELDS = ("trademark", "overview", "keywords", "usecases", "components", "summary", "hasenterprise")
+DEFAULT_FIELDS = ("trademark", "overview", "keywords", "usecases", "relatedApps", "summary", "hasenterprise")
 USER_AGENT = "Websoft9-manufacture/1.0"
 Progress = Callable[[str], None]
 
@@ -34,7 +34,7 @@ def _field_matcher(fields: dict[str, Any], wanted: str) -> str | None:
         return wanted
     aliases = {
         "usecases": ("usecases", "useCases", "use_cases"),
-        "components": ("components", "component"),
+        "relatedApps": ("relatedApps", "related_apps"),
         "hasenterprise": ("hasenterprise", "hasEnterprise", "has_enterprise"),
         "tags": ("tags", "tag"),
     }
@@ -263,8 +263,8 @@ def fetch_entries(
             raise ContentfulError("Contentful pagination did not converge.")
 
 
-def load_target_keys(source: str, timeout: float, progress: Progress | None = None) -> list[str]:
-    """Read product_en.json and return unique application ids in catalog order."""
+def load_target_catalog(source: str, timeout: float, progress: Progress | None = None) -> list[dict[str, Any]]:
+    """Read product_en.json and validate unique application keys."""
     _print(progress, f"Reading target applications: {source}")
     try:
         catalog = load_json(source, timeout)
@@ -286,7 +286,7 @@ def load_target_keys(source: str, timeout: float, progress: Progress | None = No
     if not keys:
         raise ContentfulError("target catalog contains no applications.")
     _print(progress, f"Target applications: {len(keys)}")
-    return keys
+    return catalog
 
 
 def select_target_keys(catalog_keys: list[str], apps: tuple[str, ...] | None) -> list[str]:
@@ -445,7 +445,8 @@ def pull_dataset(
         raise ContentfulError("a Contentful space id is required.")
     if not fields:
         raise ContentfulError("at least one Contentful field is required.")
-    target_keys = load_target_keys(catalog_source, timeout, progress)
+    catalog_items = load_target_catalog(catalog_source, timeout, progress)
+    target_keys = [item["key"].strip() for item in catalog_items]
     if app_ids:
         target_keys = select_target_keys(target_keys, app_ids)
         _print(progress, f"Selected applications: {len(target_keys)}")
@@ -541,6 +542,22 @@ def pull_dataset(
         allow_missing=allow_missing,
         progress=progress,
     )
+    if "relatedApps" in fields and not raw:
+        allowed = {
+            item["trademark"].strip()
+            for item in catalog_items
+            if isinstance(item.get("trademark"), str) and item["trademark"].strip()
+        }
+        for item in result["items"]:
+            values = item.get("relatedApps")
+            if not isinstance(values, list):
+                continue
+            own = item.get("trademark")
+            filtered: list[str] = []
+            for value in values:
+                if isinstance(value, str) and value != own and value in allowed and value not in filtered:
+                    filtered.append(value)
+            item["relatedApps"] = filtered
     result["source"] = {
         "catalog": catalog_source,
         "contentful": {
