@@ -5,7 +5,7 @@
 - GitHub Actions connects to AWS through OIDC; see [`cloud-connector.md`](cloud-connector.md).
 - For product master data, personalized AWS AMI listing content and Catalog metadata update commands, see [`marketplace-product-content.md`](marketplace-product-content.md) and the [`marketplace-product-content`](../skills/marketplace-product-content/SKILL.md) skill.
 - For the paused product-file Issue workflow and its replacement by catalog/CLI flow, including the approved GitHub Actions apply workflow, see [`marketplace-offer-update-workflow.md`](marketplace-offer-update-workflow.md); Odoo preparation is in [`odoo-first-publication.md`](odoo-first-publication.md).
-- To export English Contentful application fields for the current `product_en.json` applications, see [`catalog-pull.md`](catalog-pull.md). To write reviewed metadata to Contentful drafts or publish it, see [`catalog-push.md`](catalog-push.md).
+- To export English Contentful application fields for the current `product_en.json` applications, see [`catalog-pull.md`](catalog-pull.md). To validate the catalog and confirm only selected fields changed, use `mk catalog verify`. To write reviewed metadata to Contentful drafts or publish it, see [`catalog-push.md`](catalog-push.md).
 - Files such as `aliyun.json`, `aws.json`, `azure.json`, `huawei.json`, and `qcloud.json` contain existing task data. Check downstream consumers before editing and preserve their schemas.
 - AI collaboration rules are in the root `AGENTS.md`; reusable workflows are in `skills/`.
 - Reusable automation scripts live in the root `ci/` directory.

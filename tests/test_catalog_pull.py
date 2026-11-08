@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT))
 
 from cli import contentful  # noqa: E402
 from cli.cli import cli  # noqa: E402
+from cli.commands.catalog import _merge_dataset  # noqa: E402
 
 
 def link(link_type: str, entry_id: str) -> dict:
@@ -432,8 +433,43 @@ class CatalogPullTests(unittest.TestCase):
     def test_help_exposes_options(self) -> None:
         result = self.runner.invoke(cli, ["catalog", "pull", "--help"])
         self.assertEqual(result.exit_code, 0)
-        for option in ("--space-id", "--token", "--fields", "--apps", "--offer", "--progress", "--output"):
+        for option in ("--space-id", "--token", "--fields", "--apps", "--offer", "--progress", "--output", "--merge"):
             self.assertIn(option, result.output)
+
+
+class CatalogMergeTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.path = Path(self.temp.name) / "catalog.json"
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def write(self, items: list) -> None:
+        self.path.write_text(
+            json.dumps({"schemaVersion": 1, "count": len(items), "items": items}),
+            encoding="utf-8",
+        )
+
+    def test_merge_replaces_selected_items_and_keeps_order(self) -> None:
+        self.write([{"id": "odoo", "summary": "old"}, {"id": "wordpress", "summary": "old"}])
+        pulled = {"items": [{"id": "wordpress", "summary": "updated"}], "count": 1}
+        merged = _merge_dataset(self.path, pulled)
+        self.assertEqual([item["id"] for item in merged["items"]], ["odoo", "wordpress"])
+        self.assertEqual(merged["items"][1]["summary"], "updated")
+        self.assertEqual(merged["items"][0]["summary"], "old")
+        self.assertEqual(merged["count"], 2)
+
+    def test_merge_appends_new_items_in_pulled_order(self) -> None:
+        self.write([{"id": "odoo"}])
+        pulled = {"items": [{"id": "ghost"}, {"id": "wordpress"}], "count": 2}
+        merged = _merge_dataset(self.path, pulled)
+        self.assertEqual([item["id"] for item in merged["items"]], ["odoo", "ghost", "wordpress"])
+
+    def test_merge_rejects_existing_items_without_ids(self) -> None:
+        self.write([{"summary": "no id"}])
+        with self.assertRaises(Exception):
+            _merge_dataset(self.path, {"items": [{"id": "odoo"}], "count": 1})
 
 
 if __name__ == "__main__":

@@ -1,13 +1,23 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import urllib.error
 
 import click
 
-from .. import contentful, contentful_management
+from .. import catalog_verify, contentful, contentful_management
 from .. import marketplace
 from ..marketplace import CATALOG_URL, OFFER_URL, catalog_default_path
+
+
+def _parse_app_ids(value: str | None) -> tuple[str, ...] | None:
+    if value is None:
+        return None
+    ids = tuple(item.strip() for item in value.split(",") if item.strip())
+    if len(ids) == 1 and ids[0].lower() == "all":
+        return None
+    return ids
 
 
 def _progress(enabled: bool):
@@ -15,6 +25,37 @@ def _progress(enabled: bool):
         if enabled:
             click.echo(message, err=True)
     return report
+
+
+def _merge_dataset(path: Path, dataset: dict) -> dict:
+    """Merge pulled items into an existing catalog without reordering it."""
+    if not path.exists():
+        return dataset
+    try:
+        existing = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise click.ClickException(f"failed to read existing catalog {path}: {error}") from None
+    if isinstance(existing, list):
+        existing = {"items": existing}
+    if not isinstance(existing, dict) or not isinstance(existing.get("items"), list):
+        raise click.ClickException(f"existing catalog {path} is not a catalog dataset")
+    for index, item in enumerate(existing["items"]):
+        if not isinstance(item, dict) or not isinstance(item.get("id"), str):
+            raise click.ClickException(
+                f"existing catalog {path} item {index} has no string id"
+            )
+    pulled = dataset.get("items") or []
+    pulled_by_id = {item["id"]: item for item in pulled if isinstance(item, dict) and item.get("id")}
+    merged_items = [pulled_by_id.pop(item["id"], item) for item in existing["items"]]
+    merged_items.extend(item for item in pulled if item.get("id") in pulled_by_id)
+    merged = dict(existing)
+    merged["items"] = merged_items
+    merged["count"] = len(merged_items)
+    for key in ("schemaVersion", "generatedAt", "source"):
+        if key in dataset:
+            merged[key] = dataset[key]
+    merged["source"] = {**(existing.get("source") or {}), **(dataset.get("source") or {})}
+    return merged
 
 
 @click.group("catalog")
@@ -46,6 +87,8 @@ def catalog_command() -> None:
               help="Contentful Delivery/Preview API base URL.")
 @click.option("--output", type=click.Path(dir_okay=False, path_type=Path), metavar="PATH",
               help="Write JSON here. Default: data/.catalog/catalog.json; use - for stdout.")
+@click.option("--merge", is_flag=True,
+              help="Merge pulled items into an existing output file, preserving other items and their order.")
 @click.option("--page-size", type=click.IntRange(1, 1000), default=100, show_default=True)
 @click.option("--include-depth", type=click.IntRange(0, 10), default=1, show_default=True,
               help="Contentful link resolution depth.")
@@ -70,6 +113,7 @@ def pull_command(
     app_list: str | None,
     api_url: str,
     output: Path | None,
+    merge: bool,
     page_size: int,
     include_depth: int,
     timeout: float,
@@ -86,8 +130,8 @@ def pull_command(
     fields = tuple(dict.fromkeys(item.strip() for item in field_list.split(",") if item.strip()))
     if not fields:
         raise click.ClickException("--fields must contain at least one Contentful field id.")
-    app_ids = None if app_list is None else tuple(item.strip() for item in app_list.split(",") if item.strip())
-    if app_list is not None and not app_ids:
+    app_ids = _parse_app_ids(app_list)
+    if app_ids is not None and not app_ids:
         raise click.ClickException("--apps must contain at least one application id.")
     reporter = _progress(progress)
     try:
@@ -120,11 +164,15 @@ def pull_command(
         item["offerCodes"] = codes.get(item["id"], {})
     dataset.setdefault("source", {})["offer"] = offer_source
 
-    text = contentful.dumps_dataset(dataset) + "\n"
     output = output if output is not None else catalog_default_path()
     if str(output) == "-":
-        click.echo(text, nl=False)
+        if merge:
+            raise click.ClickException("--merge requires a file output, not stdout.")
+        click.echo(contentful.dumps_dataset(dataset) + "\n", nl=False)
         return
+    if merge:
+        dataset = _merge_dataset(output, dataset)
+    text = contentful.dumps_dataset(dataset) + "\n"
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(text, encoding="utf-8")
     if progress:
@@ -140,6 +188,8 @@ def pull_command(
               help="JSON dataset from catalog pull, a JSON array, or - for stdin. Default: data/.catalog/catalog.json.")
 @click.option("--apps", "app_list", metavar="IDS",
               help="Comma-separated application ids to push. Default: every item in the input.")
+@click.option("--fields", "field_list", metavar="FIELDS",
+              help="Comma-separated fields to push; default every supported field.")
 @click.option("--environment", envvar="CONTENTFUL_ENVIRONMENT", default="master", show_default=True)
 @click.option("--content-type", default="product", show_default=True)
 @click.option("--locale", default="en-US", show_default=True,
@@ -164,6 +214,7 @@ def push_command(
     token: str,
     input_path: str,
     app_list: str | None,
+    field_list: str | None,
     environment: str,
     content_type: str,
     locale: str,
@@ -181,15 +232,27 @@ def push_command(
     """Push repository/catalog changes to Contentful drafts (and optionally publish).
 
     Only trademark, overview, keywords, usecases, relatedApps, summary and
-    hasenterprise are written. relatedApps Trademarks are resolved to linked
+    hasenterprise are written, and --fields can restrict the push further.
+    relatedApps Trademarks are resolved to linked
     product entries; non-store and duplicate names are dropped, and other linked
     fields are not pushed. Empty values are skipped unless --clear is used.
     Writes use the entry's current version, so concurrent Contentful edits fail
     instead of being overwritten.
     """
-    app_ids = None if app_list is None else tuple(item.strip() for item in app_list.split(",") if item.strip())
-    if app_list is not None and not app_ids:
+    app_ids = _parse_app_ids(app_list)
+    if app_ids is not None and not app_ids:
         raise click.ClickException("--apps must contain at least one application id.")
+    field_names = None if field_list is None else {
+        item.strip() for item in field_list.split(",") if item.strip()
+    }
+    if field_list is not None and not field_names:
+        raise click.ClickException("--fields must contain at least one field.")
+    if field_names is not None:
+        unknown_fields = field_names - set(contentful_management.ALLOWED_INPUT_FIELDS)
+        if unknown_fields:
+            raise click.ClickException(
+                f"unsupported push field(s): {', '.join(sorted(unknown_fields))}"
+            )
     reporter = _progress(progress)
     input_path = input_path or str(catalog_default_path())
     try:
@@ -211,6 +274,7 @@ def push_command(
             allow_missing=allow_missing,
             verbose=verbose,
             progress=reporter,
+            field_names=field_names,
         )
     except contentful.ContentfulError as error:
         raise click.ClickException(str(error)) from None
@@ -231,3 +295,80 @@ def push_command(
         raise click.ClickException(f"{len(summary['errors'])} push error(s).")
     if dry_run:
         click.echo("Dry run: no Contentful changes were written.", err=True)
+
+
+@catalog_command.command("verify")
+@click.option("--input", "input_path", type=click.Path(dir_okay=False, path_type=Path),
+              metavar="PATH", help="Catalog dataset to validate. Default: data/.catalog/catalog.json.")
+@click.option("--apps", "app_list", metavar="IDS",
+              help="Comma-separated application ids to validate. Default: every item.")
+@click.option("--fields", "field_list", metavar="FIELDS",
+              default=",".join(catalog_verify.GENERATED_FIELDS), show_default=True,
+              help="Comma-separated fields to validate.")
+@click.option("--baseline", type=click.Path(dir_okay=False, path_type=Path), metavar="PATH",
+              help="Earlier catalog snapshot; fail if unselected items or fields changed.")
+@click.option("--require-non-empty", is_flag=True,
+              help="Treat empty keywords/usecases as errors; use after generation.")
+@click.option("--json", "as_json", is_flag=True, help="Print the full result as JSON.")
+@click.option("--verbose", is_flag=True, help="Show a status line for applications without issues.")
+def verify_command(
+    input_path: Path | None,
+    app_list: str | None,
+    field_list: str,
+    baseline: Path | None,
+    require_non_empty: bool,
+    as_json: bool,
+    verbose: bool,
+) -> None:
+    """Validate catalog field rules and optional change isolation.
+
+    Checks keywords, usecases, relatedApps, overview, summary and
+    hasenterprise for the selected applications. With --baseline, also checks
+    that no other item or field changed.
+    """
+    path = input_path or catalog_default_path()
+    try:
+        data = catalog_verify.load_dataset(str(path))
+        baseline_data = catalog_verify.load_dataset(str(baseline)) if baseline else None
+    except ValueError as error:
+        raise click.ClickException(str(error)) from None
+    fields = tuple(item.strip() for item in field_list.split(",") if item.strip())
+    if not fields:
+        raise click.ClickException("--fields must contain at least one field.")
+    app_ids = _parse_app_ids(app_list)
+    if app_ids is not None and not app_ids:
+        raise click.ClickException("--apps must contain at least one application id.")
+    try:
+        result = catalog_verify.verify(
+            data, app_ids=app_ids, fields=fields, baseline=baseline_data,
+            require_non_empty=require_non_empty,
+        )
+    except ValueError as error:
+        raise click.ClickException(str(error)) from None
+
+    if as_json:
+        click.echo(json.dumps(result, indent=2, ensure_ascii=False))
+    else:
+        issues = result["issues"]
+        for app_id in result["selected"]:
+            app_issues = [issue for issue in issues if issue["app"] == app_id]
+            if app_issues:
+                click.echo(f"{app_id}: {len(app_issues)} issue(s)")
+                for issue in app_issues:
+                    field = f" {issue['field']}" if issue["field"] else ""
+                    click.echo(f"  {issue['severity']}{field}: {issue['message']}")
+            elif verbose:
+                click.echo(f"{app_id}: ok")
+        for issue in issues:
+            if not issue["app"]:
+                field = f" {issue['field']}" if issue["field"] else ""
+                click.echo(f"{issue['severity']}{field}: {issue['message']}")
+        if not issues:
+            click.echo(f"Validated {len(result['selected'])} application(s): ok")
+        else:
+            click.echo(
+                f"Validated {len(result['selected'])} application(s): "
+                f"{result['errors']} error(s), {result['warnings']} warning(s)"
+            )
+    if result["errors"]:
+        raise click.ClickException(f"{result['errors']} catalog validation error(s).")

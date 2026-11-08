@@ -28,6 +28,7 @@ A Websoft9 automated operations project for mainstream cloud marketplaces. It ma
 - `make help` — list development commands.
 - `make cli` — enter business commands in an isolated `.venv` (`mk help`).
 - `mk catalog pull` — export English Contentful fields to `data/.catalog/catalog.json` (git-ignored) for the current `product_en.json` applications. See [`specs/catalog-pull.md`](specs/catalog-pull.md).
+- `mk catalog verify` — validate catalog field rules and confirm that only the selected applications and fields changed. See [`specs/catalog-pull.md`](specs/catalog-pull.md#validating-the-dataset).
 - `mk catalog push` — write reviewed metadata from `data/.catalog/catalog.json` to Contentful drafts, optionally publish. See [`specs/catalog-push.md`](specs/catalog-push.md).
 
 <!-- marketplace-apps:start -->

@@ -39,6 +39,17 @@ Export only selected applications (request order is preserved):
 mk catalog pull --apps wordpress,odoo --output /tmp/catalog-subset.json
 ```
 
+Merge selected applications into an existing staging file without removing the
+other applications:
+
+```sh
+mk catalog pull --apps wordpress,odoo --merge
+```
+
+`--merge` replaces the matching items and preserves every other item and the
+existing order. Without `--merge`, `--apps` writes a dataset that contains only
+the selected applications.
+
 Preview API example:
 
 ```sh
@@ -66,6 +77,7 @@ includes drafts; linked fields may remain as link objects in that mode.
 | `--offer` | configured `offer.json` URL | Marketplace offer source used to add per-platform `offerCodes` |
 | `--apps` | all catalog applications | Comma-separated application ids to export; must exist in the target catalog |
 | `--output` | `data/.catalog/catalog.json` | JSON destination; `-` means stdout; `MK_CATALOG_DIR` overrides the directory |
+| `--merge` | off | Merge pulled items into an existing output file, preserving other items and their order |
 | `--progress` | on | Progress to stderr, leaving stdout valid JSON |
 | `--raw` | off | Keep raw Contentful values instead of resolving links/RichText |
 | `--allow-missing` | off | Emit available apps and list target ids absent from Contentful |
@@ -86,7 +98,9 @@ for any other content-model names.
 ## Output
 
 Only applications present in `product_en.json` are returned. Without `--apps`,
-catalog order is used; with `--apps`, the requested order is used:
+catalog order is used; with `--apps`, the requested order is used. With
+`--merge`, existing items keep their positions and new items are appended in
+pulled order:
 
 ```json
 {
@@ -141,10 +155,31 @@ matches; apps without an offer entry receive `{}`. Array values such as
 Linked entries/assets and RichText documents are converted to readable values;
 use `--raw` to preserve the exact CDA shape.
 
+## Validating the dataset
+
+`mk catalog verify` checks the field rules used by the content skills and can
+fail on unintended edits:
+
+```sh
+mk catalog verify --apps wordpress,odoo --fields keywords,summary --verbose
+mk catalog verify --apps wordpress,odoo --fields summary \
+  --baseline /tmp/catalog.before.json
+```
+
+The baseline form verifies that no other application and no unselected field
+changed. `--require-non-empty` treats empty `keywords` and `usecases` as errors;
+use it after generation, not when checking a partial catalog. `relatedApps` is
+also checked for repeated layers, such as multiple relational data stores,
+database admin tools, model runtimes, vector stores or SCM tools; these are
+warnings because universal clients and data pipelines can legitimately span
+layers. Summaries that contain `open source`/`open-source` are errors. Add
+`--json` for a machine-readable result. Errors exit non-zero; warnings are
+reported but do not block.
+
 ## Validation
 
 ```sh
-python3 -m unittest tests.test_catalog_pull
+python3 -m unittest tests.test_catalog_pull tests.test_catalog_verify
 ```
 
 Tests use synthetic Contentful responses. A live run requires a valid Contentful

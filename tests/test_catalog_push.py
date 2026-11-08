@@ -117,6 +117,20 @@ class BuildChangesTests(unittest.TestCase):
             cma.build_changes({"id": "wordpress", "relatedApps": ["Missing"]}, ENTRY, SCHEMA,
                               related_app_ids=RELATED_APP_IDS, allowed_related_apps={"Missing"})
 
+    def test_field_filter_limits_the_update(self) -> None:
+        fields, changed, skipped, unchanged = cma.build_changes(
+            ITEM, ENTRY, SCHEMA, field_names={"summary"})
+        self.assertEqual(changed, ["summary"])
+        self.assertEqual(skipped, [])
+        self.assertEqual(unchanged, [])
+        self.assertEqual(fields["summary"], {"en-US": "New summary"})
+        self.assertEqual(fields["keywords"], ENTRY["fields"]["keywords"])
+        self.assertEqual(fields["overview"], ENTRY["fields"]["overview"])
+
+    def test_unknown_field_filter_is_rejected(self) -> None:
+        with self.assertRaisesRegex(contentful.ContentfulError, "Unsupported push field"):
+            cma.build_changes(ITEM, ENTRY, SCHEMA, field_names={"tags"})
+
     def test_related_apps_drop_non_store_and_duplicates(self) -> None:
         item = {"id": "wordpress", "relatedApps": ["PostgreSQL", "NotInStore", "PostgreSQL"]}
         fields, changed, _, _ = cma.build_changes(
@@ -340,6 +354,27 @@ class PushCliTests(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.stderr)
         self.assertEqual(push.call_args.kwargs["token"], "secret-token")
 
+    def test_fields_option_is_forwarded_and_validated(self) -> None:
+        summary = {"selected": 0, "matched": 0, "updated": 0, "published": 0,
+                   "unchanged": 0, "skippedEmpty": 0, "missing": [], "errors": []}
+        runner = CliRunner(mix_stderr=False)
+        with mock.patch.object(cma, "push", return_value=summary) as push:
+            result = runner.invoke(
+                cli,
+                ["catalog", "push", "--space-id", "space", "--token", "secret",
+                 "--fields", "summary,keywords", "--no-progress"],
+            )
+        self.assertEqual(result.exit_code, 0, result.stderr)
+        self.assertEqual(push.call_args.kwargs["field_names"], {"summary", "keywords"})
+
+        result = runner.invoke(
+            cli,
+            ["catalog", "push", "--space-id", "space", "--token", "secret",
+             "--fields", "tags", "--no-progress"],
+        )
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("unsupported push field", result.stderr)
+
     def test_token_is_required_and_help_lists_options(self) -> None:
         runner = CliRunner(mix_stderr=False)
         result = runner.invoke(cli, ["catalog", "push", "--space-id", "space"],
@@ -348,7 +383,7 @@ class PushCliTests(unittest.TestCase):
         self.assertIn("token", (result.stderr or result.stdout).lower())
         result = runner.invoke(cli, ["catalog", "push", "--help"])
         self.assertEqual(result.exit_code, 0)
-        for option in ("--input", "--apps", "--dry-run", "--publish", "--clear"):
+        for option in ("--input", "--apps", "--fields", "--dry-run", "--publish", "--clear"):
             self.assertIn(option, result.output)
 
 

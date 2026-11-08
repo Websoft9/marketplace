@@ -339,17 +339,24 @@ def build_changes(
     clear: bool = False,
     related_app_ids: dict[str, str] | None = None,
     allowed_related_apps: set[str] | None = None,
+    field_names: set[str] | None = None,
 ) -> tuple[dict[str, Any], list[str], list[str], list[str]]:
     """Merge only target fields/locale. Returns fields, changed, skipped-empty, unchanged."""
     unknown = set(item) - {"id"} - set(ALLOWED_INPUT_FIELDS) - set(IGNORED_INPUT_FIELDS)
     if unknown:
         raise ContentfulError(f"Unsupported input field(s): {', '.join(sorted(unknown))}")
+    if field_names is not None:
+        unknown_fields = field_names - set(ALLOWED_INPUT_FIELDS)
+        if unknown_fields:
+            raise ContentfulError(f"Unsupported push field(s): {', '.join(sorted(unknown_fields))}")
     fields = copy.deepcopy(entry.get("fields") or {})
     changed: list[str] = []
     skipped: list[str] = []
     unchanged: list[str] = []
     for name in ALLOWED_INPUT_FIELDS:
         if name not in item:
+            continue
+        if field_names is not None and name not in field_names:
             continue
         schema_field = _field_matcher(schema, name)
         if schema_field is None:
@@ -470,6 +477,7 @@ def push(
     catalog_keys: tuple[str, ...] | None = None,
     catalog_source: str | None = None,
     progress: Progress | None = None,
+    field_names: set[str] | None = None,
 ) -> dict[str, Any]:
     if not token or not token.strip():
         raise ContentfulError("a Contentful Management API token is required.")
@@ -494,7 +502,8 @@ def push(
             by_key[key] = entry
     related_app_ids: dict[str, str] | None = None
     resolved_allowed = allowed_related_apps
-    if any(by_id[app].get("relatedApps") for app in selected):
+    related_apps_selected = field_names is None or "relatedApps" in field_names
+    if related_apps_selected and any(by_id[app].get("relatedApps") for app in selected):
         if resolved_allowed is None or catalog_keys is None:
             catalog = load_target_catalog(catalog_source or CATALOG_URL, timeout, progress)
             if catalog_keys is None:
@@ -526,7 +535,8 @@ def push(
         try:
             fields, changed, skipped, unchanged = build_changes(
                 by_id[app_id], entry, schema, locale=locale, clear=clear,
-                related_app_ids=related_app_ids, allowed_related_apps=resolved_allowed)
+                related_app_ids=related_app_ids, allowed_related_apps=resolved_allowed,
+                field_names=field_names)
         except ContentfulError as error:
             summary["errors"].append(f"{app_id}: {error}")
             continue

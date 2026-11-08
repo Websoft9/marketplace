@@ -25,12 +25,18 @@ HTTP 401. The token is sent in the `Authorization` header and is never printed.
 # Preview changes; no Contentful writes
 mk catalog push --apps wordpress,odoo --dry-run --verbose
 
+# Push only the regenerated fields
+mk catalog push --apps wordpress,odoo --fields summary,keywords --dry-run --verbose
+
 # Update drafts only
 mk catalog push --apps wordpress,odoo
 
 # Update and publish
 mk catalog push --apps wordpress,odoo --publish
 ```
+
+Run `mk catalog verify --apps <ids> --fields <fields>` before pushing to catch
+field-rule violations locally.
 
 `--input` defaults to `data/.catalog/catalog.json` (git-ignored). Set
 `MK_CATALOG_DIR` to use another directory. It accepts the object produced by
@@ -55,7 +61,10 @@ The field IDs and localization flags come from the Contentful content-type
 schema. The full entry is fetched first and only the target locale/fields are
 merged; other locales, `tags`, references and unknown fields are preserved.
 Input fields outside the table are rejected instead of silently ignored, except
-pull metadata such as `offerCodes`, which is ignored.
+pull metadata such as `offerCodes`, which is ignored. `--fields` restricts the
+push to a comma-separated subset of the table, so a generation pass that
+changed only `summary` cannot accidentally write stale values from other
+fields. Unselected fields are left untouched in Contentful.
 
 `relatedApps` input is an array of application Trademarks. Push validates it
 against the store catalog: names that are not sold in the store are dropped,
@@ -100,7 +109,7 @@ write `""` for text fields, `[]` for array fields or `false` for Boolean fields.
 ## Validation
 
 ```sh
-python3 -m unittest tests.test_catalog_push
+python3 -m unittest tests.test_catalog_push tests.test_catalog_verify
 ```
 
 Tests use mocked Management API responses. A live push requires a Management API
