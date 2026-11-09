@@ -45,7 +45,7 @@
     },
     {
       "heading": "Use cases",
-      "text": "{catalog.usecases | join: '; '}."
+      "text": "{catalog.usecases | join: ', '}."
     },
     {
       "heading": "What you pay for",

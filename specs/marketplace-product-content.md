@@ -64,7 +64,7 @@ Actual source locations remain in `config/marketplace.json` (offer) and
 the template only names logical namespaces. A whole field can use an array
 placeholder, for example `"SearchKeywords": "{catalog.keywords}"`. Arrays
 interpolated into text use an explicit filter such as
-`{catalog.usecases | join: '; '}`. The optional second `join` argument adds a
+`{catalog.usecases | join: ', '}`. The optional second `join` argument adds a
 suffix only when the list is non-empty, so
 `{catalog.relatedApps | join: ', ', ', '}` inserts related apps before fixed text
 without leaving a leading comma. Source data values are literal; placeholders
@@ -88,7 +88,9 @@ The read shape differs from the update shape:
 - `LongDescription` is assembled from template sections; it is not a source field.
 When the template sets `boldLongDescriptionHeadings`, non-empty section headings
 are emitted as AWS-supported Markdown bold (`**Heading**`) in the submitted
-description while the structured preview keeps plain headings.
+description while the structured preview keeps plain headings. Each heading is
+followed by a blank line so Markdown renders it as its own paragraph rather than
+joining it to the body text.
 `previewOnlySections` (currently Usage and Refunds) are rendered into the local
 preview but are never added to `content`, `plan`, or the `UpdateInformation`
 ChangeSet. Their `id` values leave room for separate Usage/Refund workflows later.

@@ -218,7 +218,7 @@ def render(catalog_item: dict, version: str, vendor_path: Path = DATA / "vendor.
     ]
     heading_format = "**{}**" if template.get("boldLongDescriptionHeadings") else "{}"
     content["LongDescription"] = "\n\n".join(
-        (heading_format.format(section["heading"]) + "\n" if section["heading"] else "") + section["text"]
+        (heading_format.format(section["heading"]) + "\n\n" if section["heading"] else "") + section["text"]
         for section in rendered_sections
     )
     preview_only_template = template.get("previewOnlySections") or []

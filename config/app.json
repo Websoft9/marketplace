@@ -11,6 +11,7 @@
     "mongodb",
     "redis",
     "erpnext",
-    "neo4j"
+    "neo4j",
+    "influxdb"
   ]
 }

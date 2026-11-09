@@ -57,8 +57,9 @@ Contentful.
    long description, true `hasenterprise` names the offer as
    `<app> Community Edition`, while false omits the edition label.
    Long-description section headings use Markdown bold when the template enables
-   `boldLongDescriptionHeadings`; structured preview headings stay plain. Do not
-   bypass fixed sections with `contentOverrides` unless explicitly reviewed.
+   `boldLongDescriptionHeadings`; structured preview headings stay plain. In the
+   submitted text each heading is followed by a blank line before its body copy.
+   Do not bypass fixed sections with `contentOverrides` unless explicitly reviewed.
 6. Use version data from `apps-verson.json` through `{versions.version}`.
    Missing namespaces or fields fail rendering; there is no runtime product
    schema or fallback field mapping.

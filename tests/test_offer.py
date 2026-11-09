@@ -322,7 +322,8 @@ class OfferTests(unittest.TestCase):
 
     def test_long_description_headings_use_markdown_bold(self):
         value = self.render()
-        self.assertIn("**What is included?**\n", value["content"]["LongDescription"])
+        self.assertIn("**What is included?**\n\n", value["content"]["LongDescription"])
+        self.assertNotIn("**What is included?**\nOdoo", value["content"]["LongDescription"])
         headings = [
             section["heading"]
             for section in value["preview"]["longDescriptionSections"]
