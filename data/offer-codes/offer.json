@@ -14,7 +14,8 @@
                 "vmlabinc1613642184700.activemq"
             ],
             "aws": [
-                "8ow143epbkh8mmcijbhrb76rw"
+                "8ow143epbkh8mmcijbhrb76rw",
+                "e3lnqtjusq2zmxl9t4pqs57dy"
             ]
         },
         "type": "app",
@@ -85,7 +86,9 @@
             ],
             "huaweicloud": [],
             "azure": [],
-            "aws": []
+            "aws": [
+                "ctwj9bwnpmt9htz6dji5bhwvh"
+            ]
         },
         "type": "app",
         "applications": [
@@ -136,9 +139,7 @@
             "alibabacloud": [],
             "huaweicloud": [],
             "azure": [],
-            "aws": [
-                "d2p5fuhaxluqcvzuehgw3aor4"
-            ]
+            "aws": []
         },
         "type": "app",
         "applications": [
@@ -157,7 +158,9 @@
             ],
             "huaweicloud": [],
             "azure": [],
-            "aws": []
+            "aws": [
+                "6e5im27gwesgealxzem0ahf2c"
+            ]
         },
         "type": "app",
         "applications": [
@@ -193,7 +196,9 @@
             ],
             "huaweicloud": [],
             "azure": [],
-            "aws": []
+            "aws": [
+                "opo3ek7hdofdv49n00ssdsbf"
+            ]
         },
         "type": "app",
         "applications": [
@@ -227,9 +232,7 @@
             "alibabacloud": [],
             "huaweicloud": [],
             "azure": [],
-            "aws": [
-                "ctwj9bwnpmt9htz6dji5bhwvh"
-            ]
+            "aws": []
         },
         "type": "app",
         "applications": [
@@ -246,9 +249,7 @@
             "azure": [
                 "codeserver"
             ],
-            "aws": [
-                "27feqguydue4x6pxbtqibudtk"
-            ]
+            "aws": []
         },
         "type": "app",
         "applications": [
@@ -306,7 +307,9 @@
             ],
             "huaweicloud": [],
             "azure": [],
-            "aws": []
+            "aws": [
+                "991jhg47g9ocfueac4gbjiptg"
+            ]
         },
         "type": "app",
         "applications": [
@@ -446,7 +449,9 @@
             ],
             "huaweicloud": [],
             "azure": [],
-            "aws": []
+            "aws": [
+                "27feqguydue4x6pxbtqibudtk"
+            ]
         },
         "type": "app",
         "applications": [
@@ -589,8 +594,7 @@
             ],
             "aws": [
                 "43of0ubgxuf0k88if0noeafl8",
-                "e16iyvd40gcn4zsak80ijzkbz",
-                "dxx0ssjdnsqnuzhxsuikwe5gj"
+                "e16iyvd40gcn4zsak80ijzkbz"
             ]
         },
         "type": "app",
@@ -610,7 +614,9 @@
             ],
             "huaweicloud": [],
             "azure": [],
-            "aws": []
+            "aws": [
+                "ct42l4zz1mth7u5nvxkcn5kty"
+            ]
         },
         "type": "app",
         "applications": [
@@ -711,9 +717,7 @@
             "alibabacloud": [],
             "huaweicloud": [],
             "azure": [],
-            "aws": [
-                "opo3ek7hdofdv49n00ssdsbf"
-            ]
+            "aws": []
         },
         "type": "app",
         "applications": [
@@ -806,7 +810,9 @@
             ],
             "huaweicloud": [],
             "azure": [],
-            "aws": []
+            "aws": [
+                "cg0c50kyelios7mprtu9l641d"
+            ]
         },
         "type": "app",
         "applications": [
@@ -859,9 +865,7 @@
             "azure": [
                 "vmlabinc1613642184700.mariadb"
             ],
-            "aws": [
-                "8vh6esvj53w2201tifxdubdkm"
-            ]
+            "aws": []
         },
         "type": "app",
         "applications": [
@@ -1050,7 +1054,9 @@
             ],
             "huaweicloud": [],
             "azure": [],
-            "aws": []
+            "aws": [
+                "8vh6esvj53w2201tifxdubdkm"
+            ]
         },
         "type": "app",
         "applications": [
@@ -1156,9 +1162,7 @@
             "azure": [
                 "nodejs"
             ],
-            "aws": [
-                "369jyztng818eqq1d5a6hz7y4"
-            ]
+            "aws": []
         },
         "type": "app",
         "applications": [
@@ -1175,7 +1179,9 @@
             ],
             "huaweicloud": [],
             "azure": [],
-            "aws": []
+            "aws": [
+                "6uo75rf0jz0yzurt0o7wmjhd4"
+            ]
         },
         "type": "app",
         "applications": [
@@ -1220,7 +1226,9 @@
             "alibabacloud": [],
             "huaweicloud": [],
             "azure": [],
-            "aws": []
+            "aws": [
+                "devybqnyxipq37o6gkxvo1og3"
+            ]
         },
         "type": "app",
         "applications": [
@@ -1279,7 +1287,9 @@
             ],
             "huaweicloud": [],
             "azure": [],
-            "aws": []
+            "aws": [
+                "dxx0ssjdnsqnuzhxsuikwe5gj"
+            ]
         },
         "type": "app",
         "applications": [
@@ -1485,7 +1495,9 @@
             ],
             "huaweicloud": [],
             "azure": [],
-            "aws": []
+            "aws": [
+                "369jyztng818eqq1d5a6hz7y4"
+            ]
         },
         "type": "app",
         "applications": [
@@ -1507,7 +1519,6 @@
                 "vmlabinc1613642184700.rabbitmq"
             ],
             "aws": [
-                "er8i7izvcdzv9ko6d5lpt06fb",
                 "9dtw38jhpre5n4f7txralg94i"
             ]
         },
@@ -1655,7 +1666,9 @@
             ],
             "huaweicloud": [],
             "azure": [],
-            "aws": []
+            "aws": [
+                "apanm36o6417j0od6k09klm0j"
+            ]
         },
         "type": "app",
         "applications": [
@@ -1674,7 +1687,9 @@
             ],
             "huaweicloud": [],
             "azure": [],
-            "aws": []
+            "aws": [
+                "39faqn3cxevzlo3ea1hrmx4jq"
+            ]
         },
         "type": "app",
         "applications": [
@@ -1689,9 +1704,7 @@
             "alibabacloud": [],
             "huaweicloud": [],
             "azure": [],
-            "aws": [
-                "h1jc8n45yx8z82tckmegf513"
-            ]
+            "aws": []
         },
         "type": "app",
         "applications": [
@@ -1708,9 +1721,7 @@
             ],
             "huaweicloud": [],
             "azure": [],
-            "aws": [
-                "devybqnyxipq37o6gkxvo1og3"
-            ]
+            "aws": []
         },
         "type": "app",
         "applications": [
@@ -1829,9 +1840,7 @@
             "alibabacloud": [],
             "huaweicloud": [],
             "azure": [],
-            "aws": [
-                "cg0c50kyelios7mprtu9l641d"
-            ]
+            "aws": []
         },
         "type": "app",
         "applications": [
@@ -1884,7 +1893,9 @@
             ],
             "huaweicloud": [],
             "azure": [],
-            "aws": []
+            "aws": [
+                "d2p5fuhaxluqcvzuehgw3aor4"
+            ]
         },
         "type": "app",
         "applications": [
@@ -1901,7 +1912,9 @@
             ],
             "huaweicloud": [],
             "azure": [],
-            "aws": []
+            "aws": [
+                "h1jc8n45yx8z82tckmegf513"
+            ]
         },
         "type": "app",
         "applications": [
@@ -2012,7 +2025,9 @@
             "alibabacloud": [],
             "huaweicloud": [],
             "azure": [],
-            "aws": []
+            "aws": [
+                "er8i7izvcdzv9ko6d5lpt06fb"
+            ]
         },
         "type": "app",
         "applications": [
@@ -2048,8 +2063,7 @@
             ],
             "aws": [
                 "6juf4omtss002tppg07lwko9u",
-                "60a4t9yyr7tg5lk3bg149jj0k",
-                "ct42l4zz1mth7u5nvxkcn5kty"
+                "60a4t9yyr7tg5lk3bg149jj0k"
             ]
         },
         "type": "app",

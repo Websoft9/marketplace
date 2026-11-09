@@ -7,16 +7,18 @@ import click
 
 from ..marketplace import (
     CATALOG_URL,
-    OFFER_URL,
+    OFFER_SOURCE,
     collect_rows,
     load_json,
+    read_offers,
     render_markdown,
     update_readme as update_readme_section,
 )
 
 
 @click.command("list")
-@click.option("--offer", default=OFFER_URL, metavar="SOURCE", help="offer.json URL or local path")
+@click.option("--offer", default=str(OFFER_SOURCE), metavar="SOURCE",
+              help="Offer-codes directory or JSON file")
 @click.option(
     "--catalog",
     default=CATALOG_URL,
@@ -44,7 +46,7 @@ def list_command(
 ) -> None:
     """List applications and their Marketplace product links."""
     try:
-        offers = load_json(offer, timeout)
+        offers = read_offers(offer, timeout)
         catalog_data = load_json(catalog, timeout)
     except (OSError, ValueError, urllib.error.URLError) as error:
         raise click.ClickException(f"failed to load marketplace data: {error}") from error

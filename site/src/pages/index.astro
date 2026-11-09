@@ -4,7 +4,8 @@ import StatCard from "../components/StatCard.astro";
 import StoreLinks from "../components/StoreLinks.astro";
 import {
   CATALOG_URL,
-  OFFER_URL,
+  OFFER_SOURCE,
+  OFFER_SOURCE_IS_URL,
   loadMarketplaceData,
 } from "../lib/marketplace";
 
@@ -42,7 +43,7 @@ const generatedLabel = new Intl.DateTimeFormat("zh-CN", {
     <StatCard label="商品目录应用" value={stats.catalog} hint="product_en.json" tone="blue" />
     <StatCard label="已上架" value={stats.listed} hint="至少有一个 Marketplace 商品" tone="green" />
     <StatCard label="未上架" value={stats.unlisted} hint="目录中但暂无商品" tone="amber" />
-    <StatCard label="目录外商品" value={stats.outside} hint="offer.json 中存在但无 Trademark" tone="slate" />
+    <StatCard label="目录外商品" value={stats.outside} hint="offer-codes 中存在但无 Trademark" tone="slate" />
   </section>
 
   <section class="insight-grid">
@@ -86,17 +87,24 @@ const generatedLabel = new Intl.DateTimeFormat("zh-CN", {
         </div>
       </div>
       <div class="source-list">
-        <a class="source-item" href={OFFER_URL} target="_blank" rel="noreferrer">
-          <span class="source-name">offer.json</span>
-          <span class="source-desc">商品编码与云平台映射</span>
-        </a>
+        {OFFER_SOURCE_IS_URL ? (
+          <a class="source-item" href={OFFER_SOURCE} target="_blank" rel="noreferrer">
+            <span class="source-name">offer.json</span>
+            <span class="source-desc">商品编码与云平台映射</span>
+          </a>
+        ) : (
+          <div class="source-item">
+            <span class="source-name">data/offer-codes/</span>
+            <span class="source-desc">商品编码与云平台映射（仓库内）</span>
+          </div>
+        )}
         <a class="source-item" href={CATALOG_URL} target="_blank" rel="noreferrer">
           <span class="source-name">product_en.json</span>
           <span class="source-desc">应用目录与 Trademark</span>
         </a>
       </div>
       <p class="source-note">
-        由于数据源未开放 CORS，页面采用 Astro 构建时抓取并生成静态 HTML。
+        商品编码在构建时从仓库内 `data/offer-codes/` 读取；应用目录从 product_en.json 抓取。
       </p>
     </article>
   </section>

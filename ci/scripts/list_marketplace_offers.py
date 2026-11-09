@@ -24,10 +24,11 @@ from typing import Any, Protocol
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from cli.marketplace import (
-    OFFER_URL,
+    OFFER_SOURCE,
     PLATFORM_URL_TEMPLATES,
     VERSIONS_URL,
     load_json,
+    read_offers,
 )
 from cli.versioning import extract_marketplace_version
 
@@ -187,7 +188,7 @@ def build_target_versions(
 
 def load_target_versions() -> dict[str, str]:
     try:
-        return build_target_versions(load_json(OFFER_URL), load_json(VERSIONS_URL))
+        return build_target_versions(read_offers(OFFER_SOURCE), load_json(VERSIONS_URL))
     except Exception as error:
         print(
             f"::warning::Could not load target versions from {VERSIONS_URL} ({type(error).__name__}).",

@@ -18,7 +18,7 @@ from .aws_marketplace import (
     change_status,
     current_content,
 )
-from .marketplace import CATALOG_URL, MULTI_VERSION_APPS, OFFER_URL, REPO_ROOT, load_json, offer_codes_by_app
+from .marketplace import CATALOG_URL, MULTI_VERSION_APPS, OFFER_SOURCE, REPO_ROOT, load_json, offer_codes_by_app
 
 ROOT = REPO_ROOT
 DATA = ROOT / "data" / "listing"
@@ -192,7 +192,7 @@ def offer_codes_for(
     app: str,
     cloud: str,
     offer_codes: list[str] | None = None,
-    offer_source: str = OFFER_URL,
+    offer_source: str = OFFER_SOURCE,
     timeout: float = 30,
 ) -> tuple[list[str], str]:
     """Return the offer codes for one application and cloud, with their origin."""
@@ -218,7 +218,7 @@ def preflight(
     cloud: str,
     offer_codes: list[str] | None = None,
     catalog_source: str = CATALOG_URL,
-    offer_source: str = OFFER_URL,
+    offer_source: str = OFFER_SOURCE,
     timeout: float = 30,
 ) -> dict:
     """Validate the application id and offer codes without touching any cloud API."""
@@ -449,13 +449,21 @@ def multi_plan(bundle: dict, entities: list[dict]) -> dict:
     EntityId and base revision, so plans cannot be replayed across entities.
     """
     targets = []
+    seen_entities: set[str] = set()
     for entry in entities:
-        target_bundle = {**bundle, "entityId": entry["entityId"]}
+        entity_id = entry["entityId"]
+        if entity_id in seen_entities:
+            raise ValueError(
+                f"duplicate Catalog entity in plan targets: {entity_id}; "
+                "each entity must be submitted once"
+            )
+        seen_entities.add(entity_id)
+        target_bundle = {**bundle, "entityId": entity_id}
         target_plan = plan(target_bundle, entry["entity"])
         targets.append(
             {
                 "code": entry.get("code"),
-                "entityId": entry["entityId"],
+                "entityId": entity_id,
                 "plan": target_plan,
             }
         )

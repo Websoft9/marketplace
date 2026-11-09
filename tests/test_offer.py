@@ -11,6 +11,7 @@ from click.testing import CliRunner
 
 from cli import aws_marketplace, catalog_data, offer
 from cli.cli import cli
+from cli.commands import offer as offer_commands
 
 
 class OfferTests(unittest.TestCase):
@@ -512,6 +513,18 @@ class OfferTests(unittest.TestCase):
         entity["Details"] = json.dumps(detail)
         self.assertIsNone(offer.plan(value, entity)["request"])
 
+    def test_resolve_entities_uses_a_known_map_without_listing(self):
+        client = mock.Mock()
+        client.describe_entity.return_value = {
+            "DetailsDocument": {"Description": {"Sku": "code-a", "ProductCode": "pc-a"}}
+        }
+        with mock.patch.object(offer, "aws_client", return_value=client):
+            matches = offer_commands._resolve_aws_entities(
+                ["code-a"], None, known={"code-a": "prod-a"}
+            )
+        self.assertEqual(matches["code-a"][0]["entityId"], "prod-a")
+        client.list_entities.assert_not_called()
+
     def test_resolve_entity_paginates_and_matches_offer_code(self):
         client = mock.Mock()
         client.list_entities.side_effect = [
@@ -732,6 +745,33 @@ class PreflightAndMultiTargetTests(unittest.TestCase):
         self.assertEqual(catalog["items"][0]["targets"], document["targets"])
         self.assertEqual(catalog["items"][0]["entityId"], "prod-a")
 
+    def test_targets_collapses_codes_that_share_one_entity(self):
+        matches = {"code-a": [{"entityId": "prod-x"}], "code-b": [{"entityId": "prod-x"}]}
+        with mock.patch("cli.commands.offer._resolve_aws_entities", return_value=matches):
+            result = self.runner.invoke(cli, self.targets_args())
+        self.assertEqual(result.exit_code, 0, result.output)
+        document = json.loads(result.output)
+        self.assertEqual(document["targets"], [{"code": "code-a", "entityId": "prod-x"}])
+        self.assertEqual(document["duplicates"], {"prod-x": ["code-a", "code-b"]})
+        catalog = json.loads(self.catalog_path.read_text(encoding="utf-8"))
+        self.assertEqual(catalog["items"][0]["targets"], document["targets"])
+
+    def test_targets_writes_and_reuses_the_entity_map(self):
+        entity_map = self.directory / "entity-map.json"
+        matches = {"code-a": [{"entityId": "prod-a"}], "code-b": [{"entityId": "prod-b"}]}
+        with mock.patch("cli.commands.offer._resolve_aws_entities", return_value=matches) as resolve:
+            first = self.runner.invoke(
+                cli, self.targets_args() + ["--entity-map", str(entity_map)]
+            )
+            self.assertEqual(first.exit_code, 0, first.output)
+            cached = json.loads(entity_map.read_text(encoding="utf-8"))
+            self.assertEqual(cached, {"code-a": "prod-a", "code-b": "prod-b"})
+            second = self.runner.invoke(
+                cli, self.targets_args() + ["--entity-map", str(entity_map)]
+            )
+        self.assertEqual(second.exit_code, 0, second.output)
+        self.assertEqual(resolve.call_args.kwargs["known"], cached)
+
     def test_targets_rejects_codes_that_do_not_belong_to_the_application(self):
         with mock.patch("cli.commands.offer._resolve_aws_entities") as resolve:
             result = self.runner.invoke(cli, self.targets_args() + ["--offer-codes", "other-code"])
@@ -764,6 +804,15 @@ class PreflightAndMultiTargetTests(unittest.TestCase):
             self.assertEqual(change["Entity"]["Identifier"], f"{target['entityId']}@1")
             self.assertIn("planHash", target["plan"])
         self.assertIn("planHash", planned)
+
+    def test_multi_plan_rejects_duplicate_entities(self):
+        value = self.render()
+        entity = self.entity(value, "prod-x", "Old title")
+        with self.assertRaisesRegex(ValueError, "duplicate Catalog entity"):
+            offer.multi_plan(value, [
+                {"code": "code-a", "entityId": "prod-x", "entity": entity},
+                {"code": "code-b", "entityId": "prod-x", "entity": entity},
+            ])
 
     def test_plan_requires_explicit_selection_for_multiple_targets(self):
         result = self.runner.invoke(cli, self.args("plan"))

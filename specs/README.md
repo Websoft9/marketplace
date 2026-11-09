@@ -12,7 +12,7 @@
 - Business commands use the `mk` CLI in `cli/`, separate from development `make` targets; `make cli` creates `.venv`, installs the CLI, and enters the `mk` command shell.
 - To list marketplace product versions from cloud APIs, see [`marketplace-versions.md`](marketplace-versions.md). The initial implementation supports Aliyun China.
 - Marketplace title/summary version extraction rules are in [`marketplace-version-extraction.md`](marketplace-version-extraction.md).
-- Marketplace offer source, platform URL templates, Websoft9 store homepages, and code routing live in `config/marketplace.json`; application catalog and version sources, plus per-app settings such as `multi_version_apps`, live in `config/app.json`. Both `mk` and the Astro site read these files.
+- Marketplace platform URL templates, Websoft9 store homepages, and code routing live in `config/marketplace.json`, and the local `data/offer-codes/` folder is the source of truth for product offer codes; application catalog and version sources, plus per-app settings such as `multi_version_apps`, live in `config/app.json`. Both `mk` and the Astro site read these files.
 - The static Marketplace dashboard lives in `site/` (Astro): `/` is the overview, `/apps` is the application list, and `/apps/<key>` is the application detail page; pages read the marketplace data sources at build time.
 - Application detail pages read use cases and keywords directly from `product_en.json`; they no longer depend on `data/app-metadata.json`.
 - To query Aliyun products and check application image versions, use [`aliyun-product-freshness`](../skills/aliyun-product-freshness/SKILL.md).

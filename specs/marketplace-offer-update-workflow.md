@@ -41,15 +41,20 @@ environment before running `mk offer apply`.
 
 Validation runs before any Contentful or AWS call:
 
-- `Validate inputs` rejects an uppercase application id with the corrected value
-  and rejects unknown clouds.
+- `Validate inputs` fast-fails on characters that cannot appear in an
+  application id and rejects unknown clouds. Case and existence are reported by
+  `mk offer preflight`, so the correction message lives in one place.
 - `mk offer preflight` checks the application id against `product_en.json`,
   suggests close or lowercase matches, and verifies that every requested offer
-  code belongs to that application. A code belonging to another application now
-  fails here instead of updating the wrong product.
+  code belongs to that application. Offer codes come from the repository folder
+  `data/offer-codes/`, not a remote `offer.json`. A code belonging to another
+  application fails here instead of updating the wrong product.
 - `mk offer targets` resolves each offer code to a Catalog EntityId and records
   `targets` in the temporary catalog, so later steps do not repeat catalog
-  lookups.
+  lookups. Codes that resolve to one entity collapse into a single target, and
+  the code-to-EntityId map is cached under `/tmp/opencode/` with `actions/cache`;
+  cached codes are re-verified by `DescribeEntity` instead of scanning every
+  product, and the cache is not uploaded with the plan artifact.
 
 Required repository configuration:
 
@@ -82,6 +87,25 @@ has completed. A partial submission reports `PARTIAL`, lists the submitted and
 failed targets, and exits non-zero; re-running the workflow plans the remaining
 targets, while already-updated targets plan to `NO_CHANGES`. The summary records
 each ChangeSetId and plan hash; final status must be checked separately.
+
+### Retrying a partial apply
+
+AWS Marketplace has no transaction across entities, so a multi-target apply can
+submit some targets and then fail. Do not retry the old plan and do not edit it:
+
+1. Check each submitted ChangeSet with
+   `mk offer status <change-set-id> --wait-seconds 600`. A ChangeSet that failed
+   leaves its entity at the previous revision.
+2. Re-run the workflow with the same application. The new plan describes every
+   target again; targets whose content already matches produce `NO_CHANGES` and
+   are not submitted.
+3. Review the new artifact. Targets that were already updated show an empty
+   diff, so only the remaining targets appear under "Pending updates".
+4. Approve the apply job once for all remaining targets.
+
+The apply output includes `resumeHint` when a run ends `PARTIAL`, and the job
+summary lists the offer codes that were skipped. Because the plan hash binds the
+entity revision, replaying a stale artifact cannot silently overwrite a target.
 
 ## Security boundary
 

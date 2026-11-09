@@ -74,7 +74,7 @@ includes drafts; linked fields may remain as link objects in that mode.
 | `--id-field` | `key` | Contentful field containing the app id (`wordpress`) |
 | `--fields` | `trademark,overview,keywords,usecases,relatedApps,summary,hasenterprise` | Requested field ids |
 | `--catalog` | configured `product_en.json` URL | Target application list (URL or local file) |
-| `--offer` | configured `offer.json` URL | Marketplace offer source used to add per-platform `offerCodes` |
+| `--offer` | configured `data/offer-codes/` | Offer-codes directory or JSON file used to add per-platform `offerCodes` |
 | `--apps` | all catalog applications | Comma-separated application ids to export; must exist in the target catalog |
 | `--output` | `data/.catalog/catalog.json` | JSON destination; `-` means stdout; `MK_CATALOG_DIR` overrides the directory |
 | `--merge` | off | Merge pulled items into an existing output file, preserving other items and their order |
@@ -125,7 +125,7 @@ pulled order:
   ],
   "source": {
     "catalog": "https://artifact.websoft9.com/appstore/release/catalog/product_en.json",
-    "offer": "https://artifact.websoft9.com/cloud_data/offer.json",
+    "offer": "data/offer-codes",
     "contentful": {
       "api": "https://cdn.contentful.com",
       "spaceId": "...",
@@ -147,9 +147,10 @@ so `--fields` typos fail loudly.
 By default a target application absent from Contentful still fails the export;
 `--allow-missing` writes the available records and adds a `missing` array.
 
-`offerCodes` maps the configured offer source's `productID` values by platform.
-It is copied from `offer.json` when the app id or one of its `applications`
-matches; apps without an offer entry receive `{}`. Array values such as
+`offerCodes` maps the local offer-codes source's `productID` values by platform.
+It is copied from the JSON files under `data/offer-codes/` (merged by application
+id, in filename order) when the app id or one of its `applications` matches; apps
+without an offer entry receive `{}`. No remote `offer.json` is fetched. Array values such as
 `keywords` and `usecases` are rendered on one line
 (`["open source", "website"]`), while records and objects remain indented.
 Linked entries/assets and RichText documents are converted to readable values;

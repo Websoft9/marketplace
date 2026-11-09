@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 const PLATFORM_KEYS = [
@@ -183,8 +183,83 @@ const ENV = (
   globalThis as { process?: { env?: Record<string, string | undefined> } }
 ).process?.env;
 
-export const OFFER_URL = ENV?.MK_OFFER_URL ?? CONFIG.sources.offer;
+export const OFFER_SOURCE =
+  ENV?.MK_OFFER_SOURCE ?? ENV?.MK_OFFER_URL ?? CONFIG.sources.offer;
+export const OFFER_SOURCE_IS_URL = /^https?:\/\//.test(OFFER_SOURCE);
 export const CATALOG_URL = ENV?.MK_CATALOG_URL ?? APP_CONFIG.sources.catalog;
+const REPO_ROOT = dirname(dirname(CONFIG_PATH));
+
+function mergeOffers(entries: Offer[]): Offer[] {
+  const merged: Offer[] = [];
+  const byApp = new Map<string, Offer>();
+  for (const entry of entries) {
+    const app = entry.type === "app" && typeof entry.id === "string" ? entry.id.trim() : "";
+    if (!app) {
+      merged.push(entry);
+      continue;
+    }
+    const existing = byApp.get(app);
+    if (!existing) {
+      const copy: Offer = {
+        ...entry,
+        applications: [...(entry.applications ?? [])],
+        productID: Object.fromEntries(
+          Object.entries(entry.productID ?? {}).map(([platform, codes]) => [
+            platform,
+            [...(codes ?? [])],
+          ]),
+        ),
+      };
+      merged.push(copy);
+      byApp.set(app, copy);
+      continue;
+    }
+    for (const alias of entry.applications ?? []) {
+      if (!(existing.applications ?? []).includes(alias)) {
+        existing.applications = [...(existing.applications ?? []), alias];
+      }
+    }
+    existing.productID ??= {};
+    for (const [platform, codes] of Object.entries(entry.productID ?? {})) {
+      const values = existing.productID[platform] ?? [];
+      for (const code of codes ?? []) {
+        if (!values.includes(code)) values.push(code);
+      }
+      existing.productID[platform] = values;
+    }
+  }
+  return merged;
+}
+
+async function loadOffers(): Promise<Offer[]> {
+  if (OFFER_SOURCE_IS_URL) {
+    const entries = await fetchJson<Offer[]>(OFFER_SOURCE);
+    if (!Array.isArray(entries)) throw new Error("The offer source must return a JSON array");
+    return mergeOffers(entries);
+  }
+  const resolved = OFFER_SOURCE.startsWith("/") ? OFFER_SOURCE : join(REPO_ROOT, OFFER_SOURCE);
+  if (!existsSync(resolved)) {
+    throw new Error(`Unable to locate offer codes source: ${resolved}`);
+  }
+  const files = statSync(resolved).isDirectory()
+    ? readdirSync(resolved)
+        .filter((name) => name.endsWith(".json"))
+        .sort()
+        .map((name) => join(resolved, name))
+    : [resolved];
+  if (!files.length) {
+    throw new Error(`Offer codes directory has no JSON files: ${resolved}`);
+  }
+  const entries = files.flatMap((file) => {
+    const value = JSON.parse(readFileSync(file, "utf8")) as Offer[] | { items?: Offer[] };
+    const items = Array.isArray(value) ? value : value.items;
+    if (!Array.isArray(items)) {
+      throw new Error(`Offer codes file must contain a JSON array: ${file}`);
+    }
+    return items;
+  });
+  return mergeOffers(entries);
+}
 
 const PRODUCT_PLATFORMS = CONFIG.platforms.filter(isProductPlatform);
 const OVERVIEW_PLATFORMS = CONFIG.platforms.filter(
@@ -352,7 +427,7 @@ export async function loadMarketplaceData(): Promise<{
   catalog: CatalogProduct[];
 }> {
   const [offers, catalog] = await Promise.all([
-    fetchJson<Offer[]>(OFFER_URL),
+    loadOffers(),
     loadCatalogProducts(),
   ]);
   if (!Array.isArray(offers) || !Array.isArray(catalog)) {

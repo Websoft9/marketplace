@@ -1,7 +1,7 @@
 {
   "version": 1,
   "sources": {
-    "offer": "https://artifact.websoft9.com/cloud_data/offer.json"
+    "offer": "data/offer-codes"
   },
   "platforms": [
     {

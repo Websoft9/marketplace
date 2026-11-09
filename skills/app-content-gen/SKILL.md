@@ -135,8 +135,9 @@ For generation, use this table, one row per selected application:
 | --- | --- | --- |
 
 `note` carries skipped apps and reasons, unknown ids, unverified
-`hasenterprise` values and any warning worth review. Finish with: "Not pushed.
-Use the app-content-push skill to update Contentful."
+`hasenterprise` values and any warning worth review. Framework and runtime
+`false` values are policy, not unverified evidence, and need no evidence URL.
+Finish with: "Not pushed. Use the app-content-push skill to update Contentful."
 
 ## Field rules
 
@@ -167,6 +168,8 @@ Bad: `["best erp", "world-class software", "leading platform"]`
 
 - 1–10 unique phrases, at most 4 words each.
 - Concrete scenarios, no surrounding or trailing punctuation.
+- Application frameworks and language runtimes must include `AI Coding`; see
+  Frameworks and language runtimes.
 
 Good: `["Sales", "CRM", "Inventory", "Accounting"]`
 
@@ -220,6 +223,10 @@ Exception: a universal database client, BI platform or visualization tool
 exists to connect to many sources. List at most three representative data
 sources, not every supported database, and do not add a second admin client.
 
+Exception: application development frameworks and language runtimes list the
+common project data stores by design, not as competing alternatives; see
+Frameworks and language runtimes below.
+
 Exception: a data pipeline may legitimately span one ingest layer, one storage
 layer and one warehouse/streaming layer (for example a message broker, a
 PostgreSQL metadata store and ClickHouse). That is different from listing
@@ -239,11 +246,43 @@ When the app supports several databases, choose one primary store:
 - If the target is itself a database, list its admin/client, not another
   database. Do not add a second admin client either.
 
+#### Frameworks and language runtimes
+
+Application development frameworks and language runtimes are development
+platforms, not finished business apps: for example Django, Laravel, Spring Boot,
+Next.js, and PHP, Python or Node.js runtime images.
+
+- `hasenterprise`: always `false`. The framework or runtime itself is offered as
+  a single free edition. Commercial add-ons from the same vendor — hosted
+  services, support subscriptions or separately sold products — are not a
+  commercial edition of this marketplace offer. This is the only category where
+  `false` needs no editions or pricing page evidence.
+- `relatedApps`: a framework is expected to connect to several stores, so
+  describe the typical project stack instead of choosing one store, in this
+  order:
+  1. `MySQL` and `PostgreSQL`;
+  2. `MongoDB` when the catalog sells it;
+  3. `Redis` for cache and sessions;
+  4. one universal admin tool, `CloudBeaver`.
+  Add `MariaDB` only when the vendor documents it as the default. Cap the list
+  at 8, use exact catalog trademarks, and drop any name the catalog does not
+  sell.
+- `usecases`: must include `AI Coding`. Prefer a second AI-development scenario
+  so that two entries relate to AI development, for example
+  `AI Code Generation`, `AI Agent Development` or `LLM App Development`. Keep
+  the usual 1–10 items and four-words-per-item limit.
+- Do not list another framework or runtime, the target itself, or generic
+  runtime as a relationship.
+- This subsection overrides "pick one data store" and the one-app-per-layer rule
+  for relational data stores. The validator warning about multiple relational
+  stores is expected for this category and is not a defect.
+
 #### Role templates
 
 | Role | Cover at least |
 | --- | --- |
 | Enterprise / business app | primary DB + its admin; cache/queue only if required |
+| Framework / language runtime | data stores (MySQL, PostgreSQL, MongoDB) + Redis + universal admin; `usecases` include `AI Coding` |
 | Website / CMS | DB + DB admin + cache/load + access analytics |
 | DevOps / SCM / CI | SCM + CI + quality + registry + testing, as applicable; DB/cache only as required infrastructure |
 | AI / LLM platform | model runtime + vector store + UI/workspace + automation; one per layer |
@@ -338,6 +377,8 @@ Bad: `The best ERP for every business`
   single edition, or an explicit vendor statement that no commercial edition is
   offered. Do not infer it from the app name, popularity, open-source status or
   the current value.
+- Exception: application frameworks and language runtimes are always `false`
+  without pricing-page evidence; see Frameworks and language runtimes above.
 - Keep an existing `false` unless new evidence contradicts it.
 - When evidence is insufficient, keep `true` and report it as `unverified true`.
 - Record the evidence URL in the report, never in the catalog. Do not ask for

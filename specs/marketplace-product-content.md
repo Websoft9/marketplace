@@ -210,17 +210,22 @@ master data, command arguments, generated plans or repository configuration.
 ```sh
 pip install '.[aws]'
 mk offer preflight --app odoo --cloud aws [--offer-codes <code>[,<code>...]]
-mk offer targets --app odoo --cloud aws [--offer-codes <code>[,<code>...]]
+mk offer targets --app odoo --cloud aws [--offer-codes <code>[,<code>...]] [--entity-map <path>]
 mk offer plan --app odoo --all-codes --profile marketplace-seller
 ```
 
-`preflight` validates the application id against `product_en.json` (reporting
-lowercase and close-match suggestions) and every requested offer code against
-the application's recorded codes, without calling Contentful or AWS. `targets`
-resolves each code to a seller-owned AMI Catalog EntityId with pagination and
-records `targets` in the temporary catalog item; a public SKU, product code or
-`prodview-` ID is not a substitute. `plan --all-codes` writes one plan per
-recorded target, each bound to its own EntityId and base revision. The
+`preflight` validates the application id against `product_en.json`
+(`--product-catalog`, also accepted as `--catalog-source`) and every requested
+offer code against `data/offer-codes/` (`--offer`, also accepted as
+`--offer-source`), without calling Contentful or AWS. It reports lowercase and
+close-match suggestions. `targets` resolves each code to a seller-owned AMI
+Catalog EntityId with pagination and records `targets` in the temporary catalog
+item; a public SKU, product code or `prodview-` ID is not a substitute. Codes
+that resolve to the same EntityId are collapsed into one target and reported
+under `duplicates`, so one entity is submitted once. `--entity-map` caches
+code-to-EntityId pairs: known codes are re-verified with one `DescribeEntity`
+call instead of scanning the whole product catalog. `plan --all-codes` writes one
+plan per recorded target, each bound to its own EntityId and base revision. The
 integration uses `us-east-1` for the Catalog client.
 
 Save the **reviewed plan output** in an access-controlled location outside Git

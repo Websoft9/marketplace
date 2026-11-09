@@ -8,7 +8,7 @@ import click
 
 from .. import catalog_verify, contentful, contentful_management
 from .. import marketplace
-from ..marketplace import CATALOG_URL, OFFER_URL, catalog_default_path
+from ..marketplace import CATALOG_URL, OFFER_SOURCE, catalog_default_path
 
 
 def _parse_app_ids(value: str | None) -> tuple[str, ...] | None:
@@ -79,8 +79,8 @@ def catalog_command() -> None:
               help="Comma-separated Contentful field ids to include.")
 @click.option("--catalog", "catalog_source", default=CATALOG_URL, show_default=True, metavar="SOURCE",
               help="product_en.json URL or local path; only these application ids are returned.")
-@click.option("--offer", "offer_source", default=OFFER_URL, show_default=True, metavar="SOURCE",
-              help="offer.json URL or local path used to add marketplace offer codes.")
+@click.option("--offer", "offer_source", default=OFFER_SOURCE, show_default=True, metavar="SOURCE",
+              help="Offer-codes directory or JSON file used to add marketplace offer codes.")
 @click.option("--apps", "app_list", metavar="IDS",
               help="Comma-separated application ids to export, for example wordpress,odoo. Default: all catalog applications.")
 @click.option("--api-url", envvar="CONTENTFUL_API_URL", default=contentful.DEFAULT_API_URL, show_default=True,

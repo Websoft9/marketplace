@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 import unittest
@@ -14,7 +15,8 @@ from cli import marketplace as app_list  # noqa: E402
 class ConfigTests(unittest.TestCase):
     def test_marketplace_config_is_complete(self) -> None:
         config = app_list.CONFIG
-        self.assertTrue(config["sources"]["offer"].startswith("https://"))
+        self.assertEqual(config["sources"]["offer"], "data/offer-codes")
+        self.assertTrue((ROOT / config["sources"]["offer"]).is_dir())
         self.assertNotIn("catalog", config["sources"])
         self.assertNotIn("versions", config["sources"])
 
@@ -198,3 +200,46 @@ class RenderTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OfferSourceTests(unittest.TestCase):
+    def test_read_offers_merges_every_json_file_in_a_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "a.json").write_text(
+                json.dumps([{"type": "app", "id": "odoo", "productID": {"aws": ["code-a"]}}]),
+                encoding="utf-8",
+            )
+            (root / "b.json").write_text(
+                json.dumps([{
+                    "type": "app",
+                    "id": "odoo",
+                    "applications": ["odoo"],
+                    "productID": {"aws": ["code-a", "code-b"], "azure": ["az-1"]},
+                }]),
+                encoding="utf-8",
+            )
+            offers = app_list.read_offers(str(root))
+        self.assertEqual(len(offers), 1)
+        self.assertEqual(offers[0]["productID"]["aws"], ["code-a", "code-b"])
+        self.assertEqual(offers[0]["productID"]["azure"], ["az-1"])
+        self.assertEqual(offers[0]["applications"], ["odoo"])
+
+    def test_offer_codes_by_app_reads_a_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "offer.json").write_text(
+                json.dumps([{
+                    "type": "app",
+                    "id": "wordpress",
+                    "productID": {"aws": ["w-1", "w-2"]},
+                }]),
+                encoding="utf-8",
+            )
+            codes = app_list.offer_codes_by_app(str(root))
+        self.assertEqual(codes["wordpress"]["aws"], ["w-1", "w-2"])
+
+    def test_read_offers_rejects_an_empty_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, "no JSON files"):
+                app_list.read_offers(directory)

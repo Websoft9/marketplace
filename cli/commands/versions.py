@@ -7,7 +7,7 @@ import urllib.error
 import click
 
 from ..aliyun_market import fetch_aliyun_product
-from ..marketplace import OFFER_URL, load_json
+from ..marketplace import OFFER_SOURCE, read_offers
 from ..versioning import extract_version
 
 
@@ -17,7 +17,8 @@ from ..versioning import extract_version
     required=True,
     help="Marketplace platform key from config/marketplace.json (currently: aliyun)",
 )
-@click.option("--offer", default=OFFER_URL, metavar="SOURCE", help="offer.json URL or local path")
+@click.option("--offer", default=str(OFFER_SOURCE), metavar="SOURCE",
+              help="Offer-codes directory or JSON file")
 @click.option("--timeout", type=float, default=30, show_default=True, help="HTTP timeout in seconds")
 @click.option("--format", "output_format", type=click.Choice(["table", "csv"]), default="table")
 def versions_command(platform: str, offer: str, timeout: float, output_format: str) -> None:
@@ -29,7 +30,7 @@ def versions_command(platform: str, offer: str, timeout: float, output_format: s
         )
 
     try:
-        offers = load_json(offer, timeout)
+        offers = read_offers(offer, timeout)
     except (OSError, ValueError, urllib.error.URLError) as error:
         raise click.ClickException(f"failed to load offer data: {error}") from error
 

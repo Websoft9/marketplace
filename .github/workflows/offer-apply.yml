@@ -50,13 +50,10 @@ jobs:
     steps:
       - name: Validate inputs
         run: |
-          lowered="$(printf '%s' "$APP" | tr '[:upper:]' '[:lower:]')"
-          if [[ "$APP" != "$lowered" ]]; then
-            echo "::error::app must be lowercase; use '$lowered' instead of '$APP'"
-            exit 1
-          fi
-          if [[ ! "$APP" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
-            echo "::error::app must be a lowercase application id, for example odoo"
+          # Fast-fail on characters that can never be an application id.
+          # Case and existence are reported by `mk offer preflight` with suggestions.
+          if [[ ! "$APP" =~ ^[A-Za-z0-9][A-Za-z0-9-]*$ ]]; then
+            echo "::error::app must be an application id such as odoo (letters, digits, hyphen)"
             exit 1
           fi
           if [[ "$CLOUD" != "aws" ]]; then
@@ -171,6 +168,14 @@ jobs:
           aws-region: us-east-1
           role-session-name: MarketplaceOfferPlan-${{ github.run_id }}
 
+      - name: Restore offer code EntityId cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/opencode/offer-entity-map.json
+          key: offer-entity-map-${{ inputs.cloud }}-${{ github.run_id }}
+          restore-keys: |
+            offer-entity-map-${{ inputs.cloud }}-
+
       - name: Resolve Catalog EntityIds
         run: |
           args=()
@@ -181,6 +186,7 @@ jobs:
             --app "$APP" \
             --cloud "$CLOUD" \
             --catalog /tmp/opencode/offer-run/catalog.json \
+            --entity-map /tmp/opencode/offer-entity-map.json \
             "${args[@]}" \
             --output /tmp/opencode/offer-run/targets.json
 
@@ -396,8 +402,9 @@ jobs:
               print(f"Skipped offer codes: {', '.join(str(code) for code in result['skipped'])}")
               print()
           if result.get("status") == "PARTIAL":
-              print("At least one target was not submitted. Re-run the workflow to plan the remaining targets; "
-                    "already-updated targets plan to NO_CHANGES.")
+              print("At least one target was not submitted. Check each submitted ChangeSet with "
+                    "`mk offer status <change-set-id> --wait-seconds 600`, then re-run the workflow; "
+                    "already-updated targets plan to NO_CHANGES and are skipped.")
               print()
           print("Workflow success confirms AWS accepted every ChangeSet. It does not await review, approval, or publication.")
           PY

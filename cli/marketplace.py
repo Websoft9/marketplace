@@ -47,7 +47,11 @@ MULTI_VERSION_APPS = frozenset(str(item) for item in APP_CONFIG.get("multi_versi
 
 SOURCES = CONFIG["sources"]
 APP_SOURCES = APP_CONFIG["sources"]
-OFFER_URL = os.environ.get("MK_OFFER_URL", SOURCES["offer"])
+OFFER_SOURCE = (
+    os.environ.get("MK_OFFER_SOURCE")
+    or os.environ.get("MK_OFFER_URL")
+    or SOURCES["offer"]
+)
 CATALOG_URL = os.environ.get("MK_CATALOG_URL", APP_SOURCES["catalog"])
 VERSIONS_URL = os.environ.get("MK_VERSIONS_URL", APP_SOURCES["versions"])
 
@@ -98,12 +102,81 @@ def load_json(source: str, timeout: float = 30) -> Any:
         return json.load(file)
 
 
+def resolve_source(source: str) -> str | Path:
+    """Resolve a repository-relative offer source without hiding local overrides."""
+    if re.match(r"^https?://", source):
+        return source
+    path = Path(source)
+    if path.is_absolute():
+        return path
+    candidate = REPO_ROOT / path
+    if candidate.exists():
+        return candidate
+    return path
+
+
+def _offer_entries(data: Any, where: str) -> list[dict]:
+    entries = data.get("items") if isinstance(data, dict) else data
+    if not isinstance(entries, list):
+        raise ValueError(f"offer source {where} must be a JSON array or an object with items")
+    return entries
+
+
+def merge_offers(entries: list[dict]) -> list[dict]:
+    """Merge offer entries by application id so several files can coexist."""
+    merged: list[dict] = []
+    by_app: dict[str, dict] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        app = entry.get("id")
+        app = app.strip() if isinstance(app, str) and entry.get("type") == "app" else ""
+        if not app:
+            merged.append(entry)
+            continue
+        target = by_app.get(app)
+        if target is None:
+            target = dict(entry)
+            target["productID"] = {
+                platform: list(codes) if isinstance(codes, list) else []
+                for platform, codes in (entry.get("productID") or {}).items()
+            }
+            target["applications"] = list(entry.get("applications") or [])
+            merged.append(target)
+            by_app[app] = target
+            continue
+        for alias in entry.get("applications") or []:
+            if alias not in target["applications"]:
+                target["applications"].append(alias)
+        for platform, codes in (entry.get("productID") or {}).items():
+            values = target["productID"].setdefault(platform, [])
+            for code in codes if isinstance(codes, list) else []:
+                if code not in values:
+                    values.append(code)
+    return merged
+
+
+def read_offers(source: str, timeout: float = 30) -> list[dict]:
+    """Read offer codes from the local offer-codes directory, a JSON file or a URL.
+
+    A directory is read in sorted filename order and merged by application id, so
+    the repository folder is the single source of truth for offer codes.
+    """
+    resolved = resolve_source(source)
+    if isinstance(resolved, Path) and resolved.is_dir():
+        files = sorted(resolved.glob("*.json"))
+        if not files:
+            raise ValueError(f"offer codes directory has no JSON files: {resolved}")
+        entries: list[dict] = []
+        for file in files:
+            entries.extend(_offer_entries(json.loads(file.read_text(encoding="utf-8")), str(file)))
+        return merge_offers(entries)
+    return merge_offers(_offer_entries(load_json(str(resolved), timeout), str(resolved)))
+
+
 def offer_codes_by_app(source: str, timeout: float = 30) -> dict[str, dict[str, list[str]]]:
     """Map application ids to marketplace offer codes by platform."""
-    data = load_json(source, timeout)
-    offers = data if isinstance(data, list) else data.get("items")
-    if not isinstance(offers, list):
-        raise ValueError("offer source must be a JSON array or an object with items")
+    offers = read_offers(source, timeout)
     result: dict[str, dict[str, list[str]]] = {}
     for offer in offers:
         if not isinstance(offer, dict) or offer.get("type") != "app":
@@ -235,7 +308,7 @@ def render_markdown(rows: list[AppRow]) -> str:
         "## Marketplace 应用对应表",
         "",
         "下表列出 `product_en.json` 中的应用及其在各 Marketplace 的商品链接。"
-        f"数据源：[offer.json]({OFFER_URL})、[product_en.json]({CATALOG_URL})；"
+        f"数据源：`data/offer-codes/`、[product_en.json]({CATALOG_URL})；"
         "运行 `mk list --update-readme README.md` 重新生成。",
         "",
         f"已上架应用：{len(listed_catalog)} 个；未上架应用：{len(unlisted)} 个。",

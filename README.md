@@ -34,7 +34,7 @@ A Websoft9 automated operations project for mainstream cloud marketplaces. It ma
 <!-- marketplace-apps:start -->
 ## Marketplace 应用对应表
 
-下表列出 `product_en.json` 中的应用及其在各 Marketplace 的商品链接。数据源：[offer.json](https://artifact.websoft9.com/cloud_data/offer.json)、[product_en.json](https://artifact.websoft9.com/appstore/release/catalog/product_en.json)；运行 `mk list --update-readme README.md` 重新生成。
+下表列出 `product_en.json` 中的应用及其在各 Marketplace 的商品链接。数据源：`data/offer-codes/`、[product_en.json](https://artifact.websoft9.com/appstore/release/catalog/product_en.json)；运行 `mk list --update-readme README.md` 重新生成。
 
 已上架应用：97 个；未上架应用：41 个。
 
@@ -184,7 +184,7 @@ A Websoft9 automated operations project for mainstream cloud marketplaces. It ma
 
 ### Marketplace 商品目录之外的应用
 
-以下应用在 `offer.json` 中存在商品，但 `product_en.json` 中没有对应的 Trademark。
+以下应用在 `data/offer-codes/` 中存在商品，但 `product_en.json` 中没有对应的 Trademark。
 
 | 应用 | Azure | Azure (by VMLab) | AWS | 阿里云 | Alibaba Cloud | 华为云 | Huawei Cloud |
 | --- | --- | --- | --- | --- | --- | --- | --- |

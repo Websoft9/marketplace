@@ -9,7 +9,7 @@ import click
 
 from .. import catalog_data
 from .. import offer as service
-from ..marketplace import CATALOG_URL, CONFIGURED_PLATFORMS, OFFER_URL, VERSIONS_URL, catalog_default_path
+from ..marketplace import CATALOG_URL, CONFIGURED_PLATFORMS, OFFER_SOURCE, VERSIONS_URL, catalog_default_path
 
 
 @click.group("offer")
@@ -143,10 +143,11 @@ def _selected_targets(value, all_codes, offer_codes):
               help="Target cloud platform from config/marketplace.json.")
 @click.option("--offer-codes", "offer_codes", default=None, metavar="CODES",
               help="Comma-separated offer codes; default: every code recorded for the application.")
-@click.option("--catalog-source", "catalog_source", default=CATALOG_URL, show_default=True, metavar="SOURCE",
-              help="Application catalog (product_en.json) URL or local path.")
-@click.option("--offer-source", "offer_source", default=OFFER_URL, show_default=True, metavar="SOURCE",
-              help="Marketplace offer source (offer.json) URL or local path.")
+@click.option("--product-catalog", "--catalog-source", "catalog_source", default=CATALOG_URL,
+              show_default=True, metavar="SOURCE",
+              help="product_en.json URL or local path; the source of valid application ids.")
+@click.option("--offer", "--offer-source", "offer_source", default=OFFER_SOURCE, show_default=True, metavar="SOURCE",
+              help="Offer-codes directory or JSON file used to validate codes.")
 @click.option("--timeout", type=float, default=30, show_default=True)
 @click.option("--output", "output_path", type=click.Path(dir_okay=False, path_type=Path), metavar="PATH",
               help="Write the resolved target list here instead of stdout.")
@@ -170,9 +171,11 @@ def preflight_command(app, cloud, offer_codes, catalog_source, offer_source, tim
               help="Comma-separated offer codes; default: every code recorded for the application.")
 @click.option("--profile", default=None)
 @click.option("--max-results", type=click.IntRange(1, 100), default=50, show_default=True)
+@click.option("--entity-map", type=click.Path(dir_okay=False, path_type=Path), metavar="PATH",
+              help="Optional code-to-EntityId cache; known codes skip the catalog scan.")
 @click.option("--output", "output_path", type=click.Path(dir_okay=False, path_type=Path), metavar="PATH",
               help="Write the resolved targets here instead of stdout.")
-def targets_command(app, cloud, catalog_source, offer_codes, profile, max_results, output_path):
+def targets_command(app, cloud, catalog_source, offer_codes, profile, max_results, entity_map, output_path):
     """Resolve offer codes to Catalog EntityIds and record them in the catalog."""
     catalog_path = Path(catalog_source or catalog_default_path())
     try:
@@ -210,8 +213,18 @@ def targets_command(app, cloud, catalog_source, offer_codes, profile, max_result
         codes = recorded
     if not codes:
         raise click.ClickException(f"{app!r} has no {cloud} offer code in the catalog")
+    known: dict[str, str] = {}
+    if entity_map is not None and entity_map.is_file():
+        try:
+            known = json.loads(entity_map.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            known = {}
+        if not isinstance(known, dict):
+            known = {}
     try:
-        matches = _resolve_aws_entities(codes, profile, max_results=max_results)
+        matches = _resolve_aws_entities(
+            codes, profile, max_results=max_results, known=known
+        )
     except ValueError as error:
         raise click.ClickException(str(error)) from None
     not_found = [code for code in codes if not matches.get(code)]
@@ -230,15 +243,36 @@ def targets_command(app, cloud, catalog_source, offer_codes, profile, max_result
                 + ", ".join(f"{code} -> {', '.join(ids)}" for code, ids in ambiguous.items())
             )
         raise click.ClickException("; ".join(details))
-    targets = [{"code": code, "entityId": matches[code][0]["entityId"]} for code in codes]
+    targets: list[dict] = []
+    duplicates: dict[str, list[str]] = {}
+    by_entity: dict[str, dict] = {}
+    for code in codes:
+        entity_id = matches[code][0]["entityId"]
+        target = by_entity.get(entity_id)
+        if target is None:
+            target = {"code": code, "entityId": entity_id}
+            by_entity[entity_id] = target
+            targets.append(target)
+        else:
+            duplicates.setdefault(entity_id, [target["code"]]).append(code)
     item["targets"] = targets
     item["entityId"] = targets[0]["entityId"]
     catalog_path.write_text(
         json.dumps(catalog, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
-    write_output(
-        {"schemaVersion": 1, "app": app, "cloud": cloud, "targets": targets}, output_path
-    )
+    if entity_map is not None:
+        entity_map.parent.mkdir(parents=True, exist_ok=True)
+        merged_map = {**known, **{target["code"]: target["entityId"] for target in targets}}
+        for entity_id, aliases in duplicates.items():
+            for alias in aliases:
+                merged_map[alias] = entity_id
+        entity_map.write_text(
+            json.dumps(merged_map, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+    document = {"schemaVersion": 1, "app": app, "cloud": cloud, "targets": targets}
+    if duplicates:
+        document["duplicates"] = duplicates
+    write_output(document, output_path)
 
 
 @offer_command.command("build")
@@ -270,12 +304,50 @@ def build_command(app, catalog_source, versions, vendor, template, cloud, output
         write_output(preview, target)
 
 
-def _resolve_aws_entities(codes, profile, max_results=50):
+def _entity_match(entity_id, code, detail, summary=None):
+    """Return a match record when one code belongs to the described entity."""
+    document = detail.get("DetailsDocument")
+    if document is None:
+        try:
+            document = json.loads(detail.get("Details") or "{}")
+        except (TypeError, ValueError):
+            return None
+    description = document.get("Description") or {}
+    sku = str(description.get("Sku") or "").strip()
+    product_code = str(description.get("ProductCode") or "").strip()
+    if code not in {sku, product_code, entity_id}:
+        return None
+    summary = summary or {}
+    return {
+        "cloud": "aws",
+        "entityId": entity_id,
+        "title": summary.get("ProductTitle") or description.get("ProductTitle") or "",
+        "visibility": summary.get("Visibility") or description.get("Visibility", ""),
+        "sku": sku,
+        "productCode": product_code,
+        "code": code,
+    }
+
+
+def _resolve_aws_entities(codes, profile, max_results=50, known=None):
+    """Resolve codes with a known-map fast path and early exit over the catalog."""
     client = service.aws_client(profile)
-    wanted = set(codes)
+    wanted = list(dict.fromkeys(codes))
     matches = {code: [] for code in wanted}
+    for code in wanted:
+        entity_id = (known or {}).get(code)
+        if not entity_id:
+            continue
+        try:
+            detail = service.aws_call(client, "describe_entity", EntityId=entity_id)
+        except ValueError:
+            continue
+        match = _entity_match(entity_id, code, detail)
+        if match:
+            matches[code] = [match]
+    remaining = {code for code in wanted if not matches[code]}
     token = None
-    while True:
+    while remaining:
         request = {"EntityType": "AmiProduct", "MaxResults": max_results}
         if token:
             request["NextToken"] = token
@@ -285,29 +357,15 @@ def _resolve_aws_entities(codes, profile, max_results=50):
             if not entity_id:
                 continue
             detail = service.aws_call(client, "describe_entity", EntityId=entity_id)
-            document = detail.get("DetailsDocument")
-            if document is None:
-                try:
-                    document = json.loads(detail.get("Details") or "{}")
-                except (TypeError, ValueError):
-                    continue
-            description = document.get("Description") or {}
-            sku = str(description.get("Sku") or "").strip()
-            product_code = str(description.get("ProductCode") or "").strip()
-            matched_codes = wanted & {sku, product_code, entity_id}
-            if not matched_codes:
-                continue
-            summary = item.get("AmiProductSummary") or {}
-            result = {
-                "cloud": "aws",
-                "entityId": entity_id,
-                "title": summary.get("ProductTitle") or description.get("ProductTitle") or item.get("Name", ""),
-                "visibility": summary.get("Visibility") or description.get("Visibility", ""),
-                "sku": sku,
-                "productCode": product_code,
-            }
-            for code in matched_codes:
-                matches[code].append({**result, "code": code})
+            for code in list(remaining):
+                match = _entity_match(
+                    entity_id, code, detail, item.get("AmiProductSummary") or {}
+                )
+                if match:
+                    matches[code] = [match]
+                    remaining.discard(code)
+            if not remaining:
+                break
         token = response.get("NextToken")
         if not token:
             break
@@ -453,7 +511,7 @@ def apply_command(app, catalog_source, versions, vendor, template, plan_path, pr
                     break
             submitted = [result for result in results if result["status"] == "SUBMITTED"]
             status = "PARTIAL" if failure else ("SUBMITTED" if submitted else "NO_CHANGES")
-            output({
+            document = {
                 "schemaVersion": 1,
                 "key": value["key"],
                 "status": status,
@@ -462,7 +520,13 @@ def apply_command(app, catalog_source, versions, vendor, template, plan_path, pr
                     target.get("code")
                     for target in expected["targets"][len(results):]
                 ],
-            })
+            }
+            if failure:
+                document["resumeHint"] = (
+                    "Re-run the workflow to plan the remaining offer codes. "
+                    "Targets that were already updated plan to NO_CHANGES."
+                )
+            output(document)
             if failure:
                 raise click.exceptions.Exit(1)
             if wait_seconds:
