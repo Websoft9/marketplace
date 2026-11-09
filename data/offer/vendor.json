@@ -6,7 +6,7 @@
   "highlights": [
     "Unmodified upstream software in a hardened image with LTS-aligned support for production use",
     "Websoft9 Console for HTTPS, backup, monitoring, and upgrades with rollback; SSH optional",
-    "Support with 24-hour response SLA on business days."
+    "Support with 24-hour response SLA on business days"
   ],
   "supportSummary": "Websoft9 provides documentation, configuration guidance and troubleshooting for its Console and supported application deployments.",
   "supportContact": "help@websoft9.com",
