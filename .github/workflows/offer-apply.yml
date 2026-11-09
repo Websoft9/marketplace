@@ -22,8 +22,8 @@ on:
         type: choice
         options:
           - aws
-      offer_code:
-        description: "Optional AWS offer code/SKU. Default: resolve from the configured offer source."
+      offer_codes:
+        description: "Optional comma-separated AWS offer codes/SKUs. Default: every code recorded for the application."
         required: false
         type: string
 
@@ -44,12 +44,17 @@ jobs:
       APP: ${{ inputs.app }}
       APP_NAME: ${{ inputs.app_name || inputs.app }}
       CLOUD: ${{ inputs.cloud }}
-      OFFER_CODE: ${{ inputs.offer_code }}
+      OFFER_CODES: ${{ inputs.offer_codes }}
       CONTENTFUL_SPACE_ID: ${{ vars.CONTENTFUL_SPACE_ID || secrets.CONTENTFUL_SPACE_ID }}
       CONTENTFUL_ENVIRONMENT: ${{ vars.CONTENTFUL_ENVIRONMENT || 'master' }}
     steps:
       - name: Validate inputs
         run: |
+          lowered="$(printf '%s' "$APP" | tr '[:upper:]' '[:lower:]')"
+          if [[ "$APP" != "$lowered" ]]; then
+            echo "::error::app must be lowercase; use '$lowered' instead of '$APP'"
+            exit 1
+          fi
           if [[ ! "$APP" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
             echo "::error::app must be a lowercase application id, for example odoo"
             exit 1
@@ -69,6 +74,35 @@ jobs:
 
       - name: Install CLI
         run: python -m pip install --disable-pip-version-check '.[aws]'
+
+      - name: Preflight application and offer codes
+        run: |
+          mkdir -p /tmp/opencode/offer-run
+          args=()
+          if [[ -n "$OFFER_CODES" ]]; then
+            args+=("--offer-codes=$OFFER_CODES")
+          fi
+          mk offer preflight \
+            --app "$APP" \
+            --cloud "$CLOUD" \
+            "${args[@]}" \
+            --output /tmp/opencode/offer-run/preflight.json
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from pathlib import Path
+
+          value = json.loads(Path("/tmp/opencode/offer-run/preflight.json").read_text(encoding="utf-8"))
+          print(f"## Offer apply: `{value['app']}`")
+          print()
+          print(f"- Cloud: `{value['cloud']}`")
+          print(f"- Offer code source: {value['codeSource']}")
+          print(f"- Targets: {len(value['codes'])}")
+          print()
+          print("| # | Offer code |")
+          print("| --- | --- |")
+          for index, code in enumerate(value["codes"], start=1):
+              print(f"| {index} | `{code}` |")
+          PY
 
       - name: Diagnose Contentful configuration
         env:
@@ -137,48 +171,18 @@ jobs:
           aws-region: us-east-1
           role-session-name: MarketplaceOfferPlan-${{ github.run_id }}
 
-      - name: Resolve Catalog EntityId
+      - name: Resolve Catalog EntityIds
         run: |
-          python3 - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          app = os.environ["APP"]
-          cloud = os.environ["CLOUD"]
-          code = (os.environ.get("OFFER_CODE") or "").strip()
-          catalog_path = Path("/tmp/opencode/offer-run/catalog.json")
-          catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
-          item = next((entry for entry in catalog["items"] if entry.get("id") == app), None)
-          if item is None:
-              raise SystemExit(f"application {app!r} is absent from the pulled catalog")
-
-          if not code:
-              codes = (item.get("offerCodes") or {}).get(cloud) or []
-              codes = [str(value).strip() for value in codes if str(value).strip()]
-              if len(codes) != 1:
-                  raise SystemExit(
-                      f"expected exactly one {cloud} offer code for {app!r}, found {len(codes)}; set offer_code explicitly"
-                  )
-              code = codes[0]
-
-          Path("/tmp/opencode/offer-run/offer-code.txt").write_text(code + "\n", encoding="utf-8")
-          print(f"Resolved {cloud} offer code for {app}: {code}")
-          PY
-          mk offer resolve-entity --cloud "$CLOUD" --code "$(cat /tmp/opencode/offer-run/offer-code.txt)" > /tmp/opencode/offer-run/entity.json
-          python3 - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          catalog_path = Path("/tmp/opencode/offer-run/catalog.json")
-          catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
-          item = next(entry for entry in catalog["items"] if entry.get("id") == os.environ["APP"])
-          entity = json.loads(Path("/tmp/opencode/offer-run/entity.json").read_text(encoding="utf-8"))
-          item["entityId"] = entity["entityId"]
-          catalog_path.write_text(json.dumps(catalog, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-          print(f"Wrote Catalog EntityId for {os.environ['APP']}: {item['entityId']}")
-          PY
+          args=()
+          if [[ -n "$OFFER_CODES" ]]; then
+            args+=("--offer-codes=$OFFER_CODES")
+          fi
+          mk offer targets \
+            --app "$APP" \
+            --cloud "$CLOUD" \
+            --catalog /tmp/opencode/offer-run/catalog.json \
+            "${args[@]}" \
+            --output /tmp/opencode/offer-run/targets.json
 
       - name: Generate revision-bound plan
         run: |
@@ -186,17 +190,12 @@ jobs:
             --app "$APP" \
             --catalog /tmp/opencode/offer-run/catalog.json \
             --versions /tmp/opencode/offer-run/apps-verson.json \
+            --all-codes \
             --output /tmp/opencode/offer-run/plan.json
-
-      - name: Show target entity ARN
-        run: |
-          account_id="$(aws sts get-caller-identity --query Account --output text)"
-          entity_id="$(python3 -c 'import json; print(json.load(open("/tmp/opencode/offer-run/plan.json"))["baseRevision"].split("@")[0])')"
-          entity_arn="arn:aws:aws-marketplace:us-east-1:${account_id}:AWSMarketplace/AmiProduct/${entity_id}"
-          printf 'Target entity ARN: `%s`\n' "$entity_arn" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Summarize plan
         run: |
+          ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)" \
           python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
           import html
           import json
@@ -206,20 +205,37 @@ jobs:
           plan = json.loads(Path("/tmp/opencode/offer-run/plan.json").read_text(encoding="utf-8"))
           app = os.environ["APP"]
           app_name = os.environ["APP_NAME"]
+          account_id = os.environ["ACCOUNT_ID"]
           title = app if app_name == app else f"{app_name} (`{app}`)"
+          targets = plan.get("targets") or [
+              {"code": None, "entityId": plan.get("baseRevision", "").split("@")[0], "plan": plan}
+          ]
+          pending = sum(1 for target in targets if target["plan"].get("request"))
+
           print(f"## Offer plan: {title}")
           print()
           print(f"- Cloud: `{os.environ['CLOUD']}`")
-          print(f"- Entity revision: `{plan.get('baseRevision')}`")
           print(f"- Source hash: `{plan.get('sourceHash')}`")
-          print(f"- Plan hash: `{plan.get('planHash')}`")
+          print(f"- Plan hash: `{plan.get('planHash', '')}`")
           print(f"- Publish blockers: {', '.join(plan.get('publishBlockers') or []) or 'none'}")
-
-          diff = plan.get("diff") or {}
-          print(f"- Pending fields: {len(diff)}")
+          print(f"- Targets: {len(targets)} ({pending} with pending changes)")
           print()
 
-          if not diff:
+          print("| Offer code | Entity ARN | Base revision | Pending fields |")
+          print("| --- | --- | --- | --- |")
+          for target in targets:
+              entity_arn = (
+                  f"arn:aws:aws-marketplace:us-east-1:{account_id}:"
+                  f"AWSMarketplace/AmiProduct/{target['entityId']}"
+              )
+              print(
+                  f"| `{target.get('code') or '-'}` | `{entity_arn}` | "
+                  f"`{target['plan'].get('baseRevision')}` | "
+                  f"{len(target['plan'].get('diff') or {})} |"
+              )
+          print()
+
+          if not pending:
               print("No cloud change is required.")
           else:
               def display(value):
@@ -231,22 +247,28 @@ jobs:
 
               print("### Pending updates")
               print()
-              for field, change in diff.items():
-                  before = display(change.get("before"))
-                  after = display(change.get("after"))
-                  print("<details>")
-                  print(f"<summary><code>{html.escape(field)}</code></summary>")
+              for target in targets:
+                  diff = target["plan"].get("diff") or {}
+                  if not diff:
+                      continue
+                  print(f"#### {target.get('code') or target['entityId']}")
                   print()
-                  print("**Before**")
-                  print()
-                  print(f"<pre>{html.escape(before)}</pre>")
-                  print()
-                  print("**After**")
-                  print()
-                  print(f"<pre>{html.escape(after)}</pre>")
-                  print()
-                  print("</details>")
-                  print()
+                  for field, change in diff.items():
+                      before = display(change.get("before"))
+                      after = display(change.get("after"))
+                      print("<details>")
+                      print(f"<summary><code>{html.escape(field)}</code></summary>")
+                      print()
+                      print("**Before**")
+                      print()
+                      print(f"<pre>{html.escape(before)}</pre>")
+                      print()
+                      print("**After**")
+                      print()
+                      print(f"<pre>{html.escape(after)}</pre>")
+                      print()
+                      print("</details>")
+                      print()
 
               print("The complete request is stored in the workflow artifact for review.")
           PY
@@ -335,28 +357,48 @@ jobs:
 
       - name: Submit reviewed plan
         run: |
+          status=0
           mk offer apply \
             --app "$APP" \
             --catalog /tmp/opencode/offer-run/catalog.json \
             --versions /tmp/opencode/offer-run/apps-verson.json \
             --plan /tmp/opencode/offer-run/plan.json \
-            --wait-seconds 0 > /tmp/opencode/offer-run/apply.json
+            --wait-seconds 0 > /tmp/opencode/offer-run/apply.json || status=$?
           cat /tmp/opencode/offer-run/apply.json
+          if [[ ! -s /tmp/opencode/offer-run/apply.json ]]; then
+            echo "Apply produced no result document; see the job log above." >> "$GITHUB_STEP_SUMMARY"
+            exit "$status"
+          fi
           python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
           import json
           from pathlib import Path
 
           result = json.loads(Path("/tmp/opencode/offer-run/apply.json").read_text(encoding="utf-8"))
-          if result.get("changeSetId"):
-              print("### ChangeSet submitted")
+          targets = result.get("targets") or []
+          print("### ChangeSet submission")
+          print()
+          print(f"- Status: `{result.get('status', 'unknown')}`")
+          print()
+          if targets:
+              print("| Offer code | EntityId | Status | ChangeSetId |")
+              print("| --- | --- | --- | --- |")
+              for target in targets:
+                  print(
+                      f"| `{target.get('code') or '-'}` | `{target.get('entityId')}` | "
+                      f"`{target.get('status')}` | `{target.get('changeSetId', '-')}` |"
+                  )
               print()
+          elif result.get("changeSetId"):
               print(f"- ChangeSetId: `{result['changeSetId']}`")
-              print(f"- Status: `{result.get('status', 'unknown')}`")
               print(f"- Plan hash: `{result.get('planHash', '')}`")
               print()
-              print("Workflow success confirms AWS accepted the ChangeSet. It does not await review, approval, or publication.")
-          else:
-              print("### No ChangeSet submitted")
+          if result.get("skipped"):
+              print(f"Skipped offer codes: {', '.join(str(code) for code in result['skipped'])}")
               print()
-              print(f"- Status: `{result.get('status', 'unknown')}`")
+          if result.get("status") == "PARTIAL":
+              print("At least one target was not submitted. Re-run the workflow to plan the remaining targets; "
+                    "already-updated targets plan to NO_CHANGES.")
+              print()
+          print("Workflow success confirms AWS accepted every ChangeSet. It does not await review, approval, or publication.")
           PY
+          exit "$status"

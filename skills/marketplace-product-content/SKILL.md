@@ -18,13 +18,15 @@ Contentful.
 - `data/.catalog/catalog.json` — temporary Contentful application facts.
 - Optional AWS fields in the catalog item: `entityId`, categories, media,
   additionalResources and content overrides.
-- `data/offer/vendor.json` (including `highlights`),
-  `data/offer/templates/aws-ami.json`.
+- `data/listing/vendor.json` (including `highlights`),
+  `data/listing/templates/aws-ami.json`.
 - `cli/aws_marketplace.py` for AWS names, limits and read/update shape.
 - Version source from `config/app.json` (`apps-verson.json`).
 - Official upstream documentation and actual image/deployment evidence.
-- Seller-authorized Catalog API data via `mk offer resolve-entity` / `mk offer plan`.
-- `data/offer/aws.md` is a historical example, not a source of truth.
+- Seller-authorized Catalog API data via `mk offer targets` / `mk offer plan`
+  (`mk offer preflight` validates ids and codes; `plan --all-codes` covers every
+  offer code recorded for one application).
+- `data/listing/aws.md` is a historical example, not a source of truth.
 
 ## Procedure
 
@@ -76,7 +78,7 @@ Contentful.
     an explicitly reviewed plan.
 
 The former product-file Issue workflow is paused. A future Issue flow must write
-application facts to Contentful, not to `data/offer/products`.
+application facts to Contentful, not to `data/listing/products`.
 
 ## Stopping conditions
 

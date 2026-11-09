@@ -104,7 +104,7 @@ class OfferTests(unittest.TestCase):
         self.assertEqual(
             value["content"]["ShortDescription"],
             "Choose from Odoo 20.0, 19.0, 18.0, or 17.0 at launch for self-hosting "
-            "without upstream forks, backed by a 24-hour response SLA on business days. "
+            "directly from upstream release, backed by a 24-hour response SLA on business days. "
             "Use the Websoft9 Console to manage HTTPS, backups, monitoring, "
             "upgrades, and rollback.",
         )
@@ -120,7 +120,7 @@ class OfferTests(unittest.TestCase):
         )
         self.assertEqual(
             value["content"]["ShortDescription"],
-            "Deploy Odoo 20.0 for self-hosting without upstream forks, backed by "
+            "Deploy Odoo 20.0 for self-hosting directly from upstream release, backed by "
             "a 24-hour response SLA on business days. Use the Websoft9 Console "
             "to manage HTTPS, backups, monitoring, upgrades, and rollback.",
         )
@@ -591,6 +591,293 @@ class OfferTests(unittest.TestCase):
             result = self.runner.invoke(cli, ["offer", "status", "cs-test"])
         self.assertEqual(result.exit_code, 0)
         self.assertIn("pollingTimedOut", result.output)
+
+
+class PreflightAndMultiTargetTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.directory = Path(self.temp.name)
+        self.app_catalog = self.directory / "product_en.json"
+        self.offer_source = self.directory / "offer.json"
+        self.catalog_path = self.directory / "catalog.json"
+        self.versions_path = self.directory / "versions.json"
+        self.vendor_path = self.directory / "vendor.json"
+        self.plan_path = self.directory / "plan.json"
+        self.app_catalog.write_text(
+            json.dumps([{"key": "odoo"}, {"key": "wordpress"}]),
+            encoding="utf-8",
+        )
+        self.offer_source.write_text(
+            json.dumps([
+                {"type": "app", "id": "odoo", "productID": {"aws": ["code-a", "code-b"]}},
+                {"type": "app", "id": "wordpress", "productID": {"aws": []}},
+            ]),
+            encoding="utf-8",
+        )
+        catalog = offer.read_json(offer.DATA.parent / ".catalog" / "catalog.json")
+        self.item = copy.deepcopy(next(item for item in catalog["items"] if item["id"] == "odoo"))
+        self.item.update({
+            "hasenterprise": False,
+            "offerCodes": {"aws": ["code-a", "code-b"]},
+            "targets": [
+                {"code": "code-a", "entityId": "prod-a"},
+                {"code": "code-b", "entityId": "prod-b"},
+            ],
+            "entityId": "prod-a",
+        })
+        self.vendor_data = offer.read_json(offer.DATA / "vendor.json")
+        self.write()
+        self.runner = CliRunner()
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def write(self):
+        self.catalog_path.write_text(json.dumps({"items": [self.item]}), encoding="utf-8")
+        self.versions_path.write_text(json.dumps([{"id": "odoo", "version": "20.0"}]), encoding="utf-8")
+        self.vendor_path.write_text(json.dumps(self.vendor_data), encoding="utf-8")
+
+    def args(self, command):
+        return [
+            "offer", command, "--app", "odoo",
+            "--catalog", str(self.catalog_path),
+            "--versions", str(self.versions_path),
+            "--vendor", str(self.vendor_path),
+        ]
+
+    def targets_args(self):
+        return [
+            "offer", "targets", "--app", "odoo", "--cloud", "aws",
+            "--catalog", str(self.catalog_path),
+        ]
+
+    def render(self):
+        return offer.render(self.item, "20.0", self.vendor_path)
+
+    def entity(self, value, entity_id="prod-a", title=None):
+        content = dict(value["content"])
+        if title:
+            content["ProductTitle"] = title
+        return {
+            "EntityIdentifier": f"{entity_id}@1",
+            "EntityType": "AmiProduct@1.0",
+            "DetailsDocument": aws_marketplace.to_read_document(content),
+        }
+
+    def plan_all(self):
+        value = self.render()
+        entities = [
+            {"code": target["code"], "entityId": target["entityId"],
+             "entity": self.entity(value, target["entityId"], "Old title")}
+            for target in value["targets"]
+        ]
+        planned = offer.multi_plan(value, entities)
+        self.plan_path.write_text(json.dumps(planned), encoding="utf-8")
+        return value, planned
+
+    def test_preflight_validates_ids_and_codes_without_aws(self):
+        value = offer.preflight("odoo", "aws", catalog_source=str(self.app_catalog),
+                                offer_source=str(self.offer_source))
+        self.assertEqual(value["codes"], ["code-a", "code-b"])
+        self.assertEqual(value["codeSource"], "catalog")
+        explicit = offer.preflight("odoo", "aws", ["code-b"], str(self.app_catalog), str(self.offer_source))
+        self.assertEqual(explicit["codes"], ["code-b"])
+        self.assertEqual(explicit["codeSource"], "explicit")
+
+    def test_preflight_suggests_case_and_close_matches(self):
+        with self.assertRaisesRegex(ValueError, "use 'odoo'"):
+            offer.preflight("Odoo", "aws", catalog_source=str(self.app_catalog),
+                            offer_source=str(self.offer_source))
+        with self.assertRaisesRegex(ValueError, "did you mean 'odoo'"):
+            offer.preflight("odo", "aws", catalog_source=str(self.app_catalog),
+                            offer_source=str(self.offer_source))
+        with self.assertRaisesRegex(ValueError, "not in the application catalog"):
+            offer.preflight("not-an-app", "aws", catalog_source=str(self.app_catalog),
+                            offer_source=str(self.offer_source))
+
+    def test_preflight_rejects_codes_from_other_applications(self):
+        with self.assertRaisesRegex(ValueError, "do not belong to 'odoo'"):
+            offer.preflight("odoo", "aws", ["other-code"], str(self.app_catalog), str(self.offer_source))
+        with self.assertRaisesRegex(ValueError, "has no aws offer code"):
+            offer.preflight("wordpress", "aws", catalog_source=str(self.app_catalog),
+                            offer_source=str(self.offer_source))
+
+    def test_preflight_command_fails_early_and_writes_targets(self):
+        output = self.directory / "preflight.json"
+        result = self.runner.invoke(cli, [
+            "offer", "preflight", "--app", "odoo", "--cloud", "aws",
+            "--catalog-source", str(self.app_catalog), "--offer-source", str(self.offer_source),
+            "--output", str(output),
+        ])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(json.loads(output.read_text(encoding="utf-8"))["codes"], ["code-a", "code-b"])
+        early = self.runner.invoke(cli, [
+            "offer", "preflight", "--app", "Odoo", "--cloud", "aws",
+            "--catalog-source", str(self.app_catalog), "--offer-source", str(self.offer_source),
+        ])
+        self.assertNotEqual(early.exit_code, 0)
+        self.assertIn("use 'odoo'", early.output)
+
+    def test_targets_records_every_code_in_the_catalog(self):
+        matches = {"code-a": [{"entityId": "prod-a"}], "code-b": [{"entityId": "prod-b"}]}
+        with mock.patch("cli.commands.offer._resolve_aws_entities", return_value=matches):
+            result = self.runner.invoke(cli, self.targets_args())
+        self.assertEqual(result.exit_code, 0, result.output)
+        document = json.loads(result.output)
+        self.assertEqual(document["targets"], [
+            {"code": "code-a", "entityId": "prod-a"},
+            {"code": "code-b", "entityId": "prod-b"},
+        ])
+        catalog = json.loads(self.catalog_path.read_text(encoding="utf-8"))
+        self.assertEqual(catalog["items"][0]["targets"], document["targets"])
+        self.assertEqual(catalog["items"][0]["entityId"], "prod-a")
+
+    def test_targets_rejects_codes_that_do_not_belong_to_the_application(self):
+        with mock.patch("cli.commands.offer._resolve_aws_entities") as resolve:
+            result = self.runner.invoke(cli, self.targets_args() + ["--offer-codes", "other-code"])
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("do not belong to 'odoo'", result.output)
+        resolve.assert_not_called()
+
+    def test_targets_rejects_ambiguous_codes_and_leaves_the_catalog_unchanged(self):
+        self.item["entityId"] = "prod-initial"
+        self.write()
+        matches = {"code-a": [{"entityId": "prod-a"}, {"entityId": "prod-x"}], "code-b": [{"entityId": "prod-b"}]}
+        with mock.patch("cli.commands.offer._resolve_aws_entities", return_value=matches):
+            result = self.runner.invoke(cli, self.targets_args())
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("ambiguous", result.output)
+        catalog = json.loads(self.catalog_path.read_text(encoding="utf-8"))
+        self.assertEqual(catalog["items"][0]["entityId"], "prod-initial")
+
+    def test_multi_plan_binds_each_entity_and_revision(self):
+        value = self.render()
+        entities = [
+            {"code": target["code"], "entityId": target["entityId"],
+             "entity": self.entity(value, target["entityId"], "Old title")}
+            for target in value["targets"]
+        ]
+        planned = offer.multi_plan(value, entities)
+        self.assertEqual([target["code"] for target in planned["targets"]], ["code-a", "code-b"])
+        for target in planned["targets"]:
+            change = target["plan"]["request"]["ChangeSet"][0]
+            self.assertEqual(change["Entity"]["Identifier"], f"{target['entityId']}@1")
+            self.assertIn("planHash", target["plan"])
+        self.assertIn("planHash", planned)
+
+    def test_plan_requires_explicit_selection_for_multiple_targets(self):
+        result = self.runner.invoke(cli, self.args("plan"))
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("--all-codes", result.output)
+        self.assertIn("--offer-code", result.output)
+
+    def test_plan_command_plans_every_recorded_code(self):
+        output = self.directory / "multi-plan.json"
+        value = self.render()
+        client = mock.Mock()
+        client.describe_entity.side_effect = lambda **kwargs: self.entity(
+            value, kwargs["EntityId"], "Old title"
+        )
+        with mock.patch.object(offer, "aws_client", return_value=client):
+            result = self.runner.invoke(cli, self.args("plan") + [
+                "--all-codes", "--output", str(output),
+            ])
+        self.assertEqual(result.exit_code, 0, result.output)
+        planned = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(len(planned["targets"]), 2)
+        self.assertEqual(planned["targets"][1]["entityId"], "prod-b")
+        self.assertEqual(client.describe_entity.call_count, 2)
+
+    def test_apply_command_multi_with_wait_keeps_stdout_a_single_json_document(self):
+        _, planned = self.plan_all()
+        value = self.render()
+        client = mock.Mock()
+        client.describe_entity.side_effect = [
+            self.entity(value, target["entityId"], "Old title") for target in value["targets"]
+        ] + [
+            self.entity(value, target["entityId"]) for target in value["targets"]
+        ]
+        client.start_change_set.side_effect = [{"ChangeSetId": "cs-a"}, {"ChangeSetId": "cs-b"}]
+        client.describe_change_set.return_value = {"Status": "SUCCEEDED"}
+        runner = CliRunner(mix_stderr=False)
+        with mock.patch.object(offer, "aws_client", return_value=client):
+            result = runner.invoke(cli, self.args("apply") + ["--plan", str(self.plan_path), "--wait-seconds", "1"])
+        self.assertEqual(result.exit_code, 0, result.stderr)
+        document = json.loads(result.stdout)
+        self.assertEqual(document["status"], "SUBMITTED")
+        self.assertIn("readBackVerified", result.stderr)
+        self.assertNotIn("readBackVerified", result.stdout)
+
+    def test_apply_command_probes_the_reviewed_entity_when_waiting(self):
+        value = self.render()
+        entity_b = self.entity(value, "prod-b", "Old title")
+        self.plan_path.write_text(
+            json.dumps(offer.plan({**value, "entityId": "prod-b"}, entity_b)), encoding="utf-8"
+        )
+        client = mock.Mock()
+        client.describe_entity.side_effect = [entity_b, self.entity(value, "prod-b")]
+        client.start_change_set.return_value = {"ChangeSetId": "cs-b"}
+        client.describe_change_set.return_value = {"Status": "SUCCEEDED"}
+        runner = CliRunner(mix_stderr=False)
+        with mock.patch.object(offer, "aws_client", return_value=client):
+            result = runner.invoke(cli, self.args("apply") + ["--plan", str(self.plan_path), "--wait-seconds", "1"])
+        self.assertEqual(result.exit_code, 0, result.stderr)
+        probed = {call.kwargs["EntityId"] for call in client.describe_entity.call_args_list}
+        self.assertEqual(probed, {"prod-b"})
+
+    def test_apply_command_submits_each_target_with_its_own_plan_hash(self):
+        _, planned = self.plan_all()
+        value = self.render()
+        client = mock.Mock()
+        client.describe_entity.side_effect = lambda **kwargs: self.entity(
+            value, kwargs["EntityId"], "Old title"
+        )
+        client.start_change_set.side_effect = [{"ChangeSetId": "cs-a"}, {"ChangeSetId": "cs-b"}]
+        with mock.patch.object(offer, "aws_client", return_value=client):
+            result = self.runner.invoke(cli, self.args("apply") + ["--plan", str(self.plan_path)])
+        self.assertEqual(result.exit_code, 0, result.output)
+        document = json.loads(result.output)
+        self.assertEqual(document["status"], "SUBMITTED")
+        self.assertEqual([target["changeSetId"] for target in document["targets"]], ["cs-a", "cs-b"])
+        tokens = [call.kwargs["ClientRequestToken"] for call in client.start_change_set.call_args_list]
+        self.assertEqual(tokens, [target["plan"]["planHash"] for target in planned["targets"]])
+
+    def test_apply_command_rejects_stale_multi_plan_before_submitting(self):
+        _, planned = self.plan_all()
+        value = self.render()
+        client = mock.Mock()
+        client.describe_entity.side_effect = lambda **kwargs: self.entity(
+            value, kwargs["EntityId"], "Old title"
+        )
+        client.describe_entity.side_effect = lambda **kwargs: (
+            {**self.entity(value, kwargs["EntityId"], "Old title"), "EntityIdentifier": f"{kwargs['EntityId']}@2"}
+            if kwargs["EntityId"] == "prod-b"
+            else self.entity(value, kwargs["EntityId"], "Old title")
+        )
+        with mock.patch.object(offer, "aws_client", return_value=client):
+            result = self.runner.invoke(cli, self.args("apply") + ["--plan", str(self.plan_path)])
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("stale or modified", result.output)
+        client.start_change_set.assert_not_called()
+
+    def test_apply_command_reports_partial_progress(self):
+        _, planned = self.plan_all()
+        value = self.render()
+        client = mock.Mock()
+        client.describe_entity.side_effect = lambda **kwargs: self.entity(
+            value, kwargs["EntityId"], "Old title"
+        )
+        error = Exception("denied")
+        error.response = {"Error": {"Code": "AccessDeniedException"}}
+        client.start_change_set.side_effect = [{"ChangeSetId": "cs-a"}, error]
+        with mock.patch.object(offer, "aws_client", return_value=client):
+            result = self.runner.invoke(cli, self.args("apply") + ["--plan", str(self.plan_path)])
+        self.assertNotEqual(result.exit_code, 0)
+        document = json.loads(result.output)
+        self.assertEqual(document["status"], "PARTIAL")
+        self.assertEqual([target["status"] for target in document["targets"]], ["SUBMITTED", "FAILED"])
+        self.assertEqual(document["skipped"], [])
+        self.assertNotIn("denied", result.output)
 
 
 if __name__ == "__main__":

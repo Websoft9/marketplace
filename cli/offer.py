@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import difflib
 import hashlib
 import json
 import re
@@ -17,10 +18,10 @@ from .aws_marketplace import (
     change_status,
     current_content,
 )
-from .marketplace import MULTI_VERSION_APPS, REPO_ROOT
+from .marketplace import CATALOG_URL, MULTI_VERSION_APPS, OFFER_URL, REPO_ROOT, load_json, offer_codes_by_app
 
 ROOT = REPO_ROOT
-DATA = ROOT / "data" / "offer"
+DATA = ROOT / "data" / "listing"
 
 
 def read_json(path: Path) -> Any:
@@ -149,6 +150,106 @@ def version_choices(options: list[str]) -> str:
     return ", ".join(values[:-1]) + f", or {values[-1]}"
 
 
+def catalog_app_ids(source: str = CATALOG_URL, timeout: float = 30) -> list[str]:
+    """Return the application ids from product_en.json in catalog order."""
+    data = load_json(source, timeout)
+    if not isinstance(data, list):
+        raise ValueError("application catalog must be a JSON array")
+    keys: list[str] = []
+    seen: set[str] = set()
+    for index, item in enumerate(data):
+        key = item.get("key") if isinstance(item, dict) else None
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError(f"application catalog item {index} has no string key")
+        key = key.strip()
+        if key in seen:
+            raise ValueError(f"duplicate application key in application catalog: {key}")
+        seen.add(key)
+        keys.append(key)
+    if not keys:
+        raise ValueError("application catalog contains no applications")
+    return keys
+
+
+def normalize_app_id(value: str, available: list[str]) -> str:
+    """Validate an application id and suggest corrections instead of guessing."""
+    app = (value or "").strip()
+    if not app:
+        raise ValueError("application id is required")
+    if re.search(r"\s", app):
+        raise ValueError(f"application id must not contain whitespace: {value!r}")
+    if app in available:
+        return app
+    lowered = app.casefold()
+    if lowered in available:
+        raise ValueError(f"application id is case-sensitive; use {lowered!r} instead of {app!r}")
+    matches = difflib.get_close_matches(lowered, available, n=3, cutoff=0.6)
+    hint = f"; did you mean {', '.join(repr(match) for match in matches)}?" if matches else ""
+    raise ValueError(f"application {app!r} is not in the application catalog{hint}")
+
+
+def offer_codes_for(
+    app: str,
+    cloud: str,
+    offer_codes: list[str] | None = None,
+    offer_source: str = OFFER_URL,
+    timeout: float = 30,
+) -> tuple[list[str], str]:
+    """Return the offer codes for one application and cloud, with their origin."""
+    by_app = offer_codes_by_app(offer_source, timeout)
+    available = [str(code).strip() for code in ((by_app.get(app) or {}).get(cloud) or []) if str(code).strip()]
+    requested = [str(code).strip() for code in (offer_codes or []) if str(code).strip()]
+    requested = list(dict.fromkeys(requested))
+    if requested:
+        unknown = [code for code in requested if code not in available]
+        if unknown:
+            known = ", ".join(available) if available else "none"
+            raise ValueError(
+                f"offer code(s) {', '.join(unknown)} do not belong to {app!r} on {cloud} (known: {known})"
+            )
+        return requested, "explicit"
+    if not available:
+        raise ValueError(f"{app!r} has no {cloud} offer code in the offer source")
+    return available, "catalog"
+
+
+def preflight(
+    app: str,
+    cloud: str,
+    offer_codes: list[str] | None = None,
+    catalog_source: str = CATALOG_URL,
+    offer_source: str = OFFER_URL,
+    timeout: float = 30,
+) -> dict:
+    """Validate the application id and offer codes without touching any cloud API."""
+    app = normalize_app_id(app, catalog_app_ids(catalog_source, timeout))
+    codes, code_source = offer_codes_for(app, cloud, offer_codes, offer_source, timeout)
+    return {
+        "schemaVersion": 1,
+        "app": app,
+        "cloud": cloud,
+        "codes": codes,
+        "codeSource": code_source,
+    }
+
+
+def listing_targets(catalog_item: dict) -> list[dict]:
+    """Read the per-entity targets recorded in a catalog item."""
+    raw = catalog_item.get("targets")
+    targets: list[dict] = []
+    if isinstance(raw, list):
+        for entry in raw:
+            if not isinstance(entry, dict):
+                raise ValueError("catalog targets must be objects with code and entityId")
+            entity_id = entry.get("entityId")
+            if not isinstance(entity_id, str) or not entity_id.strip():
+                raise ValueError("catalog target requires a non-empty entityId")
+            targets.append({"code": entry.get("code") or None, "entityId": entity_id.strip()})
+    if not targets and catalog_item.get("entityId"):
+        targets.append({"code": None, "entityId": str(catalog_item["entityId"])})
+    return targets
+
+
 def render(catalog_item: dict, version: str, vendor_path: Path = DATA / "vendor.json", template_path: Path = DATA / "templates/aws-ami.json", version_options: list[str] | None = None) -> dict:
     vendor, template = read_json(vendor_path), read_json(template_path)
     options = [str(item).strip() for item in (version_options or [])]
@@ -252,7 +353,8 @@ def render(catalog_item: dict, version: str, vendor_path: Path = DATA / "vendor.
     if not version:
         blockers.append("versions: version is missing")
     entity_id = catalog_item.get("entityId")
-    if not entity_id:
+    targets = listing_targets(catalog_item)
+    if not targets:
         blockers.append("listing: Catalog EntityId is missing")
     preview_content = {
         key: value
@@ -271,6 +373,7 @@ def render(catalog_item: dict, version: str, vendor_path: Path = DATA / "vendor.
     return {
         "schemaVersion": 1, "key": catalog_item["id"], "entityId": entity_id, "entityType": entity_type,
         "templateId": template["templateId"], "content": content, "preview": preview,
+        "targets": targets,
         "publishBlockers": blockers,
         "sourceHash": digest({"catalog": catalog_item, "version": version, "vendor": vendor, "template": template}),
     }
@@ -336,3 +439,31 @@ def plan(bundle: dict, entity: dict) -> dict:
     result = {"schemaVersion": 1, "key": bundle["key"], "sourceHash": bundle["sourceHash"], "baseRevision": identifier, "currentHash": digest(current), "publishBlockers": bundle["publishBlockers"], "diff": {key: {"before": current.get(key), "after": value} for key, value in changes.items()}, "request": request}
     result["planHash"] = digest(result)
     return result
+
+
+def multi_plan(bundle: dict, entities: list[dict]) -> dict:
+    """Plan one shared content render against several Catalog entities.
+
+    Each entry in ``entities`` carries its own ``code``, ``entityId`` and the
+    ``describe_entity`` response. Every target plan stays bound to its own
+    EntityId and base revision, so plans cannot be replayed across entities.
+    """
+    targets = []
+    for entry in entities:
+        target_bundle = {**bundle, "entityId": entry["entityId"]}
+        target_plan = plan(target_bundle, entry["entity"])
+        targets.append(
+            {
+                "code": entry.get("code"),
+                "entityId": entry["entityId"],
+                "plan": target_plan,
+            }
+        )
+    return {
+        "schemaVersion": 1,
+        "key": bundle["key"],
+        "sourceHash": bundle["sourceHash"],
+        "publishBlockers": bundle["publishBlockers"],
+        "targets": targets,
+        "planHash": digest(targets),
+    }

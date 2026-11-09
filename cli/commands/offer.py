@@ -9,7 +9,7 @@ import click
 
 from .. import catalog_data
 from .. import offer as service
-from ..marketplace import CONFIGURED_PLATFORMS, VERSIONS_URL, catalog_default_path
+from ..marketplace import CATALOG_URL, CONFIGURED_PLATFORMS, OFFER_URL, VERSIONS_URL, catalog_default_path
 
 
 @click.group("offer")
@@ -49,6 +49,11 @@ def bundle(app, catalog_source, versions, vendor, template):
 
 def output(value):
     click.echo(json.dumps(value, indent=2, ensure_ascii=False))
+
+
+def _status_to_stderr(value):
+    """Keep long-running apply status on stderr so stdout stays one JSON document."""
+    click.echo(json.dumps(value, indent=2, ensure_ascii=False), err=True)
 
 
 def _markdown_value(value):
@@ -105,12 +110,135 @@ def write_output(value, path):
     write_text_output(json.dumps(value, indent=2, ensure_ascii=False) + "\n", path)
 
 
-def fetch(bundle_value, profile):
-    if not bundle_value["entityId"]:
+def _selected_targets(value, all_codes, offer_codes):
+    targets = value.get("targets") or []
+    if not targets:
         raise click.ClickException(
-            "Catalog EntityId is missing; use mk offer resolve-entity --cloud aws --code <offer-code>"
+            "Catalog EntityId is missing; run mk offer targets --app <id> --cloud <cloud> first"
         )
-    return service.aws_call(service.aws_client(profile), "describe_entity", EntityId=bundle_value["entityId"])
+    requested = [str(code).strip() for code in (offer_codes or []) if str(code).strip()]
+    if requested and all_codes:
+        raise click.ClickException("use either --all-codes or --offer-code, not both")
+    if requested:
+        known = {target.get("code") for target in targets}
+        unknown = [code for code in requested if code not in known]
+        if unknown:
+            raise click.ClickException(
+                f"offer code(s) {', '.join(unknown)} are not recorded for this application"
+            )
+        wanted = set(requested)
+        return [target for target in targets if target.get("code") in wanted]
+    if all_codes:
+        return targets
+    if len(targets) > 1:
+        raise click.ClickException(
+            f"application has {len(targets)} Catalog targets; use --all-codes or --offer-code"
+        )
+    return targets[:1]
+
+
+@offer_command.command("preflight")
+@click.option("--app", required=True, help="Application id from product_en.json, for example odoo.")
+@click.option("--cloud", required=True, type=click.Choice(CONFIGURED_PLATFORMS),
+              help="Target cloud platform from config/marketplace.json.")
+@click.option("--offer-codes", "offer_codes", default=None, metavar="CODES",
+              help="Comma-separated offer codes; default: every code recorded for the application.")
+@click.option("--catalog-source", "catalog_source", default=CATALOG_URL, show_default=True, metavar="SOURCE",
+              help="Application catalog (product_en.json) URL or local path.")
+@click.option("--offer-source", "offer_source", default=OFFER_URL, show_default=True, metavar="SOURCE",
+              help="Marketplace offer source (offer.json) URL or local path.")
+@click.option("--timeout", type=float, default=30, show_default=True)
+@click.option("--output", "output_path", type=click.Path(dir_okay=False, path_type=Path), metavar="PATH",
+              help="Write the resolved target list here instead of stdout.")
+def preflight_command(app, cloud, offer_codes, catalog_source, offer_source, timeout, output_path):
+    """Validate an application id and its offer codes before any cloud call."""
+    requested = [code.strip() for code in (offer_codes or "").split(",") if code.strip()]
+    try:
+        value = service.preflight(app, cloud, requested, catalog_source, offer_source, timeout)
+    except (OSError, ValueError) as error:
+        raise click.ClickException(str(error)) from error
+    write_output(value, output_path)
+
+
+@offer_command.command("targets")
+@click.option("--app", required=True, help="Application id from the pulled catalog.")
+@click.option("--cloud", required=True, type=click.Choice(CONFIGURED_PLATFORMS),
+              help="Target cloud platform from config/marketplace.json.")
+@click.option("--catalog", "catalog_source", default=None, metavar="SOURCE",
+              help="Temporary Contentful catalog JSON. Default: data/.catalog/catalog.json.")
+@click.option("--offer-codes", "offer_codes", default=None, metavar="CODES",
+              help="Comma-separated offer codes; default: every code recorded for the application.")
+@click.option("--profile", default=None)
+@click.option("--max-results", type=click.IntRange(1, 100), default=50, show_default=True)
+@click.option("--output", "output_path", type=click.Path(dir_okay=False, path_type=Path), metavar="PATH",
+              help="Write the resolved targets here instead of stdout.")
+def targets_command(app, cloud, catalog_source, offer_codes, profile, max_results, output_path):
+    """Resolve offer codes to Catalog EntityIds and record them in the catalog."""
+    catalog_path = Path(catalog_source or catalog_default_path())
+    try:
+        catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise click.ClickException(f"failed to read catalog {catalog_path}: {error}") from None
+    if not isinstance(catalog, dict):
+        raise click.ClickException(
+            f"catalog {catalog_path} must be a catalog dataset with an items array"
+        )
+    items = catalog.get("items")
+    if not isinstance(items, list):
+        raise click.ClickException(f"catalog {catalog_path} is not a catalog dataset")
+    item = next(
+        (entry for entry in items if isinstance(entry, dict) and entry.get("id") == app), None
+    )
+    if item is None:
+        raise click.ClickException(f"application {app!r} is absent from {catalog_path}")
+    recorded = [
+        str(code).strip()
+        for code in ((item.get("offerCodes") or {}).get(cloud) or [])
+        if str(code).strip()
+    ]
+    requested = list(dict.fromkeys(
+        code.strip() for code in (offer_codes or "").split(",") if code.strip()
+    ))
+    if requested:
+        unknown = [code for code in requested if code not in recorded]
+        if unknown:
+            raise click.ClickException(
+                f"offer code(s) {', '.join(unknown)} do not belong to {app!r} on {cloud}"
+            )
+        codes = requested
+    else:
+        codes = recorded
+    if not codes:
+        raise click.ClickException(f"{app!r} has no {cloud} offer code in the catalog")
+    try:
+        matches = _resolve_aws_entities(codes, profile, max_results=max_results)
+    except ValueError as error:
+        raise click.ClickException(str(error)) from None
+    not_found = [code for code in codes if not matches.get(code)]
+    ambiguous = {
+        code: [match["entityId"] for match in matches.get(code) or []]
+        for code in codes
+        if len(matches.get(code) or []) > 1
+    }
+    if not_found or ambiguous:
+        details = []
+        if not_found:
+            details.append(f"no Catalog entity found for: {', '.join(not_found)}")
+        if ambiguous:
+            details.append(
+                "ambiguous offer codes: "
+                + ", ".join(f"{code} -> {', '.join(ids)}" for code, ids in ambiguous.items())
+            )
+        raise click.ClickException("; ".join(details))
+    targets = [{"code": code, "entityId": matches[code][0]["entityId"]} for code in codes]
+    item["targets"] = targets
+    item["entityId"] = targets[0]["entityId"]
+    catalog_path.write_text(
+        json.dumps(catalog, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    write_output(
+        {"schemaVersion": 1, "app": app, "cloud": cloud, "targets": targets}, output_path
+    )
 
 
 @offer_command.command("build")
@@ -231,18 +359,56 @@ def resolve_entity_command(cloud, codes, profile):
 
 @offer_command.command("plan")
 @inputs
-@click.option("--current", type=click.Path(exists=True, dir_okay=False, path_type=Path), help="Offline DescribeEntity fixture; otherwise query AWS.")
+@click.option("--current", type=click.Path(exists=True, dir_okay=False, path_type=Path), help="Offline DescribeEntity fixture; single target only.")
 @click.option("--profile", default=None)
+@click.option("--all-codes", is_flag=True,
+              help="Plan every offer code recorded for the application.")
+@click.option("--offer-code", "offer_codes", multiple=True,
+              help="Restrict planning to this offer code; repeatable.")
 @click.option("--output", "output_path", type=click.Path(dir_okay=False, path_type=Path), metavar="PATH",
               help="Write the complete plan/request here instead of stdout.")
-def plan_command(app, catalog_source, versions, vendor, template, current, profile, output_path):
+def plan_command(app, catalog_source, versions, vendor, template, current, profile, all_codes, offer_codes, output_path):
     """Produce a revision-bound UpdateInformation diff without submitting it."""
     value = bundle(app, catalog_source, versions, vendor, template)
+    targets = _selected_targets(value, all_codes, offer_codes)
     try:
-        entity = service.read_json(current) if current else fetch(value, profile)
-        write_output(service.plan(value, entity), output_path)
+        if len(targets) == 1 and not all_codes:
+            entity = service.read_json(current) if current else service.aws_call(
+                service.aws_client(profile), "describe_entity", EntityId=targets[0]["entityId"]
+            )
+            write_output(service.plan({**value, "entityId": targets[0]["entityId"]}, entity), output_path)
+            return
+        if current:
+            raise ValueError("--current supports a single target only; select one offer code")
+        client = service.aws_client(profile)
+        entities = [
+            {
+                "code": target.get("code"),
+                "entityId": target["entityId"],
+                "entity": service.aws_call(client, "describe_entity", EntityId=target["entityId"]),
+            }
+            for target in targets
+        ]
+        write_output(service.multi_plan(value, entities), output_path)
     except (ValueError, KeyError, OSError) as error:
         raise click.ClickException(str(error)) from error
+
+
+def submit_target(client, target):
+    """Submit one planned target and return its result entry."""
+    entry = {
+        "code": target.get("code"),
+        "entityId": target["entityId"],
+        "planHash": target["plan"]["planHash"],
+    }
+    request = target["plan"]["request"]
+    if request is None:
+        return {**entry, "status": "NO_CHANGES"}
+    request = copy.deepcopy(request)
+    request.pop("Catalog")
+    request["ClientRequestToken"] = target["plan"]["planHash"]
+    response = service.aws_call(client, "start_change_set", **request)
+    return {**entry, "changeSetId": response["ChangeSetId"], "status": "SUBMITTED"}
 
 
 @offer_command.command("apply")
@@ -258,8 +424,60 @@ def apply_command(app, catalog_source, versions, vendor, template, plan_path, pr
     try:
         reviewed = service.read_json(plan_path)
         client = service.aws_client(profile)
-        live = service.aws_call(client, "describe_entity", EntityId=value["entityId"])
-        expected = service.plan(value, live)
+        if isinstance(reviewed.get("targets"), list):
+            entities = [
+                {
+                    "code": target.get("code"),
+                    "entityId": target["entityId"],
+                    "entity": service.aws_call(client, "describe_entity", EntityId=target["entityId"]),
+                }
+                for target in reviewed["targets"]
+            ]
+            expected = service.multi_plan(value, entities)
+            if reviewed != expected:
+                raise ValueError("plan is stale or modified; regenerate and review it")
+            results = []
+            failure = None
+            for target in expected["targets"]:
+                try:
+                    results.append(submit_target(client, target))
+                except (KeyError, ValueError) as error:
+                    results.append({
+                        "code": target.get("code"),
+                        "entityId": target["entityId"],
+                        "planHash": target["plan"]["planHash"],
+                        "status": "FAILED",
+                        "error": str(error),
+                    })
+                    failure = error
+                    break
+            submitted = [result for result in results if result["status"] == "SUBMITTED"]
+            status = "PARTIAL" if failure else ("SUBMITTED" if submitted else "NO_CHANGES")
+            output({
+                "schemaVersion": 1,
+                "key": value["key"],
+                "status": status,
+                "targets": results,
+                "skipped": [
+                    target.get("code")
+                    for target in expected["targets"][len(results):]
+                ],
+            })
+            if failure:
+                raise click.exceptions.Exit(1)
+            if wait_seconds:
+                for result in submitted:
+                    poll(
+                        client, result["changeSetId"], wait_seconds,
+                        {**value, "entityId": result["entityId"]},
+                        emit=_status_to_stderr,
+                    )
+            return
+        single = (reviewed.get("baseRevision") or "").split("@")[0]
+        if not single:
+            raise ValueError("reviewed plan has no base revision")
+        live = service.aws_call(client, "describe_entity", EntityId=single)
+        expected = service.plan({**value, "entityId": single}, live)
         if reviewed != expected:
             raise ValueError("plan is stale or modified; regenerate and review it")
         if expected["request"] is None:
@@ -272,12 +490,14 @@ def apply_command(app, catalog_source, versions, vendor, template, plan_path, pr
         change_id = response["ChangeSetId"]
         output({"changeSetId": change_id, "status": "SUBMITTED", "planHash": expected["planHash"]})
         if wait_seconds:
-            poll(client, change_id, wait_seconds, value)
+            poll(client, change_id, wait_seconds, {**value, "entityId": single}, emit=_status_to_stderr)
     except (ValueError, KeyError, OSError) as error:
         raise click.ClickException(str(error)) from error
 
 
-def poll(client, change_id, wait_seconds, value=None):
+def poll(client, change_id, wait_seconds, value=None, emit=None):
+    """Poll one ChangeSet; ``emit`` keeps apply's stdout a single JSON document."""
+    emit = emit or output
     deadline = time.monotonic() + wait_seconds
     last_status = None
     while True:
@@ -286,18 +506,18 @@ def poll(client, change_id, wait_seconds, value=None):
             click.echo(f"ChangeSet {change_id}: {status['status']}", err=True)
             last_status = status["status"]
         if status["status"] in {"SUCCEEDED", "FAILED", "CANCELLED"}:
-            output(status)
+            emit(status)
             if status["status"] != "SUCCEEDED":
                 raise ValueError(f"ChangeSet ended with {status['status']}")
             if value:
                 live = service.aws_call(client, "describe_entity", EntityId=value["entityId"])
                 if service.plan(value, live)["request"] is not None:
                     raise ValueError("ChangeSet succeeded but read-back differs; inspect the product before retrying")
-                output({"readBackVerified": True, "entityId": value["entityId"]})
+                emit({"readBackVerified": True, "entityId": value["entityId"]})
             return
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            output({**status, "pollingTimedOut": True})
+            emit({**status, "pollingTimedOut": True})
             return
         time.sleep(min(5, remaining))
 

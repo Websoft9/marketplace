@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DATA = ROOT / "data" / "offer"
+DATA = ROOT / "data" / "listing"
 PLACEHOLDER = re.compile(r"\{([^}|]+)")
 VENDOR_FIELDS = {
     "aboutVendor", "consoleSummary", "supportSummary", "supportContact",

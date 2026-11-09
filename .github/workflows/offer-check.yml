@@ -2,7 +2,7 @@ name: Marketplace Metadata Validation
 on:
   pull_request:
     paths:
-      - 'data/offer/**'
+      - 'data/listing/**'
       - 'cli/offer.py'
       - 'ci/validate_offers.py'
   workflow_dispatch:

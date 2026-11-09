@@ -4,7 +4,7 @@
 
 Odoo application facts live temporarily in `data/.catalog/catalog.json` and are
 authoritative in Contentful. Optional AWS fields (`entityId`, categories, media,
-additionalResources) belong in that catalog item. `data/offer/vendor.json`
+additionalResources) belong in that catalog item. `data/listing/vendor.json`
 contains shared vendor statements. Public pages can inform source data, but do
 not establish what is installed in a particular image.
 
@@ -14,7 +14,7 @@ not establish what is installed in a particular image.
 | [Websoft9 Odoo guide](https://support.websoft9.com/en/docs/odoo) | App installation via Console, database initialization, modular features, Community/Enterprise distinction | Does not prove the image's bundled apps |
 | [Console guide](https://support.websoft9.com/en/docs/login-console) | First visit documented as HTTP port 9000; admin created in wizard; My Apps/App Store/gateway/backups described | Must test the specific Odoo AMI |
 | [Odoo AWS page](https://aws.amazon.com/marketplace/pp?sku=68t98zxjrrxwzhpeetf7bkapc) | Sold by Websoft9; AMI; seller-authored billing/refund terms and resource links | Public procurement productId is not seller Catalog identity; advertised versions/hardening/rollback do not establish installed image details |
-| [Websoft9 support](https://support.websoft9.com/en/docs/helpdesk) | Standard support scope and professional-service distinction | Shared vendor copy is centrally maintained in `data/offer/vendor.json` |
+| [Websoft9 support](https://support.websoft9.com/en/docs/helpdesk) | Standard support scope and professional-service distinction | Shared vendor copy is centrally maintained in `data/listing/vendor.json` |
 
 The AWS Usage text specifies an HTTPS root URL, while the Console guide specifies
 HTTP port 9000. This discrepancy is retained in AWS rule notes/preview; no new
@@ -30,18 +30,22 @@ preview, never sent as `UpdateInformation`.
 ## Before the first live trial
 
 1. Run **Marketplace Offer List** in the authorized seller account, or
-   `mk offer resolve-entity --cloud aws --code <offer-code> --profile <seller-profile>`. Find Odoo's Catalog EntityId.
-   Confirm `DescribeEntity` type/title and seller ownership; do not use the public
-   SKU, `prodview-` ID or procurement UUID as an assumed equivalent.
-2. Put the confirmed `entityId` and non-sensitive evidence in the temporary
-   catalog item. Current entityId remains null because this environment has no
-   AWS seller credentials.
+   `mk offer targets --app odoo --cloud aws --profile <seller-profile>`, which
+   resolves every recorded offer code to its Catalog EntityId and writes
+   `targets` into the temporary catalog item. Confirm `DescribeEntity`
+   type/title and seller ownership; do not use the public SKU, `prodview-` ID or
+   procurement UUID as an assumed equivalent.
+2. If an EntityId was confirmed manually, put it in the temporary catalog item.
+   Current entityId remains null because this environment has no AWS seller
+   credentials.
 3. If the listing makes image-specific deployment claims or source data conflicts
    with the actual image, test that image and correct the authoritative source.
 4. Run `mk offer build --app odoo --cloud aws --publish-ready`. Inspect
    `data/.catalog/aws/odoo.json` and the proposed AWS diff.
 5. Run `mk offer plan --app odoo --profile <seller-profile> --output <path>`, then
    explicitly publish. Re-run status/read-back and inspect the Marketplace page.
+   Applications with several AWS codes share one render; use `--all-codes` to
+   plan every target.
 
 No live changes or AMI deployments were performed while preparing this record.
 Offline tests use synthetic IDs/data; resolve the seller Catalog EntityId before

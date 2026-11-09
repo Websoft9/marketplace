@@ -8,7 +8,7 @@ implementation supports **existing `AmiProduct@1.0` listings** and
 `UpdateInformation`; creation, delivery-option/version updates, pricing, refunds
 and visibility changes require their own platform workflows.
 
-`data/offer/aws.md` remains the supplied writing example. Its Odoo title and
+`data/listing/aws.md` remains the supplied writing example. Its Odoo title and
 JupyterHub short description conflict; do not use that historical example as
 source data. Application and vendor content is maintained in its authoritative
 source and rendered deterministically by the template. Do not repeat a
@@ -19,8 +19,8 @@ per-application fact audit for unchanged source data and template output.
 | File | Responsibility |
 | --- | --- |
 | `data/.catalog/catalog.json` | Temporary Contentful application facts; git-ignored and not authoritative |
-| `data/offer/vendor.json` | Shared vendor identity, highlights, console capabilities, support and trademark text |
-| `data/offer/templates/aws-ami.json` | Fixed copy structure with named placeholders, no credentials or per-product IDs |
+| `data/listing/vendor.json` | Shared vendor identity, highlights, console capabilities, support and trademark text |
+| `data/listing/templates/aws-ami.json` | Fixed copy structure with named placeholders, no credentials or per-product IDs |
 | `cli/aws_marketplace.py` | AWS Marketplace adapter: field names/limits, read normalization, update request shape |
 | `skills/marketplace-product-content/SKILL.md` | Fact checking and personalized content authoring procedure |
 
@@ -187,6 +187,9 @@ mk offer plan --app odoo --profile marketplace-seller --output /tmp/odoo-plan.js
 python3 ci/validate_offers.py
 ```
 
+`plan` refuses to guess when an application has several Catalog targets: pass
+`--all-codes` or one or more `--offer-code` values.
+
 `build` is offline and does not contact AWS. It writes
 `data/.catalog/aws/<key>.json` by default (git-ignored) as a human-review preview
 that mirrors the authoring template: resolved `content`,
@@ -198,7 +201,7 @@ review and audit.
 `--catalog`, `--versions`, `--vendor` and `--template` allow
 alternate reviewed local source files. Defaults are
 `data/.catalog/catalog.json`, the configured version source,
-`data/offer/vendor.json` and the AWS template.
+`data/listing/vendor.json` and the AWS template.
 
 Install optional AWS dependencies and use AWS's normal credential provider
 chain (SSO/profile, environment, or assumed role). Do not put credentials in
@@ -206,14 +209,19 @@ master data, command arguments, generated plans or repository configuration.
 
 ```sh
 pip install '.[aws]'
-mk offer resolve-entity --cloud aws --code <offer-code> [--code <offer-code> ...] --profile marketplace-seller
-mk offer plan --app odoo --profile marketplace-seller
+mk offer preflight --app odoo --cloud aws [--offer-codes <code>[,<code>...]]
+mk offer targets --app odoo --cloud aws [--offer-codes <code>[,<code>...]]
+mk offer plan --app odoo --all-codes --profile marketplace-seller
 ```
 
-`resolve-entity` resolves seller-owned AMI Catalog IDs with pagination. Set the confirmed
-`entityId` in the temporary catalog item; a public SKU, product code or
-`prodview-` ID is not a substitute. The integration uses `us-east-1` for the
-Catalog client.
+`preflight` validates the application id against `product_en.json` (reporting
+lowercase and close-match suggestions) and every requested offer code against
+the application's recorded codes, without calling Contentful or AWS. `targets`
+resolves each code to a seller-owned AMI Catalog EntityId with pagination and
+records `targets` in the temporary catalog item; a public SKU, product code or
+`prodview-` ID is not a substitute. `plan --all-codes` writes one plan per
+recorded target, each bound to its own EntityId and base revision. The
+integration uses `us-east-1` for the Catalog client.
 
 Save the **reviewed plan output** in an access-controlled location outside Git
 (for example under `/tmp/opencode/` for a local trial), then submit exactly it:
@@ -226,9 +234,12 @@ mk offer status <change-set-id> --profile marketplace-seller --wait-seconds 600
 `apply` is the explicit write action. It rereads live metadata and compares the
 complete recomputed plan to the reviewed artifact.
 Changed source/template/vendor, live revision or plan payload fails closed.
-It submits only changed fields, uses the live `EntityId@RevisionId` and a
-deterministic plan hash as `ClientRequestToken`. A no-op plan submits nothing.
-Each product gets one ChangeSet; AWS locks the entity while it processes it.
+For a multi-target plan it validates every target before submitting any of them,
+then submits one ChangeSet per target. It submits only changed fields, uses the
+live `EntityId@RevisionId` and a deterministic plan hash as `ClientRequestToken`.
+A no-op plan submits nothing; a partially submitted run reports `PARTIAL` and
+exits non-zero, and re-planning skips targets whose content already matches.
+AWS locks each entity while it processes that entity's ChangeSet.
 
 `--wait-seconds` bounds polling. Use `0` to submit and exit without waiting; the
 workflow uses this mode. For synchronous local verification, set a longer value.

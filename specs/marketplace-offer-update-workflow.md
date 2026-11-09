@@ -7,7 +7,7 @@ Historical status:
 
 - Application facts now come temporarily from
   `data/.catalog/catalog.json`; the repository no longer stores
-  `data/offer/products/`.
+  `data/listing/products/`.
 - Repository files own templates, vendor statements and AWS listing rules.
 - The old workflow edited product JSON in a PR and is incompatible with this
   source model. Its workflow, Issue form and implementation were removed.
@@ -28,14 +28,28 @@ EntityId and an explicitly reviewed plan.
 
 ## Manual GitHub Actions apply workflow
 
-`.github/workflows/marketplace-offer-apply.yml` runs manually for one
+`.github/workflows/offer-apply.yml` runs manually for one
 application and one cloud. Inputs are the catalog application id, an optional
-display name used for the run label, and a cloud selector (currently only
-`aws`). It does not publish files committed under `data/.catalog/<cloud>/`;
-that directory is git-ignored. The workflow builds the preview there, generates
-a live revision-bound plan, uploads the plan and source snapshots as artifacts,
-then waits for approval on the `<cloud>-marketplace-production` environment
-before running `mk offer apply`.
+display name used for the run label, an optional comma-separated list of offer
+codes, and a cloud selector (currently only `aws`). When no offer codes are
+given, every code recorded for the application is targeted. It does not publish
+files committed under `data/.catalog/<cloud>/`; that directory is git-ignored.
+The workflow builds the preview there, resolves every target EntityId, generates
+one live revision-bound plan per target, uploads the plans and source snapshots
+as artifacts, then waits for approval on the `<cloud>-marketplace-production`
+environment before running `mk offer apply`.
+
+Validation runs before any Contentful or AWS call:
+
+- `Validate inputs` rejects an uppercase application id with the corrected value
+  and rejects unknown clouds.
+- `mk offer preflight` checks the application id against `product_en.json`,
+  suggests close or lowercase matches, and verifies that every requested offer
+  code belongs to that application. A code belonging to another application now
+  fails here instead of updating the wrong product.
+- `mk offer targets` resolves each offer code to a Catalog EntityId and records
+  `targets` in the temporary catalog, so later steps do not repeat catalog
+  lookups.
 
 Required repository configuration:
 
@@ -57,13 +71,17 @@ Required repository configuration:
   `DescribeEntity`, `DescribeChangeSet` and `StartChangeSet` for the target AMI
   product. If it is absent, the workflow falls back to `AWS_ROLE_ARN`.
 
-The plan job uses read-only credentials. Its summary lists every pending field
-with before/after values. The apply job starts only after environment approval,
-rechecks source snapshots and live revisions, and fails closed if either
-changed. It runs `mk offer apply --wait-seconds 0`: success means AWS accepted
-the ChangeSet and returned a ChangeSetId, not that review, approval or
-publication has completed. The summary records the ChangeSetId and plan hash;
-final status must be checked separately.
+The plan job uses read-only credentials. Its summary lists every target with its
+Entity ARN, base revision and pending field count, plus before/after values for
+each pending field. The apply job starts only after environment approval,
+rechecks source snapshots and every live revision, and fails closed before
+submitting anything if any target changed. It runs
+`mk offer apply --wait-seconds 0`: success means AWS accepted every ChangeSet and
+returned a ChangeSetId for each target, not that review, approval or publication
+has completed. A partial submission reports `PARTIAL`, lists the submitted and
+failed targets, and exits non-zero; re-running the workflow plans the remaining
+targets, while already-updated targets plan to `NO_CHANGES`. The summary records
+each ChangeSetId and plan hash; final status must be checked separately.
 
 ## Security boundary
 
