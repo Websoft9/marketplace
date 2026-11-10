@@ -145,8 +145,8 @@ jobs:
             --cloud "$CLOUD" \
             --catalog /tmp/opencode/offer-run/catalog.json \
             --versions /tmp/opencode/offer-run/apps-verson.json \
-            --output "data/.catalog/$CLOUD/$APP.json"
-          cp "data/.catalog/$CLOUD/$APP.json" /tmp/opencode/offer-run/preview.json
+            --output "data/.work/$CLOUD/$APP.json"
+          cp "data/.work/$CLOUD/$APP.json" /tmp/opencode/offer-run/preview.json
 
       - name: Check AWS plan role
         env:

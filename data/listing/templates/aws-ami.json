@@ -5,7 +5,8 @@
   "namespaces": [
     "catalog",
     "versions",
-    "vendor"
+    "vendor",
+    "editions"
   ],
   "target": {
     "platform": "aws",
@@ -37,11 +38,11 @@
   "longDescriptionSections": [
     {
       "heading": "",
-      "text": "This product packages {catalog.trademark}{catalog.hasenterprise ? ' Community Edition' : ''} as a hardened AMI for self-hosted deployment on AWS. Websoft9 adds a Console for HTTPS, backups, monitoring, upgrades with rollback, and application lifecycle management, plus one-click templates from its built-in app store."
+      "text": "This product packages {catalog.trademark}{editions.labelSpaced} as a hardened AMI for self-hosted deployment on AWS. Websoft9 adds a Console for HTTPS, backups, monitoring, upgrades with rollback, and application lifecycle management, plus one-click templates from its built-in app store."
     },
     {
       "heading": "What is included?",
-      "text": "{catalog.trademark}{catalog.hasenterprise ? ' Community Edition' : ''}{versions.selection}, {catalog.relatedApps | join: ', ', ', '}Nginx, Docker and {vendor.vendor} Console."
+      "text": "{catalog.trademark}{editions.labelSpaced}{versions.selection}, {catalog.relatedApps | join: ', ', ', '}Nginx, Docker and {vendor.vendor} Console."
     },
     {
       "heading": "Use cases",
@@ -49,7 +50,7 @@
     },
     {
       "heading": "What you pay for",
-      "text": "{catalog.hasenterprise ? 'This offer provides the Community Edition of the application. It does not include any commercial edition.' : 'No separate license fee is charged for the Community Edition.'} {vendor.billingSummary} AWS infrastructure charges are billed separately by AWS."
+      "text": "{editions.pricingLead} {vendor.billingSummary} AWS infrastructure charges are billed separately by AWS."
     },
     {
       "heading": "Do I need SSH?",

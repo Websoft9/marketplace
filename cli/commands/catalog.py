@@ -86,7 +86,7 @@ def catalog_command() -> None:
 @click.option("--api-url", envvar="CONTENTFUL_API_URL", default=contentful.DEFAULT_API_URL, show_default=True,
               help="Contentful Delivery/Preview API base URL.")
 @click.option("--output", type=click.Path(dir_okay=False, path_type=Path), metavar="PATH",
-              help="Write JSON here. Default: data/.catalog/catalog.json; use - for stdout.")
+              help="Write JSON here. Default: data/.work/catalog.json; use - for stdout.")
 @click.option("--merge", is_flag=True,
               help="Merge pulled items into an existing output file, preserving other items and their order.")
 @click.option("--page-size", type=click.IntRange(1, 1000), default=100, show_default=True)
@@ -185,7 +185,7 @@ def pull_command(
 @click.option("--token", envvar="CONTENTFUL_TOKEN", required=True,
               help="Contentful Management API token (CFPAT-). Prefer the CONTENTFUL_TOKEN environment variable.")
 @click.option("--input", "input_path", metavar="PATH",
-              help="JSON dataset from catalog pull, a JSON array, or - for stdin. Default: data/.catalog/catalog.json.")
+              help="JSON dataset from catalog pull, a JSON array, or - for stdin. Default: data/.work/catalog.json.")
 @click.option("--apps", "app_list", metavar="IDS",
               help="Comma-separated application ids to push. Default: every item in the input.")
 @click.option("--fields", "field_list", metavar="FIELDS",
@@ -299,7 +299,7 @@ def push_command(
 
 @catalog_command.command("verify")
 @click.option("--input", "input_path", type=click.Path(dir_okay=False, path_type=Path),
-              metavar="PATH", help="Catalog dataset to validate. Default: data/.catalog/catalog.json.")
+              metavar="PATH", help="Catalog dataset to validate. Default: data/.work/catalog.json.")
 @click.option("--apps", "app_list", metavar="IDS",
               help="Comma-separated application ids to validate. Default: every item.")
 @click.option("--fields", "field_list", metavar="FIELDS",

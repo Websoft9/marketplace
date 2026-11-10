@@ -3,15 +3,5 @@
     "catalog": "https://artifact.websoft9.com/appstore/release/catalog/product_en.json",
     "versions": "https://artifact.websoft9.com/appstore/dev/library/apps-verson.json",
     "category​": "https://artifact.websoft9.com/appstore/release/catalog/catalog_en.json"
-  },
-  "multi_version_apps": [
-    "odoo",
-    "mysql",
-    "postgresql",
-    "mongodb",
-    "redis",
-    "erpnext",
-    "neo4j",
-    "influxdb"
-  ]
+  }
 }

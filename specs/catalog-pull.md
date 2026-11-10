@@ -14,7 +14,7 @@ Prefer environment variables so the token is not stored in shell history:
 ```sh
 export CONTENTFUL_SPACE_ID=...
 export CONTENTFUL_TOKEN=...             # Delivery/Preview token, or a CFPAT- Management token
-mk catalog pull                         # writes data/.catalog/catalog.json
+mk catalog pull                         # writes data/.work/catalog.json
 mk catalog pull --output -              # write JSON to stdout
 ```
 
@@ -23,7 +23,7 @@ Management token is automatically read through the Management API, so the same
 Management token can query and update. A Delivery/Preview token uses the CDA and
 is read-only. Mixed token types cannot be used with the other command.
 
-The default staging file is `data/.catalog/catalog.json`, which is
+The default staging file is `data/.work/catalog.json`, which is
 git-ignored. Set `MK_CATALOG_DIR` to use another directory. This one file holds
 both single-app and multi-app results; `items` length is the selected application
 count. Use `--output` only when you need an additional snapshot.
@@ -76,7 +76,7 @@ includes drafts; linked fields may remain as link objects in that mode.
 | `--catalog` | configured `product_en.json` URL | Target application list (URL or local file) |
 | `--offer` | configured `data/offer-codes/` | Offer-codes directory or JSON file used to add per-platform `offerCodes` |
 | `--apps` | all catalog applications | Comma-separated application ids to export; must exist in the target catalog |
-| `--output` | `data/.catalog/catalog.json` | JSON destination; `-` means stdout; `MK_CATALOG_DIR` overrides the directory |
+| `--output` | `data/.work/catalog.json` | JSON destination; `-` means stdout; `MK_CATALOG_DIR` overrides the directory |
 | `--merge` | off | Merge pulled items into an existing output file, preserving other items and their order |
 | `--progress` | on | Progress to stderr, leaving stdout valid JSON |
 | `--raw` | off | Keep raw Contentful values instead of resolving links/RichText |

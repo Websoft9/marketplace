@@ -38,7 +38,7 @@ mk catalog push --apps wordpress,odoo --publish
 Run `mk catalog verify --apps <ids> --fields <fields>` before pushing to catch
 field-rule violations locally.
 
-`--input` defaults to `data/.catalog/catalog.json` (git-ignored). Set
+`--input` defaults to `data/.work/catalog.json` (git-ignored). Set
 `MK_CATALOG_DIR` to use another directory. It accepts the object produced by
 `catalog pull` (`items`), a bare JSON array, or `-` for stdin. `--apps` defaults
 to every item in the input and preserves the requested order. Single-app and

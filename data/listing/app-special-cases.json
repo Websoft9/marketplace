@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "apps": {
+    "odoo": {
+      "multiVersion": true
+    },
+    "mysql": {
+      "multiVersion": true
+    },
+    "postgresql": {
+      "multiVersion": true
+    },
+    "mongodb": {
+      "multiVersion": true,
+      "editionLabel": "Community Server"
+    },
+    "redis": {
+      "multiVersion": true,
+      "editionLabel": "Open Source"
+    },
+    "erpnext": {
+      "multiVersion": true
+    },
+    "neo4j": {
+      "multiVersion": true
+    },
+    "influxdb": {
+      "multiVersion": true
+    },
+    "milvus": {
+      "editionLabel": "Standalone"
+    },
+    "graylog": {
+      "editionLabel": "Open"
+    }
+  }
+}

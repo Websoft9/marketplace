@@ -6,7 +6,7 @@ facts out of the repository.
 Historical status:
 
 - Application facts now come temporarily from
-  `data/.catalog/catalog.json`; the repository no longer stores
+  `data/.work/catalog.json`; the repository no longer stores
   `data/listing/products/`.
 - Repository files own templates, vendor statements and AWS listing rules.
 - The old workflow edited product JSON in a PR and is incompatible with this
@@ -21,7 +21,7 @@ mk offer build --app odoo --cloud aws
 mk offer plan --app odoo --profile marketplace-seller --output /tmp/odoo-plan.json
 ```
 
-`build` writes `data/.catalog/aws/odoo.json`. `plan` remains live,
+`build` writes `data/.work/aws/odoo.json`. `plan` remains live,
 revision-bound and is the only step that prepares a submit-ready ChangeSet
 request. Publication requires required source fields, a resolved Catalog
 EntityId and an explicitly reviewed plan.
@@ -33,7 +33,7 @@ application and one cloud. Inputs are the catalog application id, an optional
 display name used for the run label, an optional comma-separated list of offer
 codes, and a cloud selector (currently only `aws`). When no offer codes are
 given, every code recorded for the application is targeted. It does not publish
-files committed under `data/.catalog/<cloud>/`; that directory is git-ignored.
+files committed under `data/.work/<cloud>/`; that directory is git-ignored.
 The workflow builds the preview there, resolves every target EntityId, generates
 one live revision-bound plan per target, uploads the plans and source snapshots
 as artifacts, then waits for approval on the `<cloud>-marketplace-production`

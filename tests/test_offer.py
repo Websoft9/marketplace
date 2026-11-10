@@ -22,7 +22,7 @@ class OfferTests(unittest.TestCase):
         self.versions_path = self.directory / "versions.json"
         self.vendor_path = self.directory / "vendor.json"
         self.plan_path = self.directory / "plan.json"
-        catalog = offer.read_json(offer.DATA.parent / ".catalog" / "catalog.json")
+        catalog = offer.read_json(offer.DATA.parent / ".work" / "catalog.json")
         self.item = copy.deepcopy(next(item for item in catalog["items"] if item["id"] == "odoo"))
         self.item.update({
             "entityId": None,
@@ -185,12 +185,34 @@ class OfferTests(unittest.TestCase):
         texts = [section["text"] for section in single["preview"]["longDescriptionSections"]]
         self.assertFalse(any("for selection" in text for text in texts))
 
-        with mock.patch.object(offer, "MULTI_VERSION_APPS", frozenset()):
-            other = offer.render(
-                self.item, "20.0", self.vendor_path, version_options=["20", "19"]
-            )
+        path = self.special_cases_file({"odoo": {"multiVersion": False}})
+        other = offer.render(
+            self.item, "20.0", self.vendor_path, version_options=["20", "19"],
+            special_cases_path=path,
+        )
         texts = [section["text"] for section in other["preview"]["longDescriptionSections"]]
         self.assertFalse(any("for selection" in text for text in texts))
+
+    def test_multi_version_flag_comes_from_special_cases(self):
+        path = self.special_cases_file({"odoo": {"multiVersion": True}})
+        value = offer.render(
+            self.item, "20.0", self.vendor_path, version_options=["20", "19"],
+            special_cases_path=path,
+        )
+        self.assertIn("Choose from Odoo 20 or 19 at launch", value["content"]["ShortDescription"])
+        included = next(
+            section["text"]
+            for section in value["preview"]["longDescriptionSections"]
+            if section["heading"] == "What is included?"
+        )
+        self.assertIn("Odoo 20/19 for selection,", included)
+
+    def test_special_case_multi_version_requires_boolean(self):
+        path = self.special_cases_file({"odoo": {"multiVersion": "yes"}})
+        with self.assertRaisesRegex(ValueError, "must be a boolean"):
+            offer.render(
+                self.item, "20.0", self.vendor_path, special_cases_path=path
+            )
 
     def test_display_version_keeps_at_most_two_components(self):
         self.assertEqual(offer.display_version("20.0.1"), "20.0")
@@ -261,11 +283,106 @@ class OfferTests(unittest.TestCase):
             if section["heading"] == "What you pay for"
         )
         self.assertIn(
-            "This offer provides the Community Edition of the application. "
+            "This offer provides Odoo Community Edition. "
             "It does not include any commercial edition.",
             pricing,
         )
         self.assertNotIn("provided under its commercial edition", pricing)
+
+    def test_no_community_edition_when_hasenterprise_is_false(self):
+        self.item["hasenterprise"] = False
+        self.write()
+        value = self.render()
+        first = value["preview"]["longDescriptionSections"][0]["text"]
+        pricing = next(
+            section["text"]
+            for section in value["preview"]["longDescriptionSections"]
+            if section["heading"] == "What you pay for"
+        )
+        self.assertIn("This product packages Odoo as a hardened AMI", first)
+        self.assertNotIn("Community Edition", first)
+        self.assertNotIn("Community Edition", pricing)
+        self.assertTrue(
+            pricing.startswith("No separate license fee is charged for the application.")
+        )
+
+    def special_item(self, app_id, trademark):
+        item = copy.deepcopy(self.item)
+        item["id"] = app_id
+        item["trademark"] = trademark
+        item["hasenterprise"] = True
+        return item
+
+    def test_special_case_edition_label_overrides_default(self):
+        mongodb = offer.render(
+            self.special_item("mongodb", "MongoDB"), "8.0", self.vendor_path
+        )
+        self.assertIn(
+            "This product packages MongoDB Community Server as a hardened AMI",
+            mongodb["content"]["LongDescription"],
+        )
+        self.assertIn(
+            "This offer provides MongoDB Community Server.",
+            mongodb["content"]["LongDescription"],
+        )
+        self.assertNotIn("MongoDB Community Edition", mongodb["content"]["LongDescription"])
+
+        redis = offer.render(self.special_item("redis", "Redis"), "8.0", self.vendor_path)
+        self.assertIn("This product packages Redis Open Source as", redis["content"]["LongDescription"])
+
+    def test_empty_edition_label_omits_the_suffix(self):
+        path = self.special_cases_file({"postgresql": {"editionLabel": ""}})
+        postgresql = offer.render(
+            self.special_item("postgresql", "PostgreSQL"), "17", self.vendor_path,
+            special_cases_path=path,
+        )
+        self.assertIn(
+            "This product packages PostgreSQL as a hardened AMI",
+            postgresql["content"]["LongDescription"],
+        )
+        self.assertTrue(
+            postgresql["content"]["LongDescription"].count("PostgreSQL Edition") == 0
+        )
+        self.assertIn(
+            "No separate license fee is charged for the application.",
+            postgresql["content"]["LongDescription"],
+        )
+
+    def special_cases_file(self, apps):
+        path = self.directory / "special-cases.json"
+        path.write_text(
+            json.dumps({"schemaVersion": 1, "apps": apps}), encoding="utf-8"
+        )
+        return path
+
+    def test_special_case_pricing_lead_override(self):
+        path = self.special_cases_file({"odoo": {"pricingLead": "Custom pricing sentence."}})
+        value = offer.render(self.item, "20.0", self.vendor_path, special_cases_path=path)
+        self.assertIn(
+            "Custom pricing sentence. The Websoft9 software fee",
+            value["content"]["LongDescription"],
+        )
+
+    def test_special_case_rejects_unknown_slots_and_schema(self):
+        unknown = self.special_cases_file({"odoo": {"community": "yes"}})
+        with self.assertRaisesRegex(ValueError, "unsupported key"):
+            offer.render(self.item, "20.0", self.vendor_path, special_cases_path=unknown)
+        path = self.directory / "bad-schema.json"
+        path.write_text(json.dumps({"schemaVersion": 2, "apps": {}}), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "schemaVersion"):
+            offer.render(self.item, "20.0", self.vendor_path, special_cases_path=path)
+
+    def test_special_case_change_invalidates_the_source_hash(self):
+        baseline = self.render()["sourceHash"]
+        path = self.special_cases_file({"odoo": {"editionLabel": ""}})
+        changed = offer.render(self.item, "20.0", self.vendor_path, special_cases_path=path)
+        self.assertNotEqual(baseline, changed["sourceHash"])
+
+    def test_consecutive_spaces_are_rejected(self):
+        content = self.render()["content"]
+        content["ShortDescription"] = "Two  spaces"
+        with self.assertRaisesRegex(ValueError, "consecutive spaces"):
+            offer.validate_content(content)
 
     def test_short_description_does_not_use_hasenterprise_wording(self):
         descriptions = set()
@@ -318,7 +435,7 @@ class OfferTests(unittest.TestCase):
         ])
         self.assertEqual(
             [section["text"] for section in document["longDescriptionSections"] if section["text"].startswith("No separate license fee")],
-            ["No separate license fee is charged for the Community Edition. The Websoft9 software fee covers the Console, operations toolset, and business-day support with a 24-hour response SLA. AWS infrastructure charges are billed separately by AWS."],
+            ["No separate license fee is charged for the application. The Websoft9 software fee covers the Console, operations toolset, and business-day support with a 24-hour response SLA. AWS infrastructure charges are billed separately by AWS."],
         )
 
     def test_long_description_headings_use_markdown_bold(self):
@@ -627,7 +744,7 @@ class PreflightAndMultiTargetTests(unittest.TestCase):
             ]),
             encoding="utf-8",
         )
-        catalog = offer.read_json(offer.DATA.parent / ".catalog" / "catalog.json")
+        catalog = offer.read_json(offer.DATA.parent / ".work" / "catalog.json")
         self.item = copy.deepcopy(next(item for item in catalog["items"] if item["id"] == "odoo"))
         self.item.update({
             "hasenterprise": False,

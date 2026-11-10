@@ -34,7 +34,7 @@ REPO_ROOT = CONFIG_PATH.parents[1]
 def catalog_default_path() -> Path:
     """Default staging dataset for catalog pull/push."""
     configured = os.environ.get("MK_CATALOG_DIR")
-    directory = Path(configured) if configured else REPO_ROOT / "data" / ".catalog"
+    directory = Path(configured) if configured else REPO_ROOT / "data" / ".work"
     return directory / "catalog.json"
 
 APP_CONFIG_PATH = CONFIG_PATH.parent / "app.json"
@@ -43,7 +43,6 @@ APP_CONFIG = (
     if APP_CONFIG_PATH.is_file()
     else {}
 )
-MULTI_VERSION_APPS = frozenset(str(item) for item in APP_CONFIG.get("multi_version_apps", []))
 
 SOURCES = CONFIG["sources"]
 APP_SOURCES = APP_CONFIG["sources"]

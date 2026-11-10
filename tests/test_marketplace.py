@@ -23,7 +23,7 @@ class ConfigTests(unittest.TestCase):
         app_config = app_list.APP_CONFIG
         self.assertTrue(app_config["sources"]["catalog"].startswith("https://"))
         self.assertTrue(app_config["sources"]["versions"].startswith("https://"))
-        self.assertIn("odoo", app_config["multi_version_apps"])
+        self.assertNotIn("multi_version_apps", app_config)
 
         product_platforms = tuple(
             item["key"] for item in config["platforms"] if item.get("urlTemplate")

@@ -7,7 +7,7 @@ node_modules/
 build/
 dist/
 
-data/.catalog/
+data/.work/
 
 # Local build metadata
 .build/*

@@ -1,4 +1,4 @@
-"""Validate the AWS authoring template and shared vendor rules without network calls."""
+"""Validate the AWS authoring template, shared vendor rules and app special cases without network calls."""
 
 from __future__ import annotations
 
@@ -6,6 +6,8 @@ import json
 import re
 import sys
 from pathlib import Path
+
+from cli.offer import load_special_cases
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data" / "listing"
@@ -78,10 +80,11 @@ def main() -> int:
         vendor = json.loads((DATA / "vendor.json").read_text(encoding="utf-8"))
         validate_template(template)
         validate_vendor(vendor)
+        load_special_cases(DATA / "app-special-cases.json")
     except (OSError, ValueError, KeyError, json.JSONDecodeError) as error:
         print(f"offer validation failed: {error}", file=sys.stderr)
         return 1
-    print("AWS template and vendor rules are valid")
+    print("AWS template, vendor rules and app special cases are valid")
     return 0
 
 

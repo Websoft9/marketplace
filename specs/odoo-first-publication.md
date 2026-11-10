@@ -2,7 +2,7 @@
 
 ## Current preparation (public sources checked 2026-11-05)
 
-Odoo application facts live temporarily in `data/.catalog/catalog.json` and are
+Odoo application facts live temporarily in `data/.work/catalog.json` and are
 authoritative in Contentful. Optional AWS fields (`entityId`, categories, media,
 additionalResources) belong in that catalog item. `data/listing/vendor.json`
 contains shared vendor statements. Public pages can inform source data, but do
@@ -41,7 +41,7 @@ preview, never sent as `UpdateInformation`.
 3. If the listing makes image-specific deployment claims or source data conflicts
    with the actual image, test that image and correct the authoritative source.
 4. Run `mk offer build --app odoo --cloud aws --publish-ready`. Inspect
-   `data/.catalog/aws/odoo.json` and the proposed AWS diff.
+   `data/.work/aws/odoo.json` and the proposed AWS diff.
 5. Run `mk offer plan --app odoo --profile <seller-profile> --output <path>`, then
    explicitly publish. Re-run status/read-back and inspect the Marketplace page.
    Applications with several AWS codes share one render; use `--all-codes` to

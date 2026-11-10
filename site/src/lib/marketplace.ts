@@ -57,7 +57,6 @@ interface AppConfig {
     catalog: string;
     versions?: string;
   };
-  multi_version_apps?: string[];
 }
 
 export interface ProductLink {

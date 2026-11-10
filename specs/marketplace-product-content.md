@@ -18,7 +18,7 @@ per-application fact audit for unchanged source data and template output.
 
 | File | Responsibility |
 | --- | --- |
-| `data/.catalog/catalog.json` | Temporary Contentful application facts; git-ignored and not authoritative |
+| `data/.work/catalog.json` | Temporary Contentful application facts; git-ignored and not authoritative |
 | `data/listing/vendor.json` | Shared vendor identity, highlights, console capabilities, support and trademark text |
 | `data/listing/templates/aws-ami.json` | Fixed copy structure with named placeholders, no credentials or per-product IDs |
 | `cli/aws_marketplace.py` | AWS Marketplace adapter: field names/limits, read normalization, update request shape |
@@ -29,7 +29,7 @@ per-application fact audit for unchanged source data and template output.
 Keep three layers separate:
 
 1. **Source metadata** — application facts, optional AWS binding/category/media
-   fields come temporarily from `data/.catalog/catalog.json`; vendor statements
+   fields come temporarily from `data/.work/catalog.json`; vendor statements
    and templates stay in the repository. None of these files need to mirror a
    cloud API hierarchy.
 2. **Authoring template** — `aws-ami.json` controls copy structure, placeholders,
@@ -103,21 +103,26 @@ Application versions are supplied by `apps-verson.json`. An entry may provide a
 single `version` string, or a list via `version`/`versions`; the first value is
 the selected version used by `{versions.version}`.
 
-`config/app.json` lists `multi_version_apps`. For those ids, when the versions
-source provides two or more values, the "What is included?" section appends
-`<v1>/<v2>/... for selection` after the trademark. The literal `latest` value is
-ignored, and single-value apps keep the existing wording. Rendered versions keep
-at most two dotted components (`a.b.c` becomes `a.b`); one- and two-component
-versions are unchanged, and duplicate display versions are removed.
+`data/listing/app-special-cases.json` marks applications with `multiVersion: true`.
+For those ids, when the versions source provides two or more values, the "What
+is included?" section appends `<v1>/<v2>/... for selection` after the trademark.
+The literal `latest` value is ignored, and single-value apps keep the existing
+wording. Rendered versions keep at most two dotted components (`a.b.c` becomes
+`a.b`); one- and two-component versions are unchanged, and duplicate display
+versions are removed.
 
 The AWS `ShortDescription` distinguishes multi-version applications: it says
 `Choose from <app> <versions> at launch` using every configured version except
 `latest` when the application is multi-version and at least two options exist,
 otherwise `Deploy <app> <version>`. `ShortDescription` does not vary by
 `catalog.hasenterprise`; the community/commercial distinction remains in the
-long description and pricing copy. In the long description, a true
-`hasenterprise` app usually has a separate commercial edition, so the offer is
-named as `<app> Community Edition`; a false value omits the edition label.
+long description and pricing copy. In the long description the edition label is
+`Community Edition` by default when `hasenterprise` is true and empty otherwise;
+an application whose open-source edition has a different name is declared in
+`data/listing/app-special-cases.json` (for example `Community Server` or
+`Open Source`). A false `hasenterprise` never mentions "Community Edition".
+The pricing lead-in comes from `{editions.pricingLead}`, so it repeats the
+resolved edition name and uses neutral wording when there is none.
 `contentOverrides` provides literal, per-listing replacements for the
 title/descriptions/highlights/keywords and still needs review.
 
@@ -191,7 +196,7 @@ python3 ci/validate_offers.py
 `--all-codes` or one or more `--offer-code` values.
 
 `build` is offline and does not contact AWS. It writes
-`data/.catalog/aws/<key>.json` by default (git-ignored) as a human-review preview
+`data/.work/aws/<key>.json` by default (git-ignored) as a human-review preview
 that mirrors the authoring template: resolved `content`,
 `longDescriptionSections`, `target`, and `AdditionalResources`. AWS read/write
 views and ChangeSet payloads remain internal program structures. `plan` remains
@@ -200,7 +205,7 @@ review and audit.
 
 `--catalog`, `--versions`, `--vendor` and `--template` allow
 alternate reviewed local source files. Defaults are
-`data/.catalog/catalog.json`, the configured version source,
+`data/.work/catalog.json`, the configured version source,
 `data/listing/vendor.json` and the AWS template.
 
 Install optional AWS dependencies and use AWS's normal credential provider

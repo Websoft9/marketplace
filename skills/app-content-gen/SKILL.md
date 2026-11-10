@@ -1,6 +1,6 @@
 ---
 name: app-content-gen
-description: Non-interactive workflow to pull catalog data, or pull and regenerate selected fields for selected applications in data/.catalog/catalog.json, validate mechanically, and report. Does not push to Contentful.
+description: Non-interactive workflow to pull catalog data, or pull and regenerate selected fields for selected applications in data/.work/catalog.json, validate mechanically, and report. Does not push to Contentful.
 ---
 
 # Application Content Gen
@@ -8,7 +8,7 @@ description: Non-interactive workflow to pull catalog data, or pull and regenera
 ## Scope
 
 Pull catalog data, or pull and regenerate selected English listing fields, for
-selected applications in `data/.catalog/catalog.json`. In generation mode,
+selected applications in `data/.work/catalog.json`. In generation mode,
 preserve every other application, every unselected field, `schemaVersion`,
 `generatedAt`, `count`, `source` and item order. In pull-only mode, refresh the
 selected items and let the pull update `generatedAt` and `count`.
@@ -38,14 +38,14 @@ interactive questions.
 - Read `CONTENTFUL_SPACE_ID` and `CONTENTFUL_TOKEN` from the environment. Never
   print, echo or store them. Pull accepts a Delivery/Preview token or a
   `CFPAT-` token; push requires `CFPAT-`.
-- `data/.catalog/catalog.json` is git-ignored scratch data. Back it up before
+- `data/.work/catalog.json` is git-ignored scratch data. Back it up before
   editing and never commit it.
 
 ## Workflow
 
 ### 1. Ensure current catalog data
 
-Load `data/.catalog/catalog.json`.
+Load `data/.work/catalog.json`.
 
 - File missing: pull the whole catalog with
   `make cli ARGS="catalog pull"`.
@@ -371,8 +371,10 @@ Bad: `The best ERP for every business`
 
 - JSON Boolean only: `true` or `false`, never a string.
 - `true`: a separately licensed commercial/enterprise edition exists and this
-  marketplace offer is the Community Edition. Keep or write `true` unless
-  there is explicit evidence for `false`.
+  marketplace offer provides the open-source edition. Keep or write `true`
+  unless there is explicit evidence for `false`. Do not encode the edition name
+  here: display labels live in `data/listing/app-special-cases.json` and default
+  to `Community Edition`.
 - `false` only from an official vendor editions or pricing page that lists a
   single edition, or an explicit vendor statement that no commercial edition is
   offered. Do not infer it from the app name, popularity, open-source status or

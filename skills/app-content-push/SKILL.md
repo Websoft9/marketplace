@@ -1,13 +1,13 @@
 ---
 name: app-content-push
-description: Push validated application fields from data/.catalog/catalog.json to Contentful with mk catalog push, using a dry run first and drafts by default.
+description: Push validated application fields from data/.work/catalog.json to Contentful with mk catalog push, using a dry run first and drafts by default.
 ---
 
 # Application Content Push
 
 ## Scope
 
-Push content that is already present in `data/.catalog/catalog.json` to
+Push content that is already present in `data/.work/catalog.json` to
 Contentful. This skill does not generate or rewrite content; use
 `app-content-gen` for that.
 
@@ -47,7 +47,7 @@ default is a full content sync, not a per-run diff.
 - Push requires `CONTENTFUL_SPACE_ID` and a Management API token in
   `CONTENTFUL_TOKEN` (`CFPAT-`). A Delivery/Preview token returns HTTP 401.
   Never print, echo or store the token.
-- `data/.catalog/catalog.json` is git-ignored scratch data and must exist.
+- `data/.work/catalog.json` is git-ignored scratch data and must exist.
 - Every requested id must exist in the catalog. If an id is missing, stop and
   report that `app-content-gen` must prepare the data first. Do not pull
   here: a pull would overwrite freshly generated content.

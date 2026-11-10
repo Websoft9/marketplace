@@ -9,13 +9,13 @@ description: Create or refresh personalized AWS AMI marketplace listing content 
 
 The repository owns templates, vendor statements and AWS listing rules.
 Application facts are **not** stored in the repository; they are pulled
-temporarily into `data/.catalog/catalog.json` and remain authoritative in
+temporarily into `data/.work/catalog.json` and remain authoritative in
 Contentful.
 
 ## Data sources
 
 - `specs/marketplace-product-content.md`.
-- `data/.catalog/catalog.json` — temporary Contentful application facts.
+- `data/.work/catalog.json` — temporary Contentful application facts.
 - Optional AWS fields in the catalog item: `entityId`, categories, media,
   additionalResources and content overrides.
 - `data/listing/vendor.json` (including `highlights`),
@@ -31,7 +31,7 @@ Contentful.
 ## Procedure
 
 1. Pull the target application:
-   `mk catalog pull --apps <key>` (default `data/.catalog/catalog.json`).
+   `mk catalog pull --apps <key>` (default `data/.work/catalog.json`).
    If the item is missing or wrong, correct Contentful and pull again. Do not
    create a repository product file.
 2. Read optional AWS fields from the catalog item. Do not create a per-app AWS
@@ -56,8 +56,12 @@ Contentful.
    configured version except `latest`; single-version applications use
    `Deploy ...`. `ShortDescription` does not vary by `catalog.hasenterprise`; the
    edition distinction stays in the long description and pricing copy. In the
-   long description, true `hasenterprise` names the offer as
-   `<app> Community Edition`, while false omits the edition label.
+   long description the edition label defaults to `<app> Community Edition` when
+   `hasenterprise` is true and is omitted when it is false; different open-source
+   naming is declared per application in
+   `data/listing/app-special-cases.json`, not in Contentful. The pricing lead-in
+   comes from `{editions.pricingLead}` and never mentions Community Edition when
+   the label is empty.
    Long-description section headings use Markdown bold when the template enables
    `boldLongDescriptionHeadings`; structured preview headings stay plain. In the
    submitted text each heading is followed by a blank line before its body copy.
@@ -66,7 +70,7 @@ Contentful.
    Missing namespaces or fields fail rendering; there is no runtime product
    schema or fallback field mapping.
 7. Build a template-shaped review preview:
-   `mk offer build --app <key> --cloud aws` → `data/.catalog/aws/<key>.json`.
+   `mk offer build --app <key> --cloud aws` → `data/.work/aws/<key>.json`.
    It does not contact AWS and is not a submit-ready ChangeSet. The default
    version source is remote; pass a local `--versions` file for a fully offline run.
 8. Run `mk offer plan --app <key> --profile <seller-profile> --output <path>` and

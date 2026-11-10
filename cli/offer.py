@@ -18,10 +18,17 @@ from .aws_marketplace import (
     change_status,
     current_content,
 )
-from .marketplace import CATALOG_URL, MULTI_VERSION_APPS, OFFER_SOURCE, REPO_ROOT, load_json, offer_codes_by_app
+from .marketplace import CATALOG_URL, OFFER_SOURCE, REPO_ROOT, load_json, offer_codes_by_app
 
 ROOT = REPO_ROOT
 DATA = ROOT / "data" / "listing"
+SPECIAL_CASES = DATA / "app-special-cases.json"
+SPECIAL_CASE_SLOTS = {
+    "editionLabel": "text",
+    "pricingLead": "text",
+    "multiVersion": "flag",
+}
+DEFAULT_EDITION_LABEL = "Community Edition"
 
 
 def read_json(path: Path) -> Any:
@@ -150,6 +157,73 @@ def version_choices(options: list[str]) -> str:
     return ", ".join(values[:-1]) + f", or {values[-1]}"
 
 
+def load_special_cases(path: Path = SPECIAL_CASES) -> dict[str, dict[str, str | bool]]:
+    """Read per-application presentation exceptions from the repository.
+
+    The file is optional: without it every application uses the template
+    defaults. Unknown slots or malformed values fail instead of being ignored.
+    """
+    if not path.is_file():
+        return {}
+    data = read_json(path)
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} must contain a JSON object")
+    if data.get("schemaVersion") != 1:
+        raise ValueError(f"{path} has an unsupported schemaVersion")
+    apps = data.get("apps") or {}
+    if not isinstance(apps, dict):
+        raise ValueError(f"{path} apps must be an object keyed by application id")
+    cases: dict[str, dict[str, str | bool]] = {}
+    for app_id, entry in apps.items():
+        if not isinstance(app_id, str) or not app_id.strip() or app_id != app_id.strip():
+            raise ValueError(f"{path} has an invalid application id")
+        if not isinstance(entry, dict):
+            raise ValueError(f"{path} entry {app_id!r} must be an object")
+        unknown = set(entry) - set(SPECIAL_CASE_SLOTS)
+        if unknown:
+            raise ValueError(
+                f"{path} entry {app_id!r} uses unsupported key(s): {', '.join(sorted(unknown))}"
+            )
+        for key, value in entry.items():
+            kind = SPECIAL_CASE_SLOTS[key]
+            if kind == "flag":
+                if not isinstance(value, bool):
+                    raise ValueError(f"{path} entry {app_id!r} {key} must be a boolean")
+                continue
+            if not isinstance(value, str):
+                raise ValueError(f"{path} entry {app_id!r} {key} must be a string")
+            if value != value.strip():
+                raise ValueError(f"{path} entry {app_id!r} {key} has surrounding whitespace")
+        if "pricingLead" in entry and not entry["pricingLead"]:
+            raise ValueError(f"{path} entry {app_id!r} pricingLead must not be empty")
+        cases[app_id] = dict(entry)
+    return cases
+
+
+def edition_values(catalog_item: dict, special_cases: dict[str, dict[str, str | bool]]) -> dict:
+    """Resolve the edition label and pricing sentence for one application."""
+    entry = special_cases.get(catalog_item.get("id")) or {}
+    default_label = DEFAULT_EDITION_LABEL if catalog_item.get("hasenterprise") is True else ""
+    label = entry.get("editionLabel", default_label)
+    has_label = bool(label)
+    trademark = str(catalog_item.get("trademark") or "").strip()
+    if has_label:
+        subject = f"{trademark} {label}" if trademark else f"the {label} edition"
+        default_pricing = (
+            f"This offer provides {subject}."
+            " It does not include any commercial edition."
+        )
+    else:
+        default_pricing = "No separate license fee is charged for the application."
+    return {
+        "label": label,
+        "labelSpaced": f" {label}" if has_label else "",
+        "hasLabel": has_label,
+        "pricingLead": entry.get("pricingLead") or default_pricing,
+    }
+
+
+
 def catalog_app_ids(source: str = CATALOG_URL, timeout: float = 30) -> list[str]:
     """Return the application ids from product_en.json in catalog order."""
     data = load_json(source, timeout)
@@ -250,12 +324,13 @@ def listing_targets(catalog_item: dict) -> list[dict]:
     return targets
 
 
-def render(catalog_item: dict, version: str, vendor_path: Path = DATA / "vendor.json", template_path: Path = DATA / "templates/aws-ami.json", version_options: list[str] | None = None) -> dict:
+def render(catalog_item: dict, version: str, vendor_path: Path = DATA / "vendor.json", template_path: Path = DATA / "templates/aws-ami.json", version_options: list[str] | None = None, special_cases_path: Path = SPECIAL_CASES) -> dict:
     vendor, template = read_json(vendor_path), read_json(template_path)
+    special_cases = load_special_cases(special_cases_path)
     options = [str(item).strip() for item in (version_options or [])]
     options = [display_version(item) for item in options if item and item.casefold() != "latest"]
     options = list(dict.fromkeys(options))
-    multi_version = catalog_item.get("id") in MULTI_VERSION_APPS and len(options) >= 2
+    multi_version = bool((special_cases.get(catalog_item.get("id")) or {}).get("multiVersion")) and len(options) >= 2
     selection = f" {'/'.join(options)} for selection" if multi_version else ""
     namespaces = template.get("namespaces")
     if not isinstance(namespaces, list) or not namespaces or any(not isinstance(namespace, str) or not namespace for namespace in namespaces):
@@ -285,6 +360,7 @@ def render(catalog_item: dict, version: str, vendor_path: Path = DATA / "vendor.
     catalog_values = dict(catalog_item)
     if not isinstance(catalog_values.get("hasenterprise"), bool):
         catalog_values["hasenterprise"] = True
+    editions = edition_values(catalog_values, special_cases)
     available = {
         "catalog": catalog_values,
         "versions": {
@@ -295,6 +371,7 @@ def render(catalog_item: dict, version: str, vendor_path: Path = DATA / "vendor.
             "shortChoices": version_choices(options),
         },
         "vendor": vendor,
+        "editions": editions,
     }
     roots = {}
     for namespace in namespaces:
@@ -375,7 +452,7 @@ def render(catalog_item: dict, version: str, vendor_path: Path = DATA / "vendor.
         "templateId": template["templateId"], "content": content, "preview": preview,
         "targets": targets,
         "publishBlockers": blockers,
-        "sourceHash": digest({"catalog": catalog_item, "version": version, "vendor": vendor, "template": template}),
+        "sourceHash": digest({"catalog": catalog_item, "version": version, "vendor": vendor, "template": template, "specialCases": special_cases.get(catalog_item["id"])}),
     }
 
 
@@ -425,6 +502,8 @@ def validate_content(content: dict) -> None:
     strings = list(text_values(content))
     if any(re.search(r"[\x00-\x08\x0b-\x1f]", value) for value in strings):
         raise ValueError("content contains unsupported control characters")
+    if any("  " in value for value in strings):
+        raise ValueError("content contains consecutive spaces")
     if any(re.search(r"\{[A-Za-z][A-Za-z0-9_]*\}", value) for value in strings):
         raise ValueError("content contains unresolved template placeholders")
 

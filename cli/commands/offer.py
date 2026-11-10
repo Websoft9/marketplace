@@ -19,9 +19,9 @@ def offer_command() -> None:
 
 def inputs(function):
     for option in (
-        click.option("--app", required=True, help="Application id from data/.catalog/catalog.json."),
+        click.option("--app", required=True, help="Application id from data/.work/catalog.json."),
         click.option("--catalog", "catalog_source", default=None, metavar="SOURCE",
-                     help="Temporary Contentful catalog JSON. Default: data/.catalog/catalog.json."),
+                     help="Temporary Contentful catalog JSON. Default: data/.work/catalog.json."),
         click.option("--versions", default=VERSIONS_URL, metavar="SOURCE",
                      help="Application version source URL or local JSON."),
         click.option("--vendor", type=click.Path(exists=True, dir_okay=False, path_type=Path),
@@ -166,7 +166,7 @@ def preflight_command(app, cloud, offer_codes, catalog_source, offer_source, tim
 @click.option("--cloud", required=True, type=click.Choice(CONFIGURED_PLATFORMS),
               help="Target cloud platform from config/marketplace.json.")
 @click.option("--catalog", "catalog_source", default=None, metavar="SOURCE",
-              help="Temporary Contentful catalog JSON. Default: data/.catalog/catalog.json.")
+              help="Temporary Contentful catalog JSON. Default: data/.work/catalog.json.")
 @click.option("--offer-codes", "offer_codes", default=None, metavar="CODES",
               help="Comma-separated offer codes; default: every code recorded for the application.")
 @click.option("--profile", default=None)
@@ -280,7 +280,7 @@ def targets_command(app, cloud, catalog_source, offer_codes, profile, max_result
 @click.option("--cloud", required=True, type=click.Choice(CONFIGURED_PLATFORMS),
               help="Target cloud platform from config/marketplace.json. Must match the template target.")
 @click.option("--output", "output_path", type=click.Path(dir_okay=False, path_type=Path), metavar="PATH",
-              help="Default: data/.catalog/<cloud>/<key>.json; use - for stdout.")
+              help="Default: data/.work/<cloud>/<key>.json; use - for stdout.")
 @click.option("--publish-ready", is_flag=True,
               help="Fail without writing when required version or Catalog identity is missing.")
 def build_command(app, catalog_source, versions, vendor, template, cloud, output_path, publish_ready):
@@ -297,7 +297,7 @@ def build_command(app, catalog_source, versions, vendor, template, cloud, output
             "offer is valid as a draft but not ready to publish: "
             + "; ".join(value["publishBlockers"])
         )
-    target = output_path or (service.ROOT / "data" / ".catalog" / cloud / f"{value['key']}.json")
+    target = output_path or (service.ROOT / "data" / ".work" / cloud / f"{value['key']}.json")
     if str(target) != "-" and target.suffix.lower() in {".md", ".markdown"}:
         write_text_output(preview_markdown(preview), target)
     else:
