@@ -47,7 +47,7 @@ Validation runs before any Contentful or AWS call:
 - `mk offer preflight` checks the application id against `product_en.json`,
   suggests close or lowercase matches, and verifies that every requested offer
   code belongs to that application. Offer codes come from the repository folder
-  `data/offer-codes/`, not a remote `offer.json`. A code belonging to another
+  `data/offer-codes/`, not a remote `matrix.json`. A code belonging to another
   application fails here instead of updating the wrong product.
 - `mk offer targets` resolves each offer code to a Catalog EntityId and records
   `targets` in the temporary catalog, so later steps do not repeat catalog

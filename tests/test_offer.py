@@ -384,6 +384,186 @@ class OfferTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "consecutive spaces"):
             offer.validate_content(content)
 
+    def test_offer_labels_split_operating_systems_from_other_labels(self):
+        self.assertTrue(offer.is_os_label("Ubuntu 26.04"))
+        self.assertTrue(offer.is_os_label("Debian 13"))
+        self.assertTrue(offer.is_os_label("Red Hat Enterprise Linux 9"))
+        self.assertFalse(offer.is_os_label("Multisite"))
+        self.assertFalse(offer.is_os_label("Enterprise"))
+        self.assertEqual(
+            offer.split_offer_label("Ubuntu 26.04; Multisite"),
+            ("Ubuntu 26.04", ["Multisite"]),
+        )
+        self.assertEqual(offer.split_offer_label("Multisite"), ("", ["Multisite"]))
+        self.assertEqual(offer.split_offer_label(""), ("", []))
+
+    def test_variant_title_replaces_the_platform_phrase_for_an_os(self):
+        self.assertEqual(
+            offer.variant_title(
+                "Odoo on AWS - Preconfigured, Hardened, Ready in Minutes",
+                "Odoo",
+                "Ubuntu 26.04",
+            ),
+            "Odoo on Ubuntu 26.04 - Preconfigured, Hardened, Ready in Minutes",
+        )
+
+    def test_variant_title_inserts_a_non_os_label_after_the_trademark(self):
+        self.assertEqual(
+            offer.variant_title(
+                "WordPress on AWS - Preconfigured, Hardened, Ready in Minutes",
+                "WordPress",
+                "Multisite",
+            ),
+            "WordPress Multisite on AWS - Preconfigured, Hardened, Ready in Minutes",
+        )
+
+    def test_variant_title_combines_os_and_non_os_labels(self):
+        self.assertEqual(
+            offer.variant_title(
+                "WordPress on AWS - Preconfigured, Hardened, Ready in Minutes",
+                "WordPress",
+                "Ubuntu 26.04; Multisite",
+            ),
+            "WordPress Multisite on Ubuntu 26.04 - Preconfigured, Hardened, Ready in Minutes",
+        )
+
+    def test_with_variant_updates_content_preview_and_source_hash(self):
+        value = self.render()
+        variant = offer.with_variant(value, "Ubuntu 26.04")
+        self.assertEqual(
+            variant["content"]["ProductTitle"], "Odoo on Ubuntu 26.04 - Preconfigured, Hardened, Ready in Minutes"
+        )
+        self.assertEqual(
+            variant["preview"]["content"]["ProductTitle"], variant["content"]["ProductTitle"]
+        )
+        self.assertNotEqual(value["sourceHash"], variant["sourceHash"])
+        self.assertIs(value, offer.with_variant(value, ""))
+
+    def test_with_variant_rejects_a_title_over_the_aws_limit(self):
+        value = self.render()
+        value["trademark"] = "Odoo"
+        with self.assertRaisesRegex(ValueError, "maximum 72"):
+            offer.with_variant(value, "Ubuntu 26.04" * 8)
+
+    def test_multi_plan_uses_each_codes_label(self):
+        self.item["hasenterprise"] = True
+        self.write()
+        value = self.render()
+        def entity_for(entity_id):
+            return {
+                "EntityIdentifier": f"{entity_id}@1",
+                "EntityType": "AmiProduct@1.0",
+                "DetailsDocument": aws_marketplace.to_read_document(value["content"]),
+            }
+        entities = [
+            {"code": "code-a", "entityId": "prod-a", "entity": entity_for("prod-a")},
+            {"code": "code-b", "entityId": "prod-b", "entity": entity_for("prod-b")},
+        ]
+        planned = offer.multi_plan(
+            value, entities, {"code-a": "Ubuntu 26.04", "code-b": "Debian 13"}
+        )
+        titles = [
+            target["plan"]["request"]["ChangeSet"][0]["DetailsDocument"]["ProductTitle"]
+            for target in planned["targets"]
+        ]
+        self.assertEqual(
+            titles,
+            [
+                "Odoo on Ubuntu 26.04 - Preconfigured, Hardened, Ready in Minutes",
+                "Odoo on Debian 13 - Preconfigured, Hardened, Ready in Minutes",
+            ],
+        )
+
+    def test_build_warns_and_lists_over_limit_titles(self):
+        self.item["trademark"] = "Test Application Name"
+        self.item["offerCodes"] = {"aws": ["code-a"]}
+        self.write()
+        with mock.patch.object(
+            offer_commands, "labels_for",
+            return_value={"code-a": "Ubuntu 26.04; Enterprise"},
+        ):
+            runner = CliRunner(mix_stderr=False)
+            result = runner.invoke(
+                cli, self.args("build") + ["--cloud", "aws", "--output", "-"]
+            )
+        self.assertEqual(result.exit_code, 0, result.stderr)
+        self.assertIn("WARNING odoo code-a", result.stderr)
+        self.assertIn("maximum 72", result.stderr)
+        document = json.loads(result.stdout)
+        warnings = document["titleWarnings"]
+        self.assertEqual(warnings[0]["code"], "code-a")
+        self.assertEqual(warnings[0]["field"], "ProductTitle")
+        self.assertGreater(warnings[0]["length"], 72)
+
+    def test_titles_command_lists_applications_over_the_limit(self):
+        self.item["trademark"] = "Test Application Name"
+        self.item["offerCodes"] = {"aws": ["code-a"]}
+        self.write()
+        with mock.patch.object(
+            offer, "offer_variants_by_app",
+            return_value={"odoo": {"aws": {"code-a": "Ubuntu 26.04; Enterprise"}}},
+        ):
+            result = self.runner.invoke(
+                cli,
+                [
+                    "offer", "titles", "--cloud", "aws",
+                    "--catalog", str(self.catalog_path),
+                    "--versions", str(self.versions_path),
+                    "--vendor", str(self.vendor_path),
+                    "--json",
+                ],
+            )
+        self.assertEqual(result.exit_code, 0, result.output)
+        document = json.loads(result.output)
+        self.assertEqual(document["max"], 72)
+        self.assertEqual(
+            document["over"],
+            [{"app": "odoo", "code": "code-a", "length": document["titles"][0]["length"]}],
+        )
+        self.assertGreater(document["titles"][0]["length"], 72)
+
+    def test_titles_command_strict_fails_when_over_the_limit(self):
+        self.item["trademark"] = "Test Application Name"
+        self.item["offerCodes"] = {"aws": ["code-a"]}
+        self.write()
+        with mock.patch.object(
+            offer, "offer_variants_by_app",
+            return_value={"odoo": {"aws": {"code-a": "Ubuntu 26.04; Enterprise"}}},
+        ):
+            result = self.runner.invoke(
+                cli,
+                [
+                    "offer", "titles", "--cloud", "aws",
+                    "--catalog", str(self.catalog_path),
+                    "--versions", str(self.versions_path),
+                    "--vendor", str(self.vendor_path),
+                    "--strict",
+                ],
+            )
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("exceed 72 characters", result.output)
+
+    def test_build_writes_one_preview_per_offer_code_with_labels(self):
+        self.item["offerCodes"] = {"aws": ["code-a", "code-b"]}
+        self.write()
+        with mock.patch.object(
+            offer_commands, "labels_for",
+            return_value={"code-a": "Ubuntu 26.04", "code-b": "Debian 13"},
+        ):
+            result = self.runner.invoke(
+                cli, self.args("build") + ["--cloud", "aws", "--output", "-"]
+            )
+        self.assertEqual(result.exit_code, 0, result.output)
+        document = json.loads(result.output)
+        self.assertEqual([item["code"] for item in document["targets"]], ["code-a", "code-b"])
+        self.assertEqual(
+            [item["preview"]["content"]["ProductTitle"] for item in document["targets"]],
+            [
+                "Odoo on Ubuntu 26.04 - Preconfigured, Hardened, Ready in Minutes",
+                "Odoo on Debian 13 - Preconfigured, Hardened, Ready in Minutes",
+            ],
+        )
+
     def test_short_description_does_not_use_hasenterprise_wording(self):
         descriptions = set()
         for value in (False, True, None, "missing"):

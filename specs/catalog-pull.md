@@ -150,7 +150,7 @@ By default a target application absent from Contentful still fails the export;
 `offerCodes` maps the local offer-codes source's `productID` values by platform.
 It is copied from the JSON files under `data/offer-codes/` (merged by application
 id, in filename order) when the app id or one of its `applications` matches; apps
-without an offer entry receive `{}`. No remote `offer.json` is fetched. Array values such as
+without an offer entry receive `{}`. No remote `matrix.json` is fetched. Array values such as
 `keywords` and `usecases` are rendered on one line
 (`["open source", "website"]`), while records and objects remain indented.
 Linked entries/assets and RichText documents are converted to readable values;

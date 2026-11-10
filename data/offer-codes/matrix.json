@@ -21,7 +21,13 @@
         "type": "app",
         "applications": [
             "activemq"
-        ]
+        ],
+        "variants": {
+            "aws": {
+                "8ow143epbkh8mmcijbhrb76rw": "Debian",
+                "e3lnqtjusq2zmxl9t4pqs57dy": "Ubuntu"
+            }
+        }
     },
     {
         "id": "activepieces",
@@ -385,9 +391,7 @@
             "alibabacloud": [],
             "huaweicloud": [],
             "azure": [],
-            "aws": [
-                "zvrec5x4z09py88sq4zsphyd"
-            ]
+            "aws": []
         },
         "type": "app",
         "applications": [
@@ -600,7 +604,13 @@
         "type": "app",
         "applications": [
             "haproxy"
-        ]
+        ],
+        "variants": {
+            "aws": {
+                "43of0ubgxuf0k88if0noeafl8": "Ubuntu",
+                "e16iyvd40gcn4zsak80ijzkbz": "Debian"
+            }
+        }
     },
     {
         "id": "hermes",
@@ -615,7 +625,7 @@
             "huaweicloud": [],
             "azure": [],
             "aws": [
-                "ct42l4zz1mth7u5nvxkcn5kty"
+                "aqoocrpu3d8ai463moxnfupej"
             ]
         },
         "type": "app",
@@ -793,7 +803,9 @@
             ],
             "huaweicloud": [],
             "azure": [],
-            "aws": []
+            "aws": [
+                "zvrec5x4z09py88sq4zsphyd"
+            ]
         },
         "type": "app",
         "applications": [
@@ -1288,7 +1300,7 @@
             "huaweicloud": [],
             "azure": [],
             "aws": [
-                "dxx0ssjdnsqnuzhxsuikwe5gj"
+                "aaiqseqt7udt8grotakhb43so"
             ]
         },
         "type": "app",
@@ -1773,7 +1785,13 @@
         "type": "app",
         "applications": [
             "superset"
-        ]
+        ],
+        "variants": {
+            "aws": {
+                "cym2dzg7o9d0p7ns9dc1cfc8m": "Ubuntu",
+                "3npzfj3jgzvqqempn4i5m9vrm": "Debian"
+            }
+        }
     },
     {
         "id": "teleport",
@@ -1833,9 +1851,7 @@
     {
         "id": "tomcat",
         "productID": {
-            "aliyun": [
-                "cmjj010920"
-            ],
+            "aliyun": [],
             "huaweiyun": [],
             "alibabacloud": [],
             "huaweicloud": [],
@@ -2022,7 +2038,9 @@
                 "cmjj011415"
             ],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00035310"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -2039,9 +2057,7 @@
         "productID": {
             "aliyun": [
                 "cmjj023845",
-                "cmjj010728",
-                "cmjj00041704",
-                "cmjj011415"
+                "cmjj010728"
             ],
             "huaweiyun": [
                 "472c623a-7ff8-455a-a077-08aa7b389833",
@@ -2052,7 +2068,6 @@
             ],
             "alibabacloud": [
                 "sgcmjj00035342",
-                "sgcmjj00035310",
                 "sgcmjj00025557"
             ],
             "huaweicloud": [],
@@ -2068,7 +2083,30 @@
         },
         "type": "app",
         "applications": [
-            "wordpress",
+            "wordpress"
+        ],
+        "variants": {
+            "aws": {
+                "6juf4omtss002tppg07lwko9u": "Multisite"
+            }
+        }
+    },
+    {
+        "id": "wordpresspro",
+        "productID": {
+            "aliyun": [
+                "cmjj00041704"
+            ],
+            "huaweiyun": [],
+            "alibabacloud": [
+                "sgcmjj00025386"
+            ],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": []
+        },
+        "type": "app",
+        "applications": [
             "wordpresspro"
         ]
     },

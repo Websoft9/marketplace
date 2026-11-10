@@ -1,0 +1,174 @@
+name: Offer Listing Check
+
+on:
+  schedule:
+    # Every Wednesday at 09:37 China Standard Time (UTC+8).
+    - cron: "37 1 * * 3"
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: "Platform to check (all = aws + aliyun + alibabacloud)"
+        type: choice
+        required: true
+        default: all
+        options:
+          - all
+          - aws
+          - aliyun
+          - alibabacloud
+
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+
+concurrency:
+  group: offer-listing-check
+  cancel-in-progress: false
+
+jobs:
+  listing-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PLATFORM: ${{ github.event_name == 'schedule' && 'all' || inputs.platform }}
+      REPORT: /tmp/offer-listing-check.json
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Check AWS role configuration
+        if: env.PLATFORM == 'aws' || env.PLATFORM == 'all'
+        env:
+          AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+        run: |
+          if [[ -z "$AWS_ROLE_ARN" ]]; then
+            echo "::error::Configure AWS_ROLE_ARN as an Actions variable and allow this repository to assume it with GitHub OIDC."
+            exit 1
+          fi
+          if [[ ! "$AWS_ROLE_ARN" =~ ^arn:aws:iam::[0-9]{12}:role/.+ ]]; then
+            echo "::error::AWS_ROLE_ARN must be an IAM role ARN, not an OIDC provider ARN."
+            exit 1
+          fi
+
+      - name: Configure AWS credentials with GitHub OIDC
+        if: env.PLATFORM == 'aws' || env.PLATFORM == 'all'
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+          role-session-name: OfferListingCheck-${{ github.run_id }}
+
+      - name: Check Aliyun role configuration
+        if: env.PLATFORM == 'aliyun' || env.PLATFORM == 'all'
+        env:
+          ALIYUN_ROLE_ARN: ${{ vars.ALIYUN_ROLE_ARN }}
+          ALIYUN_OIDC_PROVIDER_ARN: ${{ vars.ALIYUN_OIDC_PROVIDER_ARN }}
+        run: |
+          if [[ -z "$ALIYUN_ROLE_ARN" || -z "$ALIYUN_OIDC_PROVIDER_ARN" ]]; then
+            echo "::error::Configure ALIYUN_ROLE_ARN and ALIYUN_OIDC_PROVIDER_ARN as Actions variables."
+            exit 1
+          fi
+
+      - name: Configure Aliyun credentials with GitHub OIDC
+        if: env.PLATFORM == 'aliyun' || env.PLATFORM == 'all'
+        uses: aliyun/configure-aliyun-credentials-action@1e5248c8d5d93a8781ac344a68e19a43341e79e6 # v1.1.0
+        with:
+          role-to-assume: ${{ vars.ALIYUN_ROLE_ARN }}
+          oidc-provider-arn: ${{ vars.ALIYUN_OIDC_PROVIDER_ARN }}
+          role-session-name: OfferListingCheck-${{ github.run_id }}
+          audience: sts.aliyuncs.com
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install CLI and SDKs
+        run: |
+          python -m pip install --disable-pip-version-check -e ".[aws,aliyun]"
+
+      - name: Check listing status
+        run: |
+          set -euo pipefail
+          mk offer-codes listing-check --platform "$PLATFORM" --json > "$REPORT"
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json, os
+          data = json.load(open(os.environ["REPORT"]))
+          summary = data["summary"]
+          print("## Offer listing check\n")
+          print(f"- Checked: {summary['checked']}")
+          print(f"- Exists: {summary['exists']}")
+          print(f"- Not found: {summary['not_found']}")
+          print(f"- Not public: {summary['not_public']}")
+          print(f"- Error: {summary['errors']}\n")
+          print("| Platform | Status | Checked | Exists | Not found | Not public | Errors |")
+          print("| --- | --- | --- | --- | --- | --- | --- |")
+          for name, report in data["platforms"].items():
+              print(
+                  f"| {name} | {report.get('status','')} | {report.get('checked',0)} | "
+                  f"{report.get('exists',0)} | {report.get('not_found',0)} | "
+                  f"{report.get('not_public',0)} | {report.get('error',0)} |"
+              )
+          PY
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: offer-listing-check
+          path: ${{ env.REPORT }}
+          if-no-files-found: warn
+
+      - name: Report listing findings
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [[ ! -f "$REPORT" ]]; then
+            echo "::warning::Listing check report was not created"
+            exit 0
+          fi
+          python3 - <<'PY'
+          import json, os, subprocess
+          data = json.load(open(os.environ["REPORT"]))
+          summary = data["summary"]
+          if not summary["notFound"] and not summary["errors"]:
+              raise SystemExit(0)
+          lines = [
+              f"Run: {os.environ['RUN_URL']}",
+              "",
+              f"Checked {summary['checked']} codes: {summary['exists']} exist, "
+              f"{summary['not_found']} not found, {summary['not_public']} not public, "
+              f"{summary['errors']} error(s).",
+              "",
+              "| Platform | Code | Applications | Status | Visibility | Detail |",
+              "| --- | --- | --- | --- | --- | --- |",
+          ]
+          problems = [r for r in data["results"] if r["status"] in {"not_found", "error"}]
+          for item in problems[:100]:
+              apps = ", ".join(item["apps"]) or "-"
+              detail = (item.get("detail") or "").replace("|", "\\|")
+              visibility = item.get("visibility") or "-"
+              lines.append(
+                  f"| {item['platform']} | `{item['code']}` | {apps} | {item['status']} | "
+                  f"{visibility} | {detail} |"
+              )
+          if len(problems) > 100:
+              lines.append(f"| ... | | | | | {len(problems) - 100} more |")
+          body = "\n".join(lines)
+          title = "[Offer codes] Listing check findings"
+          existing = subprocess.run(
+              ["gh", "issue", "list", "--state", "open", "--search",
+               f'in:title "{title}"', "--json", "number", "--jq", ".[0].number"],
+              check=True, capture_output=True, text=True,
+          ).stdout.strip()
+          if existing:
+              subprocess.run(["gh", "issue", "comment", existing, "--body", body], check=True)
+          else:
+              subprocess.run(
+                  ["gh", "issue", "create", "--title", title, "--body", body], check=True
+              )
+          PY

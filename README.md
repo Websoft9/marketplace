@@ -30,6 +30,7 @@ A Websoft9 automated operations project for mainstream cloud marketplaces. It ma
 - `mk catalog pull` — export English Contentful fields to `data/.work/catalog.json` (git-ignored) for the current `product_en.json` applications. See [`specs/catalog-pull.md`](specs/catalog-pull.md).
 - `mk catalog verify` — validate catalog field rules and confirm that only the selected applications and fields changed. See [`specs/catalog-pull.md`](specs/catalog-pull.md#validating-the-dataset).
 - `mk catalog push` — write reviewed metadata from `data/.work/catalog.json` to Contentful drafts, optionally publish. See [`specs/catalog-push.md`](specs/catalog-push.md).
+- `mk offer titles --cloud aws` — render every `ProductTitle` and list applications whose title exceeds 72 characters. See [`specs/marketplace-product-content.md`](specs/marketplace-product-content.md#offer-code-labels-in-the-product-title).
 
 <!-- marketplace-apps:start -->
 ## Marketplace 应用对应表

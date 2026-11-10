@@ -239,6 +239,38 @@ class OfferSourceTests(unittest.TestCase):
             codes = app_list.offer_codes_by_app(str(root))
         self.assertEqual(codes["wordpress"]["aws"], ["w-1", "w-2"])
 
+    def test_variants_merge_across_files_and_are_readable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "a.json").write_text(
+                json.dumps([{
+                    "type": "app",
+                    "id": "haproxy",
+                    "productID": {"aws": ["code-a", "code-b"]},
+                    "variants": {"aws": {"code-a": "Ubuntu 26.04"}},
+                }]),
+                encoding="utf-8",
+            )
+            (root / "b.json").write_text(
+                json.dumps([{
+                    "type": "app",
+                    "id": "haproxy",
+                    "applications": ["haproxy", "haproxy-pro"],
+                    "productID": {"aws": ["code-b"]},
+                    "variants": {"aws": {"code-b": "Debian 13"}},
+                }]),
+                encoding="utf-8",
+            )
+            variants = app_list.offer_variants_by_app(str(root))
+        self.assertEqual(
+            variants["haproxy"]["aws"],
+            {"code-a": "Ubuntu 26.04", "code-b": "Debian 13"},
+        )
+        self.assertEqual(
+            variants["haproxy-pro"]["aws"],
+            {"code-a": "Ubuntu 26.04", "code-b": "Debian 13"},
+        )
+
     def test_read_offers_rejects_an_empty_directory(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaisesRegex(ValueError, "no JSON files"):

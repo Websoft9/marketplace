@@ -126,6 +126,36 @@ resolved edition name and uses neutral wording when there is none.
 `contentOverrides` provides literal, per-listing replacements for the
 title/descriptions/highlights/keywords and still needs review.
 
+## Offer-code labels in the product title
+
+Offer codes may carry display labels in `data/offer-codes/` (`variants`). A
+label that names an operating system replaces the `on AWS` platform phrase with
+`on <OS>`; any other label is inserted after the trademark. Several labels
+combine in the order written.
+
+| Code label | ProductTitle |
+| --- | --- |
+| `Ubuntu` | `HAProxy on Ubuntu - Preconfigured, Hardened, Ready in Minutes` |
+| `Multisite` | `WordPress Multisite on AWS - Preconfigured, Hardened, Ready in Minutes` |
+| `Ubuntu; Multisite` | `WordPress Multisite on Ubuntu - Preconfigured, Hardened, Ready in Minutes` |
+
+OS labels are family names without a version, so both Ubuntu codes share the
+display name. An OS is recognised by a known name at the start of the label: Amazon Linux,
+Oracle Linux, Red Hat, Rocky Linux, AlmaLinux, CentOS, Debian, Ubuntu, SUSE,
+SLES, Fedora, Windows Server, FreeBSD and RHEL. Anything else is a non-OS label.
+
+Only `ProductTitle` varies by code. `mk offer build` writes one preview per code
+when the application has several codes on the platform; a single-code
+application keeps the existing single-preview shape. `mk offer plan` renders the
+title per target, and a label change makes an existing reviewed plan stale
+through `sourceHash`.
+
+A rendered `ProductTitle` over 72 characters does not block `mk offer build`:
+the command prints a warning and records `titleWarnings` in the written
+document. Use `mk offer titles --cloud aws [--apps <ids>] [--json] [--strict]`
+to render titles for every catalog application and list the ones over the
+limit; `--strict` makes the command fail instead of only reporting.
+
 Contentful application data, vendor copy and the shared template are the sources
 of truth. The tool validates structure and renders deterministically; it does
 not maintain a per-application verification status. Correct source data when it

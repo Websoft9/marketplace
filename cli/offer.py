@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import copy
 import difflib
 import hashlib
 import json
 import re
+import urllib.error
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +20,14 @@ from .aws_marketplace import (
     change_status,
     current_content,
 )
-from .marketplace import CATALOG_URL, OFFER_SOURCE, REPO_ROOT, load_json, offer_codes_by_app
+from .marketplace import (
+    CATALOG_URL,
+    OFFER_SOURCE,
+    REPO_ROOT,
+    load_json,
+    offer_codes_by_app,
+    offer_variants_by_app,
+)
 
 ROOT = REPO_ROOT
 DATA = ROOT / "data" / "listing"
@@ -29,6 +38,24 @@ SPECIAL_CASE_SLOTS = {
     "multiVersion": "flag",
 }
 DEFAULT_EDITION_LABEL = "Community Edition"
+OS_NAMES = (
+    "amazon linux",
+    "oracle linux",
+    "red hat",
+    "rocky linux",
+    "almalinux",
+    "alma linux",
+    "centos",
+    "debian",
+    "ubuntu",
+    "suse",
+    "sles",
+    "fedora",
+    "windows server",
+    "freebsd",
+    "rhel",
+)
+PLATFORM_PHRASE = " on AWS"
 
 
 def read_json(path: Path) -> Any:
@@ -221,6 +248,101 @@ def edition_values(catalog_item: dict, special_cases: dict[str, dict[str, str | 
         "hasLabel": has_label,
         "pricingLead": entry.get("pricingLead") or default_pricing,
     }
+
+
+def is_os_label(label: str) -> bool:
+    """Treat a label as an operating system name when it starts with a known OS."""
+    value = " ".join(str(label).casefold().split())
+    return any(value == name or value.startswith(name + " ") for name in OS_NAMES)
+
+
+def split_offer_label(label: str) -> tuple[str, list[str]]:
+    """Split a semicolon-delimited label into its OS label and the others."""
+    parts = [part.strip() for part in str(label or "").split(";") if part.strip()]
+    os_label = next((part for part in parts if is_os_label(part)), "")
+    others = [part for part in parts if part != os_label] if os_label else parts
+    return os_label, others
+
+
+def variant_title(title: str, trademark: str, label: str) -> str:
+    """Apply offer-code labels to a rendered product title.
+
+    A non-OS label is inserted after the trademark; an OS label replaces the
+    `` on AWS`` platform phrase with `` on <OS>``.
+    """
+    os_label, others = split_offer_label(label)
+    result = title
+    if others:
+        if not trademark or trademark not in result:
+            raise ValueError(f"product title does not contain trademark {trademark!r}")
+        result = result.replace(
+            trademark, trademark + "".join(f" {item}" for item in others), 1
+        )
+    if os_label:
+        if PLATFORM_PHRASE not in result:
+            raise ValueError(f"product title does not contain {PLATFORM_PHRASE.strip()!r}")
+        result = result.replace(PLATFORM_PHRASE, f" on {os_label}", 1)
+    return result
+
+
+def with_variant(bundle: dict, label: str, strict: bool = True) -> dict:
+    """Return a bundle whose ProductTitle reflects one offer-code label.
+
+    ``strict`` rejects an over-limit title. Build previews pass ``strict=False``
+    so the title can be reported as a warning instead of blocking the file.
+    """
+    label = str(label or "").strip()
+    if not label:
+        return bundle
+    content = dict(bundle["content"])
+    title = variant_title(
+        str(content.get("ProductTitle", "")),
+        str(bundle.get("trademark") or ""),
+        label,
+    )
+    warnings = []
+    if len(title) > LIMITS["ProductTitle"]:
+        if strict:
+            raise ValueError(
+                f"ProductTitle is {len(title)} characters, "
+                f"maximum {LIMITS['ProductTitle']}"
+            )
+        warnings.append(
+            {
+                "field": "ProductTitle",
+                "length": len(title),
+                "max": LIMITS["ProductTitle"],
+                "title": title,
+            }
+        )
+    content["ProductTitle"] = title
+    preview = copy.deepcopy(bundle.get("preview") or {})
+    if isinstance(preview.get("content"), dict):
+        preview["content"]["ProductTitle"] = title
+    result = {
+        **bundle,
+        "content": content,
+        "preview": preview,
+        "variantLabel": label,
+        "sourceHash": digest({"base": bundle["sourceHash"], "variant": label}),
+    }
+    if warnings:
+        result["titleWarnings"] = warnings
+    return result
+
+
+def variant_labels(
+    app: str,
+    cloud: str,
+    offer_source: str = OFFER_SOURCE,
+    timeout: float = 30,
+) -> dict[str, str]:
+    """Return code-to-label mappings for one application and cloud."""
+    try:
+        variants = offer_variants_by_app(offer_source, timeout)
+    except (OSError, ValueError, urllib.error.URLError) as error:
+        raise ValueError(f"failed to read offer labels: {error}") from None
+    return variants.get(app, {}).get(cloud, {})
 
 
 
@@ -451,6 +573,8 @@ def render(catalog_item: dict, version: str, vendor_path: Path = DATA / "vendor.
         "schemaVersion": 1, "key": catalog_item["id"], "entityId": entity_id, "entityType": entity_type,
         "templateId": template["templateId"], "content": content, "preview": preview,
         "targets": targets,
+        "trademark": catalog_item.get("trademark") or "",
+        "offerCodes": catalog_item.get("offerCodes") or {},
         "publishBlockers": blockers,
         "sourceHash": digest({"catalog": catalog_item, "version": version, "vendor": vendor, "template": template, "specialCases": special_cases.get(catalog_item["id"])}),
     }
@@ -520,13 +644,15 @@ def plan(bundle: dict, entity: dict) -> dict:
     return result
 
 
-def multi_plan(bundle: dict, entities: list[dict]) -> dict:
-    """Plan one shared content render against several Catalog entities.
+def multi_plan(bundle: dict, entities: list[dict], labels: dict[str, str] | None = None) -> dict:
+    """Plan one content render against several Catalog entities.
 
     Each entry in ``entities`` carries its own ``code``, ``entityId`` and the
-    ``describe_entity`` response. Every target plan stays bound to its own
-    EntityId and base revision, so plans cannot be replayed across entities.
+    ``describe_entity`` response. A code with a display label gets its own
+    ProductTitle, so every target plan stays bound to its own EntityId,
+    revision and offer-code label.
     """
+    labels = labels or {}
     targets = []
     seen_entities: set[str] = set()
     for entry in entities:
@@ -537,7 +663,9 @@ def multi_plan(bundle: dict, entities: list[dict]) -> dict:
                 "each entity must be submitted once"
             )
         seen_entities.add(entity_id)
-        target_bundle = {**bundle, "entityId": entity_id}
+        target_bundle = with_variant(
+            {**bundle, "entityId": entity_id}, labels.get(entry.get("code"), "")
+        )
         target_plan = plan(target_bundle, entry["entity"])
         targets.append(
             {
@@ -549,7 +677,7 @@ def multi_plan(bundle: dict, entities: list[dict]) -> dict:
     return {
         "schemaVersion": 1,
         "key": bundle["key"],
-        "sourceHash": bundle["sourceHash"],
+        "sourceHash": digest([target["plan"]["sourceHash"] for target in targets]),
         "publishBlockers": bundle["publishBlockers"],
         "targets": targets,
         "planHash": digest(targets),

@@ -152,7 +152,43 @@ def merge_offers(entries: list[dict]) -> list[dict]:
             for code in codes if isinstance(codes, list) else []:
                 if code not in values:
                     values.append(code)
+        entry_variants = entry.get("variants")
+        if isinstance(entry_variants, dict):
+            target_variants = target.setdefault("variants", {})
+            for platform, labels in entry_variants.items():
+                if not isinstance(labels, dict):
+                    continue
+                merged_labels = target_variants.setdefault(str(platform), {})
+                for code, label in labels.items():
+                    merged_labels.setdefault(code, label)
     return merged
+
+
+def offer_variants_by_app(source: str, timeout: float = 30) -> dict[str, dict[str, dict[str, str]]]:
+    """Map application ids to platform/code display labels."""
+    result: dict[str, dict[str, dict[str, str]]] = {}
+    for offer in read_offers(source, timeout):
+        if not isinstance(offer, dict) or offer.get("type") != "app":
+            continue
+        apps: list[str] = []
+        if isinstance(offer.get("id"), str) and offer["id"].strip():
+            apps.append(offer["id"].strip())
+        for app in offer.get("applications") or []:
+            if isinstance(app, str) and app.strip() and app.strip() not in apps:
+                apps.append(app.strip())
+        variants = offer.get("variants")
+        if not apps or not isinstance(variants, dict):
+            continue
+        for app in apps:
+            by_platform = result.setdefault(app, {})
+            for platform, labels in variants.items():
+                if not isinstance(labels, dict):
+                    continue
+                values = by_platform.setdefault(str(platform), {})
+                for code, label in labels.items():
+                    if isinstance(code, str) and isinstance(label, str):
+                        values.setdefault(code, label)
+    return result
 
 
 def read_offers(source: str, timeout: float = 30) -> list[dict]:
@@ -331,7 +367,7 @@ def render_markdown(rows: list[AppRow]) -> str:
                 "",
                 "### Marketplace 商品目录之外的应用",
                 "",
-                "以下应用在 `offer.json` 中存在商品，但 `product_en.json` 中没有对应的 Trademark。",
+                "以下应用在 `matrix.json` 中存在商品，但 `product_en.json` 中没有对应的 Trademark。",
                 "",
                 render_table(outside_catalog),
             ]

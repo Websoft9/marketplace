@@ -62,6 +62,11 @@ Contentful.
    `data/listing/app-special-cases.json`, not in Contentful. The pricing lead-in
    comes from `{editions.pricingLead}` and never mentions Community Edition when
    the label is empty.
+   Offer-code labels from `data/offer-codes/` change only `ProductTitle`: an OS
+   label replaces the `on AWS` phrase with `on <OS>`, any other label is inserted
+   after the trademark, and several labels combine in order. A title over 72
+   characters is reported as a warning and listed by
+   `mk offer titles --cloud aws`.
    Long-description section headings use Markdown bold when the template enables
    `boldLongDescriptionHeadings`; structured preview headings stay plain. In the
    submitted text each heading is followed by a blank line before its body copy.

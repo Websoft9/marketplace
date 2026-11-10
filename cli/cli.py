@@ -7,6 +7,7 @@ from .commands.catalog import catalog_command
 from .commands.list_apps import list_command
 from .commands.versions import versions_command
 from .commands.offer import offer_command
+from .commands.offer_codes import offer_codes_command
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
@@ -25,6 +26,7 @@ def help_command(ctx: click.Context) -> None:
 cli.add_command(list_command, "list")
 cli.add_command(versions_command, "versions")
 cli.add_command(offer_command, "offer")
+cli.add_command(offer_codes_command, "offer-codes")
 cli.add_command(catalog_command, "catalog")
 cli.add_command(help_command, "help")
 

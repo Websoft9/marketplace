@@ -51,6 +51,13 @@ def output(value):
     click.echo(json.dumps(value, indent=2, ensure_ascii=False))
 
 
+def labels_for(app, cloud):
+    try:
+        return service.variant_labels(app, cloud)
+    except (OSError, ValueError) as error:
+        raise click.ClickException(str(error)) from None
+
+
 def _status_to_stderr(value):
     """Keep long-running apply status on stderr so stdout stays one JSON document."""
     click.echo(json.dumps(value, indent=2, ensure_ascii=False), err=True)
@@ -297,11 +304,178 @@ def build_command(app, catalog_source, versions, vendor, template, cloud, output
             "offer is valid as a draft but not ready to publish: "
             + "; ".join(value["publishBlockers"])
         )
+    labels = labels_for(app, cloud)
+    codes = [
+        code
+        for code in (value.get("offerCodes") or {}).get(cloud) or []
+        if isinstance(code, str) and code.strip()
+    ]
+    warnings = []
+    if len(codes) > 1:
+        targets = []
+        for code in codes:
+            label = labels.get(code, "")
+            variant = service.with_variant(value, label, strict=False)
+            warnings.extend(
+                {"code": code, **warning}
+                for warning in variant.get("titleWarnings") or []
+            )
+            targets.append(
+                {"code": code, "label": label, "preview": variant["preview"]}
+            )
+        document = {
+            "schemaVersion": 1,
+            "key": value["key"],
+            "cloud": cloud,
+            "targets": targets,
+        }
+    else:
+        code = codes[0] if codes else None
+        variant = service.with_variant(value, labels.get(code, ""), strict=False)
+        warnings = [
+            {"code": code, **warning} for warning in variant.get("titleWarnings") or []
+        ]
+        document = variant["preview"]
+    if warnings:
+        document["titleWarnings"] = warnings
+        for warning in warnings:
+            click.echo(
+                f"WARNING {app} {warning.get('code') or '-'}: ProductTitle is "
+                f"{warning['length']} characters, maximum {warning['max']}: "
+                f"{warning['title']}",
+                err=True,
+            )
     target = output_path or (service.ROOT / "data" / ".work" / cloud / f"{value['key']}.json")
     if str(target) != "-" and target.suffix.lower() in {".md", ".markdown"}:
-        write_text_output(preview_markdown(preview), target)
+        if isinstance(document, dict) and document.get("targets") is not None:
+            text = "\n\n".join(
+                f"## {item['code']} ({item['label'] or 'no label'})\n\n"
+                + preview_markdown(item["preview"])
+                for item in document["targets"]
+            )
+        else:
+            text = preview_markdown(document)
+        write_text_output(text, target)
     else:
-        write_output(preview, target)
+        write_output(document, target)
+
+
+@offer_command.command("titles")
+@click.option("--cloud", required=True, type=click.Choice(["aws"]),
+              help="Target cloud platform (currently: aws).")
+@click.option("--apps", "app_list", default=None, metavar="IDS",
+              help="Comma-separated application ids. Default: every catalog item.")
+@click.option("--catalog", "catalog_source", default=None, metavar="SOURCE",
+              help="Temporary Contentful catalog JSON. Default: data/.work/catalog.json.")
+@click.option("--versions", default=VERSIONS_URL, metavar="SOURCE",
+              help="Application version source URL or local JSON.")
+@click.option("--vendor", type=click.Path(exists=True, dir_okay=False, path_type=Path),
+              default=service.DATA / "vendor.json")
+@click.option("--template", type=click.Path(exists=True, dir_okay=False, path_type=Path),
+              default=service.DATA / "templates/aws-ami.json")
+@click.option("--max", "max_length", type=click.IntRange(1), default=72, show_default=True,
+              help="Maximum ProductTitle characters.")
+@click.option("--strict", is_flag=True,
+              help="Exit non-zero when any title exceeds the maximum.")
+@click.option("--json", "as_json", is_flag=True,
+              help="Print the complete result as JSON.")
+def titles_command(app_list, cloud, catalog_source, versions, vendor, template, max_length, strict, as_json):
+    """Render every ProductTitle and report those over the AWS limit."""
+    source = catalog_source or str(catalog_default_path())
+    try:
+        _, by_id = catalog_data.load_catalog(source)
+        version_map = catalog_data.load_versions(versions)
+        variants = service.offer_variants_by_app(OFFER_SOURCE)
+    except (OSError, ValueError) as error:
+        raise click.ClickException(str(error)) from None
+
+    requested = [item.strip() for item in (app_list or "").split(",") if item.strip()]
+    unknown = [app for app in requested if app not in by_id]
+    if unknown:
+        raise click.ClickException(
+            f"application(s) not in the catalog: {', '.join(unknown)}"
+        )
+    apps = requested or list(by_id)
+
+    titles = []
+    errors = []
+    for app in apps:
+        item = by_id[app]
+        options = version_map.get(app, [])
+        version = options[0] if options else ""
+        try:
+            value = service.render(
+                item, version, vendor, template, version_options=options
+            )
+        except (OSError, ValueError) as error:
+            errors.append({"app": app, "error": str(error)})
+            continue
+        labels = (variants.get(app) or {}).get(cloud) or {}
+        codes = [
+            code
+            for code in (item.get("offerCodes") or {}).get(cloud) or []
+            if isinstance(code, str) and code.strip()
+        ] or [None]
+        for code in codes:
+            label = labels.get(code, "") if code else ""
+            try:
+                variant = service.with_variant(value, label, strict=False)
+            except (OSError, ValueError) as error:
+                errors.append({"app": app, "code": code, "error": str(error)})
+                continue
+            title = variant["content"]["ProductTitle"]
+            titles.append(
+                {
+                    "app": app,
+                    "code": code,
+                    "label": label,
+                    "title": title,
+                    "length": len(title),
+                    "over": len(title) > max_length,
+                }
+            )
+
+    over = [entry for entry in titles if entry["over"]]
+    document = {
+        "schemaVersion": 1,
+        "cloud": cloud,
+        "max": max_length,
+        "titles": titles,
+        "over": [
+            {"app": entry["app"], "code": entry["code"], "length": entry["length"]}
+            for entry in over
+        ],
+        "errors": errors,
+    }
+    if as_json:
+        output(document)
+    else:
+        click.echo(f"{'APP':<20} {'CODE':<28} {'LEN':>4}  TITLE")
+        for entry in titles:
+            code = entry["code"] or "-"
+            marker = "!" if entry["over"] else " "
+            click.echo(
+                f"{entry['app']:<20} {code:<28} {entry['length']:>4}{marker} {entry['title']}"
+            )
+        for error in errors:
+            click.echo(f"SKIP {error['app']}: {error['error']}", err=True)
+        click.echo(
+            f"Checked {len(titles)} title(s): {len(over)} over {max_length} characters"
+        )
+        if over:
+            click.echo(
+                "Over limit: "
+                + ", ".join(
+                    f"{entry['app']} ({entry['code'] or '-'}) {entry['length']}"
+                    for entry in over
+                )
+            )
+        if errors:
+            click.echo(f"{len(errors)} application(s) could not be rendered", err=True)
+    if strict and over:
+        raise click.ClickException(
+            f"{len(over)} title(s) exceed {max_length} characters"
+        )
 
 
 def _entity_match(entity_id, code, detail, summary=None):
@@ -429,12 +603,17 @@ def plan_command(app, catalog_source, versions, vendor, template, current, profi
     """Produce a revision-bound UpdateInformation diff without submitting it."""
     value = bundle(app, catalog_source, versions, vendor, template)
     targets = _selected_targets(value, all_codes, offer_codes)
+    labels = labels_for(app, (value["preview"].get("target") or {}).get("platform") or "aws")
     try:
         if len(targets) == 1 and not all_codes:
             entity = service.read_json(current) if current else service.aws_call(
                 service.aws_client(profile), "describe_entity", EntityId=targets[0]["entityId"]
             )
-            write_output(service.plan({**value, "entityId": targets[0]["entityId"]}, entity), output_path)
+            bundle_value = service.with_variant(
+                {**value, "entityId": targets[0]["entityId"]},
+                labels.get(targets[0].get("code"), ""),
+            )
+            write_output(service.plan(bundle_value, entity), output_path)
             return
         if current:
             raise ValueError("--current supports a single target only; select one offer code")
@@ -447,7 +626,7 @@ def plan_command(app, catalog_source, versions, vendor, template, current, profi
             }
             for target in targets
         ]
-        write_output(service.multi_plan(value, entities), output_path)
+        write_output(service.multi_plan(value, entities, labels), output_path)
     except (ValueError, KeyError, OSError) as error:
         raise click.ClickException(str(error)) from error
 
@@ -479,6 +658,7 @@ def apply_command(app, catalog_source, versions, vendor, template, plan_path, pr
     value = bundle(app, catalog_source, versions, vendor, template)
     if value["publishBlockers"]:
         raise click.ClickException("publication blocked: " + "; ".join(value["publishBlockers"]))
+    labels = labels_for(app, (value["preview"].get("target") or {}).get("platform") or "aws")
     try:
         reviewed = service.read_json(plan_path)
         client = service.aws_client(profile)
@@ -491,7 +671,7 @@ def apply_command(app, catalog_source, versions, vendor, template, plan_path, pr
                 }
                 for target in reviewed["targets"]
             ]
-            expected = service.multi_plan(value, entities)
+            expected = service.multi_plan(value, entities, labels)
             if reviewed != expected:
                 raise ValueError("plan is stale or modified; regenerate and review it")
             results = []
@@ -541,7 +721,18 @@ def apply_command(app, catalog_source, versions, vendor, template, plan_path, pr
         if not single:
             raise ValueError("reviewed plan has no base revision")
         live = service.aws_call(client, "describe_entity", EntityId=single)
-        expected = service.plan({**value, "entityId": single}, live)
+        single_code = next(
+            (
+                target.get("code")
+                for target in value.get("targets") or []
+                if target.get("entityId") == single
+            ),
+            None,
+        )
+        bundle_value = service.with_variant(
+            {**value, "entityId": single}, labels.get(single_code, "")
+        )
+        expected = service.plan(bundle_value, live)
         if reviewed != expected:
             raise ValueError("plan is stale or modified; regenerate and review it")
         if expected["request"] is None:
