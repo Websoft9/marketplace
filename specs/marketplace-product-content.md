@@ -107,7 +107,10 @@ the selected version used by `{versions.version}`.
 For those ids, when the versions source provides two or more values, the "What
 is included?" section appends `<v1>/<v2>/... for selection` after the trademark.
 The literal `latest` value is ignored, and single-value apps keep the existing
-wording. Rendered versions keep at most two dotted components (`a.b.c` becomes
+wording. Commercial builds are also ignored: a version containing `enterprise`
+or a standalone `ee` token (for example `5.26-enterprise` or `5.26-ee`) never
+appears in multi-version wording, because it is not part of the open-source
+offer. Rendered versions keep at most two dotted components (`a.b.c` becomes
 `a.b`); one- and two-component versions are unchanged, and duplicate display
 versions are removed.
 

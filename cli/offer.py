@@ -67,6 +67,7 @@ def digest(value: Any) -> str:
 
 
 PLACEHOLDER = re.compile(r"\{([^{}]+)\}")
+COMMERCIAL_VERSION = re.compile(r"enterprise|(?<![a-z0-9])ee(?![a-z0-9])", re.IGNORECASE)
 
 
 def resolve_placeholder(path: str, roots: dict[str, Any]) -> Any:
@@ -164,6 +165,16 @@ def format_template(text: str, roots: dict[str, Any]) -> Any:
     if match:
         return evaluate_expression(match.group(1), roots)
     return PLACEHOLDER.sub(lambda item: str(evaluate_expression(item.group(1), roots)), text)
+
+
+def is_community_version(value: str) -> bool:
+    """Return whether a version belongs to the offer's open-source edition.
+
+    Version sources may list commercial builds next to community builds, for
+    example ``5.26-enterprise`` or ``5.26-ee``. Those must not be advertised as
+    selectable versions of the open-source offer.
+    """
+    return not COMMERCIAL_VERSION.search(str(value))
 
 
 def display_version(value: str) -> str:
@@ -450,7 +461,11 @@ def render(catalog_item: dict, version: str, vendor_path: Path = DATA / "vendor.
     vendor, template = read_json(vendor_path), read_json(template_path)
     special_cases = load_special_cases(special_cases_path)
     options = [str(item).strip() for item in (version_options or [])]
-    options = [display_version(item) for item in options if item and item.casefold() != "latest"]
+    options = [
+        display_version(item)
+        for item in options
+        if item and item.casefold() != "latest" and is_community_version(item)
+    ]
     options = list(dict.fromkeys(options))
     multi_version = bool((special_cases.get(catalog_item.get("id")) or {}).get("multiVersion")) and len(options) >= 2
     selection = f" {'/'.join(options)} for selection" if multi_version else ""

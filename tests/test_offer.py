@@ -178,6 +178,51 @@ class OfferTests(unittest.TestCase):
         self.assertIn("Odoo Community Edition 20/19 for selection,", included)
         self.assertNotIn("latest", included)
 
+    def test_commercial_versions_are_excluded_from_multi_version_rendering(self):
+        self.item["hasenterprise"] = True
+        self.write()
+        value = offer.render(
+            self.item,
+            "2026.10",
+            self.vendor_path,
+            version_options=[
+                "2026.10",
+                "2026.10-enterprise",
+                "5.26",
+                "5.26-ee",
+            ],
+        )
+        self.assertIn(
+            "Choose from Odoo 2026.10 or 5.26 at launch",
+            value["content"]["ShortDescription"],
+        )
+        included = next(
+            section["text"]
+            for section in value["preview"]["longDescriptionSections"]
+            if section["heading"] == "What is included?"
+        )
+        self.assertIn("Odoo Community Edition 2026.10/5.26 for selection,", included)
+        self.assertNotIn("enterprise", value["content"]["LongDescription"])
+        self.assertNotIn("5.26-ee", value["content"]["LongDescription"])
+
+    def test_commercial_versions_do_not_enable_multi_version_wording(self):
+        self.item["hasenterprise"] = True
+        self.write()
+        value = offer.render(
+            self.item,
+            "2026.10",
+            self.vendor_path,
+            version_options=["2026.10", "2026.10-enterprise"],
+        )
+        self.assertIn("Deploy Odoo 2026.10", value["content"]["ShortDescription"])
+        self.assertNotIn("for selection", value["content"]["LongDescription"])
+
+    def test_is_community_version_recognizes_edition_markers(self):
+        for value in ("5.26-enterprise", "5.26-Enterprise", "5.26-ee", "5.26_EE"):
+            self.assertFalse(offer.is_community_version(value))
+        for value in ("5.26", "2026.10", "v3-core", "green"):
+            self.assertTrue(offer.is_community_version(value))
+
     def test_single_version_or_non_multi_app_has_no_selection(self):
         single = offer.render(
             self.item, "20.0", self.vendor_path, version_options=["20"]

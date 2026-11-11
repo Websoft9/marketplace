@@ -63,7 +63,10 @@ use this namespace instead of `catalog.hasenterprise`.
 
 `multiVersion` is read directly by `render()`; it only enables
 `{versions.shortChoices}` and the `... for selection` suffix when the versions
-source provides at least two values.
+source provides at least two values. Values that name a commercial edition
+(`enterprise` or a standalone `ee` token, such as `5.26-enterprise` or
+`5.26-ee`) are excluded before this count because the offer provides the
+open-source edition.
 
 The resolved edition values for an application are part of `sourceHash`, so
 editing its label or pricing sentence makes an existing reviewed plan stale.
