@@ -1597,6 +1597,23 @@
         ]
     },
     {
+        "id": "rethinkdb",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "46nzcqzjprj8xhzdvayqnoxsq"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "rethinkdb"
+        ]
+    },
+    {
         "id": "rundeck",
         "productID": {
             "aliyun": [],
