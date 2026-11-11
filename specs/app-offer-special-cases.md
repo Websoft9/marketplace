@@ -28,7 +28,7 @@ application id:
   "schemaVersion": 1,
   "apps": {
     "odoo": { "multiVersion": true },
-    "mongodb": { "multiVersion": true, "editionLabel": "Community Server" },
+    "mongodb": { "multiVersion": true, "editionLabel": "Community Server", "titleTrademark": "Document DB" },
     "redis": { "multiVersion": true, "editionLabel": "Open Source" },
     "graylog": { "editionLabel": "Open" }
   }
@@ -41,6 +41,7 @@ Supported slots (all optional):
 | --- | --- | --- | --- |
 | `editionLabel` | string | Name of the edition this offer provides. Empty string means no label at all | `Community Edition` when `hasenterprise` is true, otherwise empty |
 | `pricingLead` | string | First sentence of the "What you pay for" section | `<trademark> <editionLabel>` when a label exists, otherwise `No separate license fee is charged for the application.` |
+| `titleTrademark` | string | Brand name used in `ProductTitle` when the AWS title cannot use `catalog.trademark`; other fields keep the catalog value | `catalog.trademark` |
 | `multiVersion` | boolean | Advertise version selection when the versions source has two or more values | `false` |
 
 Do not add per-application slots that duplicate catalog facts. Add a slot only
@@ -61,9 +62,14 @@ Templates reference those values and do not concatenate or branch on edition
 names. The three edition-dependent strings in `data/listing/templates/aws-ami.json`
 use this namespace instead of `catalog.hasenterprise`.
 
-`multiVersion` is read directly by `render()`; it only enables
-`{versions.shortChoices}` and the `... for selection` suffix when the versions
-source provides at least two values. Values that name a commercial edition
+It also exposes a `branding` namespace with `titleTrademark`, which defaults to
+`catalog.trademark`. Only `ProductTitle` uses it; the long description, pricing
+copy and trademark statement keep the catalog trademark. Offer-code title
+variants insert their labels after `titleTrademark`, not after the catalog value.
+
+`multiVersion` is read directly by `render()`; it only enables the
+multi-version `{versions.choice}` wording and the `... for selection` suffix
+when the versions source provides at least two values. Values that name a commercial edition
 (`enterprise` or a standalone `ee` token, such as `5.26-enterprise` or
 `5.26-ee`) are excluded before this count because the offer provides the
 open-source edition.
@@ -77,7 +83,7 @@ editing its label or pricing sentence makes an existing reviewed plan stale.
 
 - the file has an unknown `schemaVersion`, a non-object entry or a wrong slot type;
 - an entry uses an unsupported slot;
-- a label has surrounding whitespace;
+- a text override is empty or has surrounding whitespace;
 - the rendered offer still contains an unresolved placeholder or two consecutive
   spaces.
 

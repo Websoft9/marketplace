@@ -55,7 +55,10 @@ namespace-qualified paths that map directly to source fields:
 - `{catalog.*}` — temporary Contentful application facts, such as
   `{catalog.trademark}`, `{catalog.summary}`, `{catalog.usecases}`,
   `{catalog.keywords}`, or `{catalog.overview}`
-- `{versions.*}` — selected application version, such as `{versions.version}`, and the multi-version suffix `{versions.selection}`
+- `{branding.*}` — presentation-only title branding; `{branding.titleTrademark}`
+  defaults to `catalog.trademark` and is overridden per application in
+  `data/listing/app-special-cases.json`
+- `{versions.*}` — selected application version, such as `{versions.version}`, the space-prefixed `{versions.choice}` used by `ShortDescription`, and the multi-version suffix `{versions.selection}`
 - `{vendor.*}` — vendor file, including indexed values such as
   `{vendor.highlights[0]}`
 
@@ -117,7 +120,10 @@ versions are removed.
 The AWS `ShortDescription` distinguishes multi-version applications: it says
 `Choose from <app> <versions> at launch` using every configured version except
 `latest` when the application is multi-version and at least two options exist,
-otherwise `Deploy <app> <version>`. `ShortDescription` does not vary by
+otherwise `Deploy <app> <version>`. `{versions.choice}` carries the leading
+space, so a missing version source entry renders `Deploy <app> for ...` without
+consecutive spaces and remains a draft unless `--publish-ready` is used.
+`ShortDescription` does not vary by
 `catalog.hasenterprise`; the community/commercial distinction remains in the
 long description and pricing copy. In the long description the edition label is
 `Community Edition` by default when `hasenterprise` is true and empty otherwise;
@@ -133,7 +139,7 @@ title/descriptions/highlights/keywords and still needs review.
 
 Offer codes may carry display labels in `data/offer-codes/` (`variants`). A
 label that names an operating system replaces the `on AWS` platform phrase with
-`on <OS>`; any other label is inserted after the trademark. Several labels
+`on <OS>`; any other label is inserted after the title trademark. Several labels
 combine in the order written.
 
 | Code label | ProductTitle |
@@ -198,7 +204,10 @@ categories/media fields preserve existing AWS values; this version does not
 implement explicit deletion of them. Categories must be confirmed AWS category
 names (AWS also validates them). The local checker validates supported lengths,
 keyword combined length, duplicates, URL safety and unresolved placeholders.
-It cannot establish semantic correctness or AWS approval.
+Validation errors name the concrete field path and show an excerpt, for example
+`content.ShortDescription contains consecutive spaces: '...'`, so a source-data
+problem is not reported only as a generic content error. It cannot establish
+semantic correctness or AWS approval.
 
 Deployment instructions and refund policy appear in JSON preview sections, not
 the submitted ChangeSet. This avoids treating Usage/Refunds from the example as
@@ -213,9 +222,12 @@ Application facts now come from the temporary catalog, so a future Issue flow
 must write to Contentful instead of a repository product file.
 
 `build` writes the human-review preview; use `--output -` to print it instead.
-`--publish-ready` fails without writing until required fields and Catalog identity
-are present. The default version source is remote; pass a local `--versions` file
-for a fully offline run. None of these commands contact AWS.
+A draft with missing required inputs still succeeds, records `publishBlockers`
+in the preview document, and prints the same blockers as a warning on stderr.
+`--publish-ready` fails without writing and reports those blockers verbatim, such
+as `versions: version is missing`, instead of a derived formatting symptom. The
+default version source is remote; pass a local `--versions` file for a fully
+offline run. None of these commands contact AWS.
 
 ```sh
 mk offer build --app odoo --cloud aws

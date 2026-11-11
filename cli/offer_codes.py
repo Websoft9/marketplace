@@ -9,7 +9,14 @@ cross-entry rules (unique ids, one owner per code) that no reader enforces.
 
 from __future__ import annotations
 
+import copy
+import fcntl
+import json
+import os
 import re
+import stat
+import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -75,9 +82,42 @@ def load_source(source: str, timeout: float = 30) -> list[tuple[str, Any]]:
     return [(str(resolved), marketplace.load_json(str(resolved), timeout))]
 
 
+def _document_items(document: Any) -> list[Any] | None:
+    items = document.get("items") if isinstance(document, dict) else document
+    return items if isinstance(items, list) else None
+
+
+def require_structure(documents: list[tuple[str, Any]]) -> None:
+    """Reject broken roots and malformed entries before a read-only audit."""
+    result = verify(documents)
+    errors = [issue for issue in result["issues"] if issue["severity"] == "error"]
+    if errors:
+        details = "; ".join(
+            f"{item['source']} {item['app']} {item['field']}: {item['message']}"
+            for item in errors
+        )
+        raise ValueError(f"invalid offer source: {details}")
+
+
+@contextmanager
+def source_lock(source: str):
+    """Serialize CLI writers for a directory, including single-file overrides."""
+    resolved = marketplace.resolve_source(source)
+    if not isinstance(resolved, Path):
+        raise ValueError("editing requires a local offer source")
+    path = resolved.resolve()
+    directory = path if path.is_dir() else path.parent
+    with (directory / ".offer-codes.lock").open("a") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
 def _entries(document: Any, source: str, issues: list[dict[str, str]]) -> list[Any]:
-    entries = document.get("items") if isinstance(document, dict) else document
-    if not isinstance(entries, list):
+    entries = _document_items(document)
+    if entries is None:
         _issue(
             issues,
             "error",
@@ -101,6 +141,8 @@ def verify(
 
     total = 0
     seen_ids: dict[str, list[str]] = {}
+    alias_owners: dict[str, list[int]] = {}
+    owner_names: dict[int, str] = {}
     codes_by_platform: dict[str, dict[str, list[str]]] = {}
 
     for source, document in documents:
@@ -142,6 +184,8 @@ def verify(
                     issues, UNKNOWN_TYPE_SEVERITY, source, app_id, "type",
                     f"unknown type {entry_type!r}; expected one of {sorted(KNOWN_TYPES)}",
                 )
+            if isinstance(entry_type, str) and entry_type != entry_type.strip():
+                _issue(issues, "error", source, app_id, "type", "has surrounding whitespace")
 
             applications = entry.get("applications")
             if not isinstance(applications, list):
@@ -176,6 +220,11 @@ def verify(
                         issues, "warning", source, app_id, "applications",
                         "does not include the entry id",
                     )
+
+            if app_id:
+                owner_names[total] = app_id
+                for alias in {app_id, *_normalize(applications)}:
+                    alias_owners.setdefault(alias, []).append(total)
 
             product_ids = entry.get("productID")
             if not isinstance(product_ids, dict):
@@ -262,6 +311,14 @@ def verify(
             else:
                 message = "duplicate application id"
             _issue(issues, "error", unique_sources[0], app_id, "id", message)
+
+    for alias, owners in alias_owners.items():
+        if len(owners) > 1:
+            _issue(
+                issues, "error", "", None, "applications",
+                f"ambiguous application id or alias {alias!r} matches entries: "
+                + ", ".join(owner_names[owner] for owner in owners),
+            )
 
     for platform, by_code in codes_by_platform.items():
         for code, owners in by_code.items():
@@ -375,6 +432,721 @@ def load_catalog_ids(source: str, timeout: float = 30) -> set[str]:
         if isinstance(value, str) and value.strip():
             ids.add(value.strip())
     return ids
+
+
+def _entry_id(entry: Any) -> str | None:
+    value = entry.get("id") if isinstance(entry, dict) else None
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _owner_ids(entry: Any) -> set[str]:
+    """Return the entry id plus its ``applications`` aliases."""
+    app_id = _entry_id(entry)
+    owners = set(_normalize(entry.get("applications"))) if isinstance(entry, dict) else set()
+    if app_id:
+        owners.add(app_id)
+    return owners
+
+
+def _find_entries(
+    documents: list[tuple[str, Any]], app_id: str
+) -> list[tuple[str, Any, int, dict[str, Any]]]:
+    matches: list[tuple[str, Any, int, dict[str, Any]]] = []
+    for source, document in documents:
+        for index, entry in enumerate(_document_items(document) or []):
+            if app_id in _owner_ids(entry):
+                matches.append((source, document, index, entry))
+    return matches
+
+
+def _take_label(entry: dict[str, Any], platform: str, code: str) -> str | None:
+    variants = entry.get("variants")
+    if not isinstance(variants, dict):
+        return None
+    labels = variants.get(platform)
+    if not isinstance(labels, dict) or code not in labels:
+        return None
+    label = labels.pop(code)
+    if not labels:
+        variants.pop(platform, None)
+        if not variants:
+            entry.pop("variants", None)
+    if not isinstance(label, str):
+        raise ValueError(
+            f"variant label for code {code!r} on {platform} is not a string"
+        )
+    return label
+
+
+def _put_label(entry: dict[str, Any], platform: str, code: str, label: str) -> None:
+    variants = entry.setdefault("variants", {})
+    variants.setdefault(platform, {})[code] = label
+
+
+def _commit_documents(
+    documents: list[tuple[str, Any]], working: list[tuple[str, Any]]
+) -> None:
+    """Copy a fully validated working copy back into the original documents."""
+    if len(documents) != len(working):
+        raise RuntimeError("offer document count changed during edit")
+    for (_, original), (_, updated) in zip(documents, working):
+        if not ((isinstance(original, dict) and isinstance(updated, dict))
+                or (isinstance(original, list) and isinstance(updated, list))):
+            raise ValueError("offer document is not an array or an item object")
+    for (_, original), (_, updated) in zip(documents, working):
+        if isinstance(original, dict) and isinstance(updated, dict):
+            original.clear()
+            original.update(updated)
+        elif isinstance(original, list) and isinstance(updated, list):
+            original[:] = updated
+
+
+def replace_code(
+    documents: list[tuple[str, Any]],
+    *,
+    old_app: str,
+    new_app: str,
+    platforms: list[str] | None = None,
+    codes: list[str] | None = None,
+    delete_empty: bool = False,
+) -> dict[str, Any]:
+    """Move offer codes and their labels from one application entry to another.
+
+    The original documents are updated only when the whole move succeeds; a
+    validation error leaves them unchanged.
+    """
+    working = copy.deepcopy(documents)
+    plan = _replace_code(
+        working,
+        old_app=old_app,
+        new_app=new_app,
+        platforms=platforms,
+        codes=codes,
+        delete_empty=delete_empty,
+    )
+    _commit_documents(documents, working)
+    return plan
+
+
+def _replace_code(
+    documents: list[tuple[str, Any]],
+    *,
+    old_app: str,
+    new_app: str,
+    platforms: list[str] | None = None,
+    codes: list[str] | None = None,
+    delete_empty: bool = False,
+) -> dict[str, Any]:
+    """Move codes in a working copy; see :func:`replace_code`."""
+    old_app = (old_app or "").strip()
+    new_app = (new_app or "").strip()
+    if not old_app or not new_app:
+        raise ValueError("--from and --to must be non-empty application ids")
+    if old_app == new_app:
+        raise ValueError("--from and --to must be different applications")
+
+    old_source, old_document, old_index, old_entry = _find_entry(
+        documents, old_app, allow_missing=False
+    )
+    old_id = _entry_id(old_entry) or old_app
+    target_match = _find_entry(documents, new_app, allow_missing=True)
+    if target_match is not None and target_match[3] is old_entry:
+        raise ValueError(
+            f"{old_app!r} and {new_app!r} resolve to the same offer entry "
+            f"{old_id!r}"
+        )
+
+    old_product_ids = old_entry.get("productID")
+    if not isinstance(old_product_ids, dict):
+        raise ValueError(f"entry {old_app!r} has no productID object")
+
+    requested_codes = [
+        str(code).strip() for code in (codes or []) if str(code).strip()
+    ]
+    requested_codes = list(dict.fromkeys(requested_codes))
+    if codes is not None and not requested_codes:
+        raise ValueError("explicit code selection must not be empty")
+    if platforms is not None and not platforms:
+        raise ValueError("explicit platform selection must not be empty")
+
+    if platforms:
+        selected = list(
+            dict.fromkeys(
+                str(item).strip() for item in platforms if str(item).strip()
+            )
+        )
+        if not selected:
+            raise ValueError("--platform must contain at least one platform")
+        unknown = [
+            platform for platform in selected if platform not in old_product_ids
+        ]
+        if unknown:
+            raise ValueError(
+                f"application {old_app!r} has no productID entry for "
+                + ", ".join(unknown)
+            )
+    else:
+        selected = [
+            platform
+            for platform, values in old_product_ids.items()
+            if isinstance(values, list) and values
+        ]
+
+    if not selected:
+        raise ValueError(f"application {old_app!r} has no offer codes to replace")
+
+    owned: dict[str, list[str]] = {}
+    for platform in selected:
+        values = old_product_ids.get(platform)
+        owned[platform] = (
+            [value for value in values if isinstance(value, str) and value.strip()]
+            if isinstance(values, list)
+            else []
+        )
+
+    if requested_codes:
+        for code in requested_codes:
+            if not any(code in values for values in owned.values()):
+                elsewhere = [
+                    platform
+                    for platform, values in old_product_ids.items()
+                    if platform not in selected
+                    and isinstance(values, list)
+                    and code in values
+                ]
+                if elsewhere:
+                    raise ValueError(
+                        f"code {code!r} belongs to {old_app!r} on "
+                        f"{', '.join(elsewhere)}, which is outside the selected platform(s)"
+                    )
+                known = sorted(
+                    {value for values in owned.values() for value in values}
+                )
+                raise ValueError(
+                    f"code {code!r} does not belong to {old_app!r} on the selected "
+                    f"platform(s) (known: {', '.join(known) or 'none'})"
+                )
+        chosen = {
+            platform: [code for code in values if code in requested_codes]
+            for platform, values in owned.items()
+        }
+    else:
+        chosen = owned
+
+    if not any(chosen.values()):
+        raise ValueError(f"application {old_app!r} has no offer codes to replace")
+
+    created = target_match is None
+    if created:
+        target_entry: dict[str, Any] = {
+            "id": new_app,
+            "productID": {platform: [] for platform in REQUIRED_PLATFORMS},
+            "type": "app",
+            "applications": [new_app],
+        }
+        target_source = old_source
+    else:
+        (
+            target_source,
+            _target_document,
+            _target_index,
+            target_entry,
+        ) = target_match
+        if not isinstance(target_entry.get("productID"), dict):
+            raise ValueError(f"entry {new_app!r} has no productID object")
+        target_entry.setdefault("productID", {})
+    new_id = _entry_id(target_entry) or new_app
+
+    target_product_ids = target_entry["productID"]
+    moves: list[dict[str, Any]] = []
+    for platform, selected_codes in chosen.items():
+        if not selected_codes:
+            continue
+        values = old_product_ids[platform]
+        target_values = target_product_ids.setdefault(platform, [])
+        if not isinstance(target_values, list):
+            raise ValueError(
+                f"productID.{platform} of {new_app!r} is not an array"
+            )
+        for code in selected_codes:
+            if code in target_values:
+                raise ValueError(
+                    f"code {code!r} is already assigned to {new_id!r} on {platform}"
+                )
+        for code in selected_codes:
+            values.remove(code)
+            target_values.append(code)
+            label = _take_label(old_entry, platform, code)
+            if label is not None:
+                _put_label(target_entry, platform, code, label)
+            moves.append({"platform": platform, "code": code, "label": label})
+
+    if created:
+        items = _document_items(old_document)
+        if items is None:
+            raise ValueError(f"offer source {old_source!r} has no entry array")
+        items.append(target_entry)
+
+    remaining = sum(
+        len(values)
+        for values in old_product_ids.values()
+        if isinstance(values, list)
+    )
+    deleted_old = False
+    if delete_empty and remaining == 0:
+        items = _document_items(old_document)
+        if items is not None:
+            del items[old_index]
+            deleted_old = True
+
+    return {
+        "from": old_id,
+        "to": new_id,
+        "requestedFrom": old_app,
+        "requestedTo": new_app,
+        "created": created,
+        "deletedOld": deleted_old,
+        "moves": moves,
+        "oldRemainingCodes": remaining,
+        "sources": sorted({old_source, target_source}),
+    }
+
+
+def _normalize(values: Any) -> list[str]:
+    """Trim, drop empties and remove duplicates while preserving order."""
+    result: list[str] = []
+    if not isinstance(values, (list, tuple)):
+        return result
+    for value in values:
+        if not isinstance(value, str):
+            continue
+        text = value.strip()
+        if text and text not in result:
+            result.append(text)
+    return result
+
+
+def _find_entry(
+    documents: list[tuple[str, Any]], app_id: str, *, allow_missing: bool
+) -> tuple[str, Any, int, dict[str, Any]] | None:
+    matches = _find_entries(documents, app_id)
+    if len(matches) > 1:
+        raise ValueError(
+            f"application {app_id!r} has {len(matches)} offer entries; "
+            "run offer-codes verify and fix the duplicates first"
+        )
+    if not matches:
+        if allow_missing:
+            return None
+        raise ValueError(f"application {app_id!r} has no offer entry")
+    entry = matches[0][3]
+    entry_type = entry.get("type")
+    if entry_type != "app":
+        raise ValueError(
+            f"{app_id!r} resolves to offer entry {_entry_id(entry) or '?'} of "
+            f"type {entry_type!r}; only app entries can be maintained"
+        )
+    return matches[0]
+
+
+def resolve_entry_id(
+    documents: list[tuple[str, Any]], app: str
+) -> str | None:
+    """Return the app entry id for an id or alias, or None when absent."""
+    requested = (app or "").strip()
+    if not requested:
+        return None
+    match = _find_entry(documents, requested, allow_missing=True)
+    return _entry_id(match[3]) if match else None
+
+
+def _drop_label(entry: dict[str, Any], platform: str, code: str) -> None:
+    variants = entry.get("variants")
+    if not isinstance(variants, dict):
+        return
+    labels = variants.get(platform)
+    if not isinstance(labels, dict):
+        return
+    labels.pop(code, None)
+    if not labels:
+        variants.pop(platform, None)
+        if not variants:
+            entry.pop("variants", None)
+
+
+def find_codes(
+    documents: list[tuple[str, Any]],
+    *,
+    apps: list[str] | None = None,
+    codes: list[str] | None = None,
+    platforms: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Return one row per owned code, filtered by application, code or platform."""
+    app_filter = set(_normalize(apps))
+    code_filter = set(_normalize(codes))
+    platform_filter = set(_normalize(platforms))
+    rows: list[dict[str, Any]] = []
+
+    for source, document in documents:
+        for entry in _document_items(document) or []:
+            if not isinstance(entry, dict):
+                continue
+            app_id = _entry_id(entry)
+            if app_id is None:
+                continue
+            aliases = _normalize(entry.get("applications"))
+            owners = {app_id, *aliases}
+            if app_filter and not (owners & app_filter):
+                continue
+            product_ids = entry.get("productID")
+            if not isinstance(product_ids, dict):
+                continue
+            for platform, values in product_ids.items():
+                if platform_filter and str(platform) not in platform_filter:
+                    continue
+                if not isinstance(values, list):
+                    continue
+                variants = entry.get("variants")
+                labels = (
+                    variants.get(platform)
+                    if isinstance(variants, dict)
+                    and isinstance(variants.get(platform), dict)
+                    else {}
+                )
+                for code in values:
+                    if not isinstance(code, str) or not code.strip():
+                        continue
+                    if code_filter and code not in code_filter:
+                        continue
+                    rows.append(
+                        {
+                            "app": app_id,
+                            "applications": sorted(owners),
+                            "type": entry.get("type"),
+                            "platform": str(platform),
+                            "code": code,
+                            "label": labels.get(code),
+                            "source": source,
+                        }
+                    )
+
+    rows.sort(key=lambda row: (row["app"], row["platform"], row["code"]))
+    return rows
+
+
+def add_codes(
+    documents: list[tuple[str, Any]],
+    *,
+    app: str,
+    platform: str,
+    codes: list[str],
+    labels: list[str] | None = None,
+    allow_shared: bool = False,
+) -> dict[str, Any]:
+    """Add one or more codes to an application entry, creating it if needed.
+
+    The original documents are updated only when the whole addition succeeds.
+    A new entry is appended to the only source document; when the source has
+    several files the caller must target one file explicitly.
+    """
+    working = copy.deepcopy(documents)
+    plan = _add_codes(
+        working,
+        app=app,
+        platform=platform,
+        codes=codes,
+        labels=labels,
+        allow_shared=allow_shared,
+    )
+    _commit_documents(documents, working)
+    return plan
+
+
+def _add_codes(
+    documents: list[tuple[str, Any]],
+    *,
+    app: str,
+    platform: str,
+    codes: list[str],
+    labels: list[str] | None = None,
+    allow_shared: bool = False,
+) -> dict[str, Any]:
+    """Add codes in a working copy; see :func:`add_codes`."""
+    app = (app or "").strip()
+    platform = (platform or "").strip()
+    if not app:
+        raise ValueError("--app must be a non-empty application id")
+    if not platform:
+        raise ValueError("--platform must be a non-empty platform key")
+    if platform not in REQUIRED_PLATFORMS:
+        raise ValueError(
+            f"unknown platform {platform!r}; expected one of "
+            + ", ".join(REQUIRED_PLATFORMS)
+        )
+    requested = _normalize(codes)
+    if not requested:
+        raise ValueError("at least one --code is required")
+
+    match = _find_entry(documents, app, allow_missing=True)
+    created = match is None
+    if created:
+        if len(documents) != 1:
+            raise ValueError(
+                "cannot choose a file for a new offer entry; "
+                "pass --offer with a single JSON file"
+            )
+        source, document = documents[0][0], documents[0][1]
+        items = _document_items(document)
+        if items is None:
+            raise ValueError(f"offer source {source!r} has no entry array")
+        entry: dict[str, Any] = {
+            "id": app,
+            "productID": {key: [] for key in REQUIRED_PLATFORMS},
+            "type": "app",
+            "applications": [app],
+        }
+        items.append(entry)
+    else:
+        source, _document, _index, entry = match
+        if not isinstance(entry.get("productID"), dict):
+            raise ValueError(f"entry {app!r} has no productID object")
+
+    entry_id = _entry_id(entry) or app
+    label_map = _label_map(requested, labels)
+    product_ids = entry["productID"]
+    values = product_ids.setdefault(platform, [])
+    if not isinstance(values, list):
+        raise ValueError(f"productID.{platform} of {entry_id!r} is not an array")
+
+    for code in requested:
+        if code in values:
+            raise ValueError(
+                f"code {code!r} is already recorded for {entry_id!r} on {platform}"
+            )
+        for _other_source, other_document in documents:
+            for other in _document_items(other_document) or []:
+                other_id = _entry_id(other)
+                if other_id is None:
+                    continue
+                other_ids = other.get("productID")
+                other_values = (
+                    other_ids.get(platform)
+                    if isinstance(other_ids, dict)
+                    else None
+                )
+                if isinstance(other_values, list) and code in other_values:
+                    if allow_shared:
+                        continue
+                    raise ValueError(
+                        f"code {code!r} is already assigned to {other_id!r} on "
+                        f"{platform}; use offer-codes replace to move it, or "
+                        "pass --allow-shared for a bundle listing"
+                    )
+
+    for code in requested:
+        values.append(code)
+        label = label_map.get(code)
+        if label is not None:
+            _put_label(entry, platform, code, label)
+
+    return {
+        "app": entry_id,
+        "requestedApp": app,
+        "platform": platform,
+        "created": created,
+        "added": [
+            {"code": code, "label": label_map.get(code)} for code in requested
+        ],
+        "sources": [source],
+    }
+
+
+def _label_map(codes: list[str], labels: list[str] | None) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for raw in labels or []:
+        text = str(raw).strip()
+        if not text:
+            continue
+        if "=" in text:
+            code, label = text.split("=", 1)
+            code, label = code.strip(), label.strip()
+        else:
+            if len(codes) != 1:
+                raise ValueError(
+                    "use --label CODE=LABEL when adding several codes"
+                )
+            code, label = codes[0], text
+        if code not in codes:
+            raise ValueError(f"label refers to code {code!r}, which is not being added")
+        if not label:
+            raise ValueError(f"label for {code!r} must not be empty")
+        if any(not segment.strip() for segment in label.split(";")):
+            raise ValueError(f"label for {code!r} has an empty ';'-separated segment")
+        result[code] = label
+    return result
+
+
+def remove_codes(
+    documents: list[tuple[str, Any]],
+    *,
+    app: str,
+    platform: str,
+    codes: list[str],
+    delete_empty: bool = False,
+) -> dict[str, Any]:
+    """Remove codes and their labels from one application entry.
+
+    The original documents are updated only when the whole removal succeeds.
+    """
+    working = copy.deepcopy(documents)
+    plan = _remove_codes(
+        working,
+        app=app,
+        platform=platform,
+        codes=codes,
+        delete_empty=delete_empty,
+    )
+    _commit_documents(documents, working)
+    return plan
+
+
+def _remove_codes(
+    documents: list[tuple[str, Any]],
+    *,
+    app: str,
+    platform: str,
+    codes: list[str],
+    delete_empty: bool = False,
+) -> dict[str, Any]:
+    """Remove codes in a working copy; see :func:`remove_codes`."""
+    app = (app or "").strip()
+    platform = (platform or "").strip()
+    if not app:
+        raise ValueError("--app must be a non-empty application id")
+    if not platform:
+        raise ValueError("--platform must be a non-empty platform key")
+    requested = _normalize(codes)
+    if not requested:
+        raise ValueError("at least one --code is required")
+
+    source, document, index, entry = _find_entry(
+        documents, app, allow_missing=False
+    )
+    entry_id = _entry_id(entry) or app
+    product_ids = entry.get("productID")
+    if not isinstance(product_ids, dict):
+        raise ValueError(f"entry {entry_id!r} has no productID object")
+    values = product_ids.get(platform)
+    if not isinstance(values, list):
+        raise ValueError(
+            f"application {entry_id!r} has no productID.{platform} array"
+        )
+
+    missing = [code for code in requested if code not in values]
+    if missing:
+        known = ", ".join(
+            code for code in values if isinstance(code, str)
+        ) or "none"
+        raise ValueError(
+            f"code(s) {', '.join(missing)} do not belong to {entry_id!r} on "
+            f"{platform} (known: {known})"
+        )
+
+    for code in requested:
+        product_ids[platform] = [
+            value for value in product_ids[platform] if value != code
+        ]
+        _drop_label(entry, platform, code)
+
+    remaining = sum(
+        len(values)
+        for values in product_ids.values()
+        if isinstance(values, list)
+    )
+    deleted = False
+    if delete_empty and remaining == 0:
+        items = _document_items(document)
+        if items is not None and index < len(items) and items[index] is entry:
+            del items[index]
+            deleted = True
+
+    return {
+        "app": entry_id,
+        "requestedApp": app,
+        "platform": platform,
+        "removed": requested,
+        "deletedApp": deleted,
+        "remainingCodes": remaining,
+        "sources": [source],
+    }
+
+
+def serialize_document(document: Any) -> str:
+    """Return the repository's canonical JSON text for an offer document."""
+    return json.dumps(document, indent=4, ensure_ascii=False) + "\n"
+
+
+def write_documents(
+    documents: list[tuple[str, Any]], sources: list[str],
+    *, expected: dict[str, str] | None = None,
+) -> None:
+    """Rewrite the selected local offer documents with the repository JSON style.
+
+    Every changed document is first written to a temporary file next to the
+    target, then moved into place with ``os.replace``. If preparing a temporary
+    file fails, the original files are left untouched.
+    """
+    wanted = set(sources)
+    pending: list[tuple[str, Path]] = []
+    backups: dict[Path, str] = {}
+    committed: list[Path] = []
+    retained: set[str] = set()
+
+    def check_snapshot():
+        for source, before in (expected or {}).items():
+            if Path(source).read_text(encoding="utf-8") != before:
+                raise ValueError(f"offer source changed since it was read: {source}; retry")
+
+    def stage(path: Path, content: bytes) -> str:
+        descriptor, name = tempfile.mkstemp(
+            dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp"
+        )
+        pending.append((name, path))
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(name, stat.S_IMODE(path.stat().st_mode))
+        return name
+
+    try:
+        check_snapshot()
+        updates: list[tuple[str, Path]] = []
+        for source, document in documents:
+            if source not in wanted:
+                continue
+            path = Path(source)
+            backups[path] = stage(path, path.read_bytes())
+            updates.append((stage(path, serialize_document(document).encode("utf-8")), path))
+        check_snapshot()
+        for temp_name, path in updates:
+            os.replace(temp_name, path)
+            committed.append(path)
+    except BaseException:
+        failed = []
+        for path in reversed(committed):
+            try:
+                os.replace(backups[path], path)
+            except OSError:
+                retained.add(backups[path])
+                failed.append(f"{path} (original preserved at {backups[path]})")
+        if failed:
+            raise OSError("write failed and rollback was incomplete: " + "; ".join(failed)) from None
+        raise
+    finally:
+        for temp_name, _path in pending:
+            if temp_name not in retained:
+                Path(temp_name).unlink(missing_ok=True)
 
 
 def collect_codes(documents: list[tuple[str, Any]]) -> list[dict[str, Any]]:

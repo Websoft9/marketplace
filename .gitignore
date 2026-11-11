@@ -4,6 +4,7 @@ __pycache__/
 .venv/
 node_modules/
 .astro/
+.offer-codes.lock
 build/
 dist/
 

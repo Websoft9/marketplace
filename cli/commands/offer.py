@@ -336,6 +336,13 @@ def build_command(app, catalog_source, versions, vendor, template, cloud, output
             {"code": code, **warning} for warning in variant.get("titleWarnings") or []
         ]
         document = variant["preview"]
+    if value["publishBlockers"]:
+        document["publishBlockers"] = value["publishBlockers"]
+        click.echo(
+            f"WARNING {app}: draft is not publish-ready: "
+            + "; ".join(value["publishBlockers"]),
+            err=True,
+        )
     if warnings:
         document["titleWarnings"] = warnings
         for warning in warnings:

@@ -1318,7 +1318,9 @@
             ],
             "huaweicloud": [],
             "azure": [],
-            "aws": []
+            "aws": [
+                "n3ukq73j0l8b3i9tjnuxrk90"
+            ]
         },
         "type": "app",
         "applications": [
@@ -1376,6 +1378,25 @@
         "type": "app",
         "applications": [
             "pgvector"
+        ]
+    },
+    {
+        "id": "php",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "994qwdfgpulbn5g85xddbljm5",
+                "66ogwxpbol8dv4zbc88yyrk67",
+                "2q37bz84g6oem7tyznn8izqb7"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "php"
         ]
     },
     {
@@ -1809,6 +1830,23 @@
                 "3npzfj3jgzvqqempn4i5m9vrm": "Debian"
             }
         }
+    },
+    {
+        "id": "symfony",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "a0yggsxsno8s6d3v9cchufnhp"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "symfony"
+        ]
     },
     {
         "id": "teleport",

@@ -4,6 +4,7 @@
   "boldLongDescriptionHeadings": true,
   "namespaces": [
     "catalog",
+    "branding",
     "versions",
     "vendor",
     "editions"
@@ -25,8 +26,8 @@
     }
   ],
   "content": {
-    "ProductTitle": "{catalog.trademark} on AWS - Preconfigured, Hardened, Ready in Minutes",
-    "ShortDescription": "{versions.multi ? 'Choose from ' : 'Deploy '}{catalog.trademark} {versions.multi ? versions.shortChoices : versions.version}{versions.multi ? ' at launch' : ''} for self-hosting directly from upstream release, backed by a 24-hour response SLA on business days. Use the Websoft9 Console to manage HTTPS, backups, monitoring, upgrades, and rollback.",
+    "ProductTitle": "{branding.titleTrademark} on AWS - Preconfigured, Hardened, Ready in Minutes",
+    "ShortDescription": "{versions.multi ? 'Choose from ' : 'Deploy '}{catalog.trademark}{versions.choice}{versions.multi ? ' at launch' : ''} for self-hosting directly from upstream release, backed by a 24-hour response SLA on business days. Use the Websoft9 Console to manage HTTPS, backups, monitoring, upgrades, and rollback.",
     "Highlights": [
       "{vendor.highlights[0]}",
       "{vendor.highlights[1]}",

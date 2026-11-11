@@ -94,7 +94,8 @@ jobs:
           mk offer-codes listing-check --platform "$PLATFORM" --json > "$REPORT"
           python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
           import json, os
-          data = json.load(open(os.environ["REPORT"]))
+          with open(os.environ["REPORT"]) as report_file:
+              data = json.load(report_file)
           summary = data["summary"]
           print("## Offer listing check\n")
           print(f"- Checked: {summary['checked']}")
@@ -133,9 +134,10 @@ jobs:
           fi
           python3 - <<'PY'
           import json, os, subprocess
-          data = json.load(open(os.environ["REPORT"]))
+          with open(os.environ["REPORT"]) as report_file:
+              data = json.load(report_file)
           summary = data["summary"]
-          if not summary["notFound"] and not summary["errors"]:
+          if not summary["not_found"] and not summary["errors"]:
               raise SystemExit(0)
           lines = [
               f"Run: {os.environ['RUN_URL']}",

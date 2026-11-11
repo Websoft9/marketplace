@@ -61,7 +61,21 @@ class Adapter:
 
 class AwsAdapter(Adapter):
     platform = "aws"
-    required_env = ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY")
+
+    def availability(self) -> tuple[bool, str]:
+        try:
+            import boto3
+        except ImportError:
+            return False, "install the AWS SDK with: pip install '.[aws]'"
+        try:
+            session = boto3.Session(profile_name=os.environ.get("AWS_PROFILE") or None)
+            credentials = session.get_credentials()
+            if credentials is None:
+                return False, "no credentials found in the AWS credential provider chain"
+            credentials.get_frozen_credentials()
+        except Exception as error:
+            return False, f"AWS credentials unavailable ({type(error).__name__})"
+        return True, ""
 
     def check(self, codes: list[str]) -> dict[str, Outcome]:
         # Reuse the seller Catalog resolver that mk offer already ships.
@@ -148,12 +162,17 @@ class AliyunAdapter(Adapter):
             payload = parsed.get("Result", parsed) if isinstance(parsed, dict) else None
             if isinstance(parsed, dict) and parsed.get("Success") is False:
                 message = str(parsed.get("Code") or "Aliyun returned Success=false")
-                status = NOT_FOUND if "not" in message.lower() else ERROR
-                results[code] = Outcome(status, message)
-            elif isinstance(payload, dict) and payload:
+                missing_codes = {"ProductNotExist", "InvalidProductCode", "ProductNotFound"}
+                status = NOT_FOUND if message in missing_codes else ERROR
+                detail = (
+                    "Aliyun API returned a product-not-found error"
+                    if status == NOT_FOUND else "Aliyun API returned Success=false"
+                )
+                results[code] = Outcome(status, detail)
+            elif isinstance(payload, dict) and (payload.get("Name") or payload.get("Code")):
                 results[code] = Outcome(EXISTS, str(payload.get("Name") or ""))
             else:
-                results[code] = Outcome(NOT_FOUND, "Aliyun returned no product")
+                results[code] = Outcome(ERROR, "Aliyun returned an unrecognized product response")
         return results
 
 
@@ -192,15 +211,20 @@ class AlibabaCloudAdapter(Adapter):
             if not isinstance(payload, dict):
                 results[code] = Outcome(ERROR, "Alibaba Cloud returned a non-object response")
             elif payload.get("success") is True:
-                commodity = (
-                    (payload.get("result") or {}).get("product") or {}
-                ).get("commodityInfo") or {}
-                title = ""
-                if isinstance(commodity, dict):
+                result = payload.get("result")
+                product = result.get("product") if isinstance(result, dict) else None
+                commodity = product.get("commodityInfo") if isinstance(product, dict) else None
+                if isinstance(commodity, dict) and commodity:
                     title = str(commodity.get("name") or commodity.get("title") or "")
-                results[code] = Outcome(EXISTS, title)
+                    results[code] = Outcome(EXISTS, title)
+                else:
+                    results[code] = Outcome(
+                        ERROR, "Alibaba Cloud returned an unrecognized product response"
+                    )
             else:
-                results[code] = Outcome(NOT_FOUND, "Alibaba Cloud returned success=false")
+                results[code] = Outcome(
+                    ERROR, "Alibaba Cloud returned an unsuccessful or unknown response"
+                )
         return results
 
 
@@ -263,14 +287,25 @@ def check_listings(
     platforms: list[str] | None = None,
     limit: int = 0,
     adapters: dict[str, Adapter] | None = None,
+    apps: list[str] | None = None,
+    codes: list[str] | None = None,
 ) -> dict[str, Any]:
     """Check listing existence and visibility through each backend adapter."""
     registry = adapters if adapters is not None else ADAPTERS
+    offer_codes.require_structure(documents)
+    selected_pairs = None
+    if apps or codes:
+        selected_pairs = {
+            (row["platform"], row["code"])
+            for row in offer_codes.find_codes(documents, apps=apps, codes=codes)
+        }
     grouped: dict[str, list[dict[str, Any]]] = {}
     for item in offer_codes.collect_codes(documents):
+        if selected_pairs is not None and (item["platform"], item["code"]) not in selected_pairs:
+            continue
         grouped.setdefault(item["platform"], []).append(item)
 
-    selected = platforms or sorted(grouped)
+    selected = list(dict.fromkeys(platforms or sorted(grouped)))
     unknown = [name for name in selected if name not in registry]
     if unknown:
         raise ValueError("unknown platform(s): " + ", ".join(unknown))

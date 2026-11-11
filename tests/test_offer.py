@@ -126,6 +126,39 @@ class OfferTests(unittest.TestCase):
             "to manage HTTPS, backups, monitoring, upgrades, and rollback.",
         )
 
+    def test_missing_version_does_not_leave_consecutive_spaces(self):
+        value = offer.render(self.item, "", self.vendor_path, version_options=[])
+        self.assertIn(
+            "Deploy Odoo for self-hosting",
+            value["content"]["ShortDescription"],
+        )
+        self.assertNotIn("  ", value["content"]["ShortDescription"])
+        self.assertIn("versions: version is missing", value["publishBlockers"])
+
+    def test_build_reports_missing_version_as_the_source_blocker(self):
+        self.item["entityId"] = "prod-example12345"
+        self.write()
+        self.versions_path.write_text("[]", encoding="utf-8")
+        runner = CliRunner(mix_stderr=False)
+        output = self.directory / "aws" / "odoo.json"
+
+        result = runner.invoke(
+            cli,
+            self.args("build") + ["--cloud", "aws", "--output", str(output)],
+        )
+        self.assertEqual(result.exit_code, 0, result.stderr)
+        self.assertIn("versions: version is missing", result.stderr)
+        document = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(document["publishBlockers"], ["versions: version is missing"])
+
+        result = runner.invoke(
+            cli,
+            self.args("build")
+            + ["--cloud", "aws", "--publish-ready", "--output", str(output)],
+        )
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("versions: version is missing", result.stderr)
+
     def test_related_apps_are_inserted_before_nginx_and_docker(self):
         self.item["relatedApps"] = []
         self.item["hasenterprise"] = True
@@ -375,6 +408,50 @@ class OfferTests(unittest.TestCase):
         redis = offer.render(self.special_item("redis", "Redis"), "8.0", self.vendor_path)
         self.assertIn("This product packages Redis Open Source as", redis["content"]["LongDescription"])
 
+    def test_title_trademark_override_only_changes_product_title(self):
+        path = self.special_cases_file({"odoo": {"titleTrademark": "Document DB"}})
+        value = offer.render(
+            self.item, "20.0", self.vendor_path, special_cases_path=path
+        )
+        self.assertEqual(
+            value["content"]["ProductTitle"],
+            "Document DB on AWS - Preconfigured, Hardened, Ready in Minutes",
+        )
+        self.assertEqual(value["titleTrademark"], "Document DB")
+        self.assertIn("This product packages Odoo as a hardened AMI", value["content"]["LongDescription"])
+        self.assertNotIn("Document DB", value["content"]["LongDescription"])
+
+    def test_title_trademark_is_used_for_offer_code_labels(self):
+        path = self.special_cases_file({"odoo": {"titleTrademark": "Document DB"}})
+        value = offer.render(
+            self.item, "20.0", self.vendor_path, special_cases_path=path
+        )
+        variant = offer.with_variant(value, "Multisite")
+        self.assertEqual(
+            variant["content"]["ProductTitle"],
+            "Document DB Multisite on AWS - Preconfigured, Hardened, Ready in Minutes",
+        )
+
+    def test_mongodb_uses_its_title_trademark_override(self):
+        mongodb = offer.render(
+            self.special_item("mongodb", "MongoDB"), "8.0", self.vendor_path
+        )
+        self.assertEqual(
+            mongodb["content"]["ProductTitle"],
+            "Document DB on AWS - Preconfigured, Hardened, Ready in Minutes",
+        )
+        self.assertIn(
+            "This product packages MongoDB Community Server as a hardened AMI",
+            mongodb["content"]["LongDescription"],
+        )
+
+    def test_empty_title_trademark_is_rejected(self):
+        path = self.special_cases_file({"odoo": {"titleTrademark": ""}})
+        with self.assertRaisesRegex(ValueError, "titleTrademark must not be empty"):
+            offer.render(
+                self.item, "20.0", self.vendor_path, special_cases_path=path
+            )
+
     def test_empty_edition_label_omits_the_suffix(self):
         path = self.special_cases_file({"postgresql": {"editionLabel": ""}})
         postgresql = offer.render(
@@ -426,7 +503,9 @@ class OfferTests(unittest.TestCase):
     def test_consecutive_spaces_are_rejected(self):
         content = self.render()["content"]
         content["ShortDescription"] = "Two  spaces"
-        with self.assertRaisesRegex(ValueError, "consecutive spaces"):
+        with self.assertRaisesRegex(
+            ValueError, r"content\.ShortDescription contains consecutive spaces"
+        ):
             offer.validate_content(content)
 
     def test_offer_labels_split_operating_systems_from_other_labels(self):
@@ -595,11 +674,11 @@ class OfferTests(unittest.TestCase):
             offer_commands, "labels_for",
             return_value={"code-a": "Ubuntu 26.04", "code-b": "Debian 13"},
         ):
-            result = self.runner.invoke(
+            result = CliRunner(mix_stderr=False).invoke(
                 cli, self.args("build") + ["--cloud", "aws", "--output", "-"]
             )
-        self.assertEqual(result.exit_code, 0, result.output)
-        document = json.loads(result.output)
+        self.assertEqual(result.exit_code, 0, result.stderr)
+        document = json.loads(result.stdout)
         self.assertEqual([item["code"] for item in document["targets"]], ["code-a", "code-b"])
         self.assertEqual(
             [item["preview"]["content"]["ProductTitle"] for item in document["targets"]],

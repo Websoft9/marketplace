@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -296,7 +297,818 @@ class OfferCodesVerifyTests(unittest.TestCase):
         self.assertIn("must be a string", result.output)
 
 
+class OfferCodesReplaceTests(unittest.TestCase):
+    CODE = "a" * 25
+    OTHER = "b" * 25
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.directory = Path(self.temp.name)
+        self.runner = CliRunner()
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def empty(self, app: str) -> dict:
+        return {
+            "id": app,
+            "productID": {platform: [] for platform in PLATFORMS},
+            "type": "app",
+            "applications": [app],
+        }
+
+    def write(self, entries: list[dict], catalog=("old", "new")) -> tuple[Path, Path]:
+        offer = self.directory / "offer.json"
+        offer.write_text(json.dumps(entries), encoding="utf-8")
+        product = self.directory / "catalog.json"
+        product.write_text(
+            json.dumps({"items": [{"id": app} for app in catalog]}),
+            encoding="utf-8",
+        )
+        return offer, product
+
+    def invoke(self, offer: Path, product: Path, *args: str):
+        return self.runner.invoke(
+            cli,
+            [
+                "offer-codes", "replace",
+                "--offer", str(offer),
+                "--product-catalog", str(product),
+                *args,
+            ],
+        )
+
+    def load(self, path: Path):
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def test_moves_code_and_label_to_an_existing_entry(self):
+        old = self.empty("old")
+        old["productID"]["aws"] = [self.CODE]
+        old["variants"] = {"aws": {self.CODE: "Ubuntu"}}
+        offer, product = self.write([old, self.empty("new")])
+
+        result = self.invoke(
+            offer, product, "--from", "old", "--to", "new", "--platform", "aws"
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("Moved aws", result.output)
+        data = {item["id"]: item for item in self.load(offer)}
+        self.assertEqual(data["old"]["productID"]["aws"], [])
+        self.assertEqual(data["new"]["productID"]["aws"], [self.CODE])
+        self.assertNotIn("variants", data["old"])
+        self.assertEqual(data["new"]["variants"]["aws"][self.CODE], "Ubuntu")
+
+    def test_creates_the_target_entry_when_missing(self):
+        old = self.empty("old")
+        old["productID"]["aws"] = [self.CODE]
+        offer, product = self.write([old])
+
+        result = self.invoke(
+            offer, product, "--from", "old", "--to", "new", "--platform", "aws"
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("Created offer entry", result.output)
+        data = {item["id"]: item for item in self.load(offer)}
+        self.assertEqual(set(data["new"]["productID"]), set(PLATFORMS))
+        self.assertEqual(data["new"]["applications"], ["new"])
+        self.assertEqual(data["new"]["productID"]["aws"], [self.CODE])
+
+    def test_defaults_to_every_platform_that_has_codes(self):
+        old = self.empty("old")
+        old["productID"]["aws"] = [self.CODE]
+        old["productID"]["azure"] = ["publisher.offer"]
+        offer, product = self.write([old, self.empty("new")])
+
+        result = self.invoke(
+            offer, product, "--from", "old", "--to", "new"
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        data = {item["id"]: item for item in self.load(offer)}
+        self.assertEqual(data["new"]["productID"]["aws"], [self.CODE])
+        self.assertEqual(
+            data["new"]["productID"]["azure"], ["publisher.offer"]
+        )
+        self.assertEqual(data["old"]["productID"]["aws"], [])
+        self.assertEqual(data["old"]["productID"]["azure"], [])
+
+    def test_target_must_exist_in_the_catalog(self):
+        old = self.empty("old")
+        old["productID"]["aws"] = [self.CODE]
+        offer, product = self.write([old], catalog=("old",))
+        before = offer.read_text(encoding="utf-8")
+
+        result = self.invoke(
+            offer, product, "--from", "old", "--to", "new", "--platform", "aws"
+        )
+
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("is not present in", result.output)
+        self.assertEqual(offer.read_text(encoding="utf-8"), before)
+
+    def test_refuses_a_non_app_target_entry(self):
+        old = self.empty("old")
+        old["productID"]["aws"] = [self.CODE]
+        target = self.empty("websoft9")
+        target["type"] = "websoft9"
+        offer, product = self.write([old, target], catalog=("old", "websoft9"))
+
+        result = self.invoke(
+            offer, product, "--from", "old", "--to", "websoft9", "--platform", "aws"
+        )
+
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("only app entries", result.output)
+
+    def test_resolves_application_aliases(self):
+        old = self.empty("old")
+        old["applications"] = ["old", "old-alias"]
+        old["productID"]["aws"] = [self.CODE]
+        target = self.empty("new")
+        target["applications"] = ["new", "new-alias"]
+        offer, product = self.write([old, target], catalog=("old", "new"))
+
+        result = self.invoke(
+            offer, product,
+            "--from", "old-alias", "--to", "new-alias", "--platform", "aws",
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("is an alias of entry", result.output)
+        data = {item["id"]: item for item in self.load(offer)}
+        self.assertEqual(data["new"]["productID"]["aws"], [self.CODE])
+        self.assertEqual(data["old"]["productID"]["aws"], [])
+
+    def test_rejects_two_aliases_of_the_same_entry(self):
+        item = self.empty("app")
+        item["applications"] = ["app", "alias"]
+        item["productID"]["aws"] = [self.CODE]
+        offer, product = self.write([item], catalog=("app", "alias"))
+
+        result = self.invoke(
+            offer, product, "--from", "app", "--to", "alias", "--platform", "aws"
+        )
+
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("same offer entry", result.output)
+
+    def test_refuses_a_code_already_owned_by_the_target(self):
+        old = self.empty("old")
+        old["productID"]["aws"] = [self.CODE]
+        new = self.empty("new")
+        new["productID"]["aws"] = [self.CODE]
+        offer, product = self.write([old, new])
+
+        result = self.invoke(
+            offer, product, "--from", "old", "--to", "new", "--platform", "aws"
+        )
+
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("already assigned", result.output)
+
+    def test_dry_run_shows_the_diff_without_writing(self):
+        old = self.empty("old")
+        old["productID"]["aws"] = [self.CODE]
+        offer, product = self.write([old, self.empty("new")])
+        before = offer.read_text(encoding="utf-8")
+
+        result = self.invoke(
+            offer, product,
+            "--from", "old", "--to", "new", "--platform", "aws", "--dry-run",
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("---", result.output)
+        self.assertIn("Dry run", result.output)
+        self.assertEqual(offer.read_text(encoding="utf-8"), before)
+
+    def test_moves_codes_across_files_in_a_directory(self):
+        old = self.empty("old")
+        old["productID"]["aws"] = [self.CODE]
+        new = self.empty("new")
+        source = self.directory / "offers"
+        source.mkdir()
+        (source / "01-old.json").write_text(json.dumps([old]), encoding="utf-8")
+        (source / "02-new.json").write_text(json.dumps([new]), encoding="utf-8")
+        product = self.directory / "catalog.json"
+        product.write_text(
+            json.dumps({"items": [{"id": "old"}, {"id": "new"}]}),
+            encoding="utf-8",
+        )
+
+        result = self.invoke(
+            source, product, "--from", "old", "--to", "new", "--platform", "aws"
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("Wrote", result.output)
+        old_data = json.loads((source / "01-old.json").read_text(encoding="utf-8"))
+        new_data = json.loads((source / "02-new.json").read_text(encoding="utf-8"))
+        self.assertEqual(old_data[0]["productID"]["aws"], [])
+        self.assertEqual(new_data[0]["productID"]["aws"], [self.CODE])
+
+    def test_delete_empty_removes_the_old_entry(self):
+        old = self.empty("old")
+        old["productID"]["aws"] = [self.CODE]
+        offer, product = self.write([old, self.empty("new")])
+
+        result = self.invoke(
+            offer, product,
+            "--from", "old", "--to", "new", "--platform", "aws", "--delete-empty",
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual([item["id"] for item in self.load(offer)], ["new"])
+
+    def test_code_filter_rejects_a_code_the_old_app_does_not_own(self):
+        old = self.empty("old")
+        old["productID"]["aws"] = [self.CODE]
+        offer, product = self.write([old, self.empty("new")])
+
+        result = self.invoke(
+            offer, product,
+            "--from", "old", "--to", "new",
+            "--platform", "aws", "--code", self.OTHER,
+        )
+
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("does not belong", result.output)
+
+    def test_platform_filter_must_cover_the_requested_code(self):
+        old = self.empty("old")
+        old["productID"]["aws"] = [self.CODE]
+        offer, product = self.write([old, self.empty("new")])
+
+        result = self.invoke(
+            offer, product,
+            "--from", "old", "--to", "new",
+            "--platform", "azure", "--code", self.CODE,
+        )
+
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("outside the selected platform", result.output)
+
+    def test_old_app_may_be_absent_from_the_catalog(self):
+        old = self.empty("old")
+        old["productID"]["aws"] = [self.CODE]
+        offer, product = self.write([old, self.empty("new")], catalog=("new",))
+
+        result = self.invoke(
+            offer, product, "--from", "old", "--to", "new", "--platform", "aws"
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        data = {item["id"]: item for item in self.load(offer)}
+        self.assertEqual(data["new"]["productID"]["aws"], [self.CODE])
+
+    def test_json_output_is_machine_readable(self):
+        old = self.empty("old")
+        old["productID"]["aws"] = [self.CODE]
+        offer, product = self.write([old, self.empty("new")])
+
+        result = self.invoke(
+            offer, product,
+            "--from", "old", "--to", "new",
+            "--platform", "aws", "--dry-run", "--json",
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        payload = json.loads(result.output)
+        self.assertFalse(payload["written"])
+        self.assertEqual(payload["result"]["moves"][0]["code"], self.CODE)
+        self.assertIn("diff", payload)
+
+
+class OfferCodesMaintenanceBase(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.directory = Path(self.temp.name)
+        self.runner = CliRunner()
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def empty(self, app: str) -> dict:
+        return {
+            "id": app,
+            "productID": {platform: [] for platform in PLATFORMS},
+            "type": "app",
+            "applications": [app],
+        }
+
+    def write(self, entries: list[dict], catalog=("app",)) -> tuple[Path, Path]:
+        offer = self.directory / "offer.json"
+        offer.write_text(json.dumps(entries), encoding="utf-8")
+        product = self.directory / "catalog.json"
+        product.write_text(
+            json.dumps({"items": [{"id": app} for app in catalog]}),
+            encoding="utf-8",
+        )
+        return offer, product
+
+    def load(self, path: Path):
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def invoke(self, command: str, offer: Path, product: Path, *args: str):
+        argv = ["offer-codes", command, "--offer", str(offer)]
+        if command in {"verify", "replace", "add"}:
+            argv += ["--product-catalog", str(product)]
+        argv += list(args)
+        return self.runner.invoke(cli, argv)
+
+
+class OfferCodesFindTests(OfferCodesMaintenanceBase):
+    def test_find_by_app_reports_codes_and_labels(self):
+        item = self.empty("app")
+        item["productID"]["aws"] = ["a" * 25]
+        item["variants"] = {"aws": {"a" * 25: "Ubuntu"}}
+        offer, product = self.write([item])
+
+        result = self.invoke("find", offer, product, "--app", "app")
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn(f"app aws {'a' * 25} (Ubuntu)", result.output)
+        self.assertIn("1 code(s)", result.output)
+
+    def test_find_by_code_reports_every_owner(self):
+        first = self.empty("first")
+        first["productID"]["aws"] = ["a" * 25]
+        second = self.empty("second")
+        second["productID"]["aws"] = ["a" * 25]
+        offer, product = self.write([first, second])
+
+        result = self.invoke(
+            "find", offer, product, "--code", "a" * 25, "--json"
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        payload = json.loads(result.output)
+        self.assertEqual(
+            [row["app"] for row in payload["codes"]], ["first", "second"]
+        )
+
+    def test_find_filters_by_platform(self):
+        item = self.empty("app")
+        item["productID"]["aws"] = ["a" * 25]
+        item["productID"]["azure"] = ["publisher.offer"]
+        offer, product = self.write([item])
+
+        result = self.invoke(
+            "find", offer, product, "--platform", "azure", "--json"
+        )
+
+        payload = json.loads(result.output)
+        self.assertEqual([row["platform"] for row in payload["codes"]], ["azure"])
+
+    def test_platform_all_disables_the_platform_filter(self):
+        item = self.empty("app")
+        item["productID"]["aws"] = ["a" * 25]
+        item["productID"]["azure"] = ["publisher.offer"]
+        offer, product = self.write([item])
+
+        result = self.invoke("find", offer, product, "--platform", "all", "--json")
+
+        payload = json.loads(result.output)
+        self.assertEqual(
+            sorted(row["platform"] for row in payload["codes"]), ["aws", "azure"]
+        )
+
+    def test_find_reports_no_match(self):
+        offer, product = self.write([self.empty("app")])
+
+        result = self.invoke("find", offer, product, "--app", "absent")
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("0 code(s)", result.output)
+
+    def test_find_json_includes_the_entry_type(self):
+        item = self.empty("app")
+        item["productID"]["aws"] = ["a" * 25]
+        offer, product = self.write([item])
+
+        result = self.invoke("find", offer, product, "--app", "app", "--json")
+
+        payload = json.loads(result.output)
+        self.assertEqual(payload["codes"][0]["type"], "app")
+
+    def test_find_marks_non_app_entries_in_text_output(self):
+        item = self.empty("websoft9")
+        item["type"] = "websoft9"
+        item["productID"]["aws"] = ["a" * 25]
+        offer, product = self.write([item])
+
+        result = self.invoke("find", offer, product, "--app", "websoft9")
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("[websoft9]", result.output)
+
+
+class OfferCodesAddTests(OfferCodesMaintenanceBase):
+    CODE = "a" * 25
+    OTHER = "b" * 25
+
+    def test_adds_code_and_label_to_an_existing_entry(self):
+        offer, product = self.write([self.empty("app")])
+
+        result = self.invoke(
+            "add", offer, product,
+            "--app", "app", "--platform", "aws",
+            "--code", self.CODE, "--label", "Ubuntu",
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        item = self.load(offer)[0]
+        self.assertEqual(item["productID"]["aws"], [self.CODE])
+        self.assertEqual(item["variants"]["aws"][self.CODE], "Ubuntu")
+
+    def test_creates_an_entry_for_a_new_application(self):
+        offer, product = self.write([], catalog=("app",))
+
+        result = self.invoke(
+            "add", offer, product,
+            "--app", "app", "--platform", "aws", "--code", self.CODE,
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("Created offer entry", result.output)
+        item = self.load(offer)[0]
+        self.assertEqual(set(item["productID"]), set(PLATFORMS))
+        self.assertEqual(item["productID"]["aws"], [self.CODE])
+        self.assertEqual(item["applications"], ["app"])
+
+    def test_creates_an_entry_in_a_single_file_directory(self):
+        source = self.directory / "offers"
+        source.mkdir()
+        (source / "matrix.json").write_text(
+            json.dumps([self.empty("first")]), encoding="utf-8"
+        )
+        product = self.directory / "catalog.json"
+        product.write_text(json.dumps({"items": [{"id": "app"}]}), encoding="utf-8")
+
+        result = self.invoke(
+            "add", source, product,
+            "--app", "app", "--platform", "aws", "--code", self.CODE,
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        data = self.load(source / "matrix.json")
+        self.assertEqual([item["id"] for item in data], ["first", "app"])
+        self.assertEqual(data[1]["productID"]["aws"], [self.CODE])
+
+    def test_new_application_needs_a_single_source_file(self):
+        source = self.directory / "offers"
+        source.mkdir()
+        (source / "01-a.json").write_text(
+            json.dumps([self.empty("first")]), encoding="utf-8"
+        )
+        (source / "02-b.json").write_text(
+            json.dumps([self.empty("second")]), encoding="utf-8"
+        )
+        product = self.directory / "catalog.json"
+        product.write_text(json.dumps({"items": [{"id": "app"}]}), encoding="utf-8")
+
+        result = self.invoke(
+            "add", source, product,
+            "--app", "app", "--platform", "aws", "--code", self.CODE,
+        )
+
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("single JSON file", result.output)
+
+    def test_rejects_a_code_owned_by_another_application(self):
+        other = self.empty("other")
+        other["productID"]["aws"] = [self.CODE]
+        offer, product = self.write([self.empty("app"), other])
+
+        result = self.invoke(
+            "add", offer, product,
+            "--app", "app", "--platform", "aws", "--code", self.CODE,
+        )
+
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("already assigned to 'other'", result.output)
+
+    def test_rejects_a_code_already_on_the_same_application(self):
+        item = self.empty("app")
+        item["productID"]["aws"] = [self.CODE]
+        offer, product = self.write([item])
+
+        result = self.invoke(
+            "add", offer, product,
+            "--app", "app", "--platform", "aws", "--code", self.CODE,
+        )
+
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("already recorded", result.output)
+
+    def test_multiple_codes_require_code_equals_label(self):
+        offer, product = self.write([self.empty("app")])
+
+        result = self.invoke(
+            "add", offer, product,
+            "--app", "app", "--platform", "aws",
+            "--code", f"{self.CODE},{self.OTHER}", "--label", "Ubuntu",
+        )
+
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("CODE=LABEL", result.output)
+
+    def test_dry_run_writes_nothing(self):
+        offer, product = self.write([self.empty("app")])
+        before = offer.read_text(encoding="utf-8")
+
+        result = self.invoke(
+            "add", offer, product,
+            "--app", "app", "--platform", "aws",
+            "--code", self.CODE, "--dry-run",
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("Dry run", result.output)
+        self.assertEqual(offer.read_text(encoding="utf-8"), before)
+
+    def test_target_application_must_be_in_the_catalog(self):
+        offer, product = self.write([], catalog=("other",))
+
+        result = self.invoke(
+            "add", offer, product,
+            "--app", "app", "--platform", "aws", "--code", self.CODE,
+        )
+
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("is not present in", result.output)
+
+    def test_rejects_unknown_platforms(self):
+        offer, product = self.write([self.empty("app")])
+
+        result = self.invoke(
+            "add", offer, product,
+            "--app", "app", "--platform", "awss", "--code", self.CODE,
+        )
+
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("unknown platform", result.output)
+
+    def test_rejects_non_app_entries(self):
+        item = self.empty("websoft9")
+        item["type"] = "websoft9"
+        offer, product = self.write([item], catalog=("websoft9",))
+
+        result = self.invoke(
+            "add", offer, product,
+            "--app", "websoft9", "--platform", "aws", "--code", self.CODE,
+        )
+
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("only app entries", result.output)
+
+    def test_alias_adds_to_the_owning_entry(self):
+        item = self.empty("app")
+        item["applications"] = ["app", "alias"]
+        offer, product = self.write([item], catalog=("app",))
+
+        result = self.invoke(
+            "add", offer, product,
+            "--app", "alias", "--platform", "aws", "--code", self.CODE,
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("alias (entry app)", result.output)
+        self.assertEqual(self.load(offer)[0]["id"], "app")
+        self.assertEqual(self.load(offer)[0]["productID"]["aws"], [self.CODE])
+
+    def test_alias_may_carry_the_current_catalog_id(self):
+        item = self.empty("old-entry")
+        item["applications"] = ["old-entry", "current-app"]
+        offer, product = self.write([item], catalog=("current-app",))
+
+        result = self.invoke(
+            "add", offer, product,
+            "--app", "current-app", "--platform", "aws", "--code", self.CODE,
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(self.load(offer)[0]["productID"]["aws"], [self.CODE])
+
+    def test_allow_shared_permits_bundle_ownership(self):
+        other = self.empty("other")
+        other["productID"]["aws"] = [self.CODE]
+        offer, product = self.write([self.empty("app"), other])
+
+        result = self.invoke(
+            "add", offer, product,
+            "--app", "app", "--platform", "aws", "--code", self.CODE,
+            "--allow-shared",
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("new warning", result.output)
+        self.assertIn("assigned to 2 applications", result.output)
+        data = {item["id"]: item for item in self.load(offer)}
+        self.assertEqual(data["app"]["productID"]["aws"], [self.CODE])
+        self.assertEqual(data["other"]["productID"]["aws"], [self.CODE])
+
+    def test_adds_several_codes_with_code_equals_label(self):
+        offer, product = self.write([self.empty("app")])
+
+        result = self.invoke(
+            "add", offer, product,
+            "--app", "app", "--platform", "aws",
+            "--code", f"{self.CODE},{self.OTHER}",
+            "--label", f"{self.CODE}=Ubuntu",
+            "--label", f"{self.OTHER}=Debian",
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        item = self.load(offer)[0]
+        self.assertEqual(item["variants"]["aws"][self.CODE], "Ubuntu")
+        self.assertEqual(item["variants"]["aws"][self.OTHER], "Debian")
+
+    def test_json_output_reports_written_and_warnings(self):
+        offer, product = self.write([self.empty("app")])
+
+        result = self.invoke(
+            "add", offer, product,
+            "--app", "app", "--platform", "aws", "--code", "abc", "--json",
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        payload = json.loads(result.output)
+        self.assertTrue(payload["written"])
+        self.assertEqual(payload["result"]["added"][0]["code"], "abc")
+        self.assertTrue(payload["verification"]["newWarnings"])
+        self.assertIn("diff", payload)
+
+    def test_reports_new_warnings(self):
+        offer, product = self.write([self.empty("app")])
+
+        result = self.invoke(
+            "add", offer, product,
+            "--app", "app", "--platform", "aws", "--code", "abc",
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("new warning", result.output)
+        self.assertIn("does not match the expected aws format", result.output)
+
+
+class OfferCodesRemoveTests(OfferCodesMaintenanceBase):
+    CODE = "a" * 25
+    OTHER = "b" * 25
+
+    def test_removes_code_and_label(self):
+        item = self.empty("app")
+        item["productID"]["aws"] = [self.CODE, self.OTHER]
+        item["variants"] = {"aws": {self.CODE: "Ubuntu", self.OTHER: "Debian"}}
+        offer, product = self.write([item])
+
+        result = self.invoke(
+            "remove", offer, product,
+            "--app", "app", "--platform", "aws", "--code", self.CODE,
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        item = self.load(offer)[0]
+        self.assertEqual(item["productID"]["aws"], [self.OTHER])
+        self.assertNotIn(self.CODE, item["variants"]["aws"])
+
+    def test_rejects_a_code_the_application_does_not_own(self):
+        offer, product = self.write([self.empty("app")])
+
+        result = self.invoke(
+            "remove", offer, product,
+            "--app", "app", "--platform", "aws", "--code", self.CODE,
+        )
+
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("do not belong", result.output)
+
+    def test_delete_empty_removes_the_entry(self):
+        item = self.empty("app")
+        item["productID"]["aws"] = [self.CODE]
+        offer, product = self.write([item])
+
+        result = self.invoke(
+            "remove", offer, product,
+            "--app", "app", "--platform", "aws", "--code", self.CODE,
+            "--delete-empty",
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(self.load(offer), [])
+
+    def test_keeps_other_platform_codes(self):
+        item = self.empty("app")
+        item["productID"]["aws"] = [self.CODE]
+        item["productID"]["azure"] = ["publisher.offer"]
+        offer, product = self.write([item])
+
+        result = self.invoke(
+            "remove", offer, product,
+            "--app", "app", "--platform", "aws", "--code", self.CODE,
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        item = self.load(offer)[0]
+        self.assertEqual(item["productID"]["aws"], [])
+        self.assertEqual(item["productID"]["azure"], ["publisher.offer"])
+
+    def test_dry_run_writes_nothing(self):
+        item = self.empty("app")
+        item["productID"]["aws"] = [self.CODE]
+        offer, product = self.write([item])
+        before = offer.read_text(encoding="utf-8")
+
+        result = self.invoke(
+            "remove", offer, product,
+            "--app", "app", "--platform", "aws", "--code", self.CODE,
+            "--dry-run",
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("Dry run", result.output)
+        self.assertEqual(offer.read_text(encoding="utf-8"), before)
+
+    def test_alias_removes_from_the_owning_entry(self):
+        item = self.empty("app")
+        item["applications"] = ["app", "alias"]
+        item["productID"]["aws"] = [self.CODE]
+        offer, product = self.write([item], catalog=("app", "alias"))
+
+        result = self.invoke(
+            "remove", offer, product,
+            "--app", "alias", "--platform", "aws", "--code", self.CODE,
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("alias (entry app)", result.output)
+        self.assertEqual(self.load(offer)[0]["productID"]["aws"], [])
+
+    def test_rejects_non_app_entries(self):
+        item = self.empty("websoft9")
+        item["type"] = "websoft9"
+        item["productID"]["aws"] = [self.CODE]
+        offer, product = self.write([item], catalog=("websoft9",))
+
+        result = self.invoke(
+            "remove", offer, product,
+            "--app", "websoft9", "--platform", "aws", "--code", self.CODE,
+        )
+
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("only app entries", result.output)
+
+
 class OfferCodesModuleTests(unittest.TestCase):
+    def test_normalize_ignores_non_strings(self):
+        self.assertEqual(
+            offer_codes._normalize([None, 1, " a ", "a", " "]), ["a"]
+        )
+
+    def test_add_codes_leaves_documents_unchanged_on_error(self):
+        app = entry("app", "1")
+        other = entry("other", "2")
+        documents = [("mock", [app, other])]
+        before = json.loads(json.dumps(documents))
+        shared = other["productID"]["aws"][0]
+
+        with self.assertRaisesRegex(ValueError, "already assigned"):
+            offer_codes.add_codes(
+                documents, app="app", platform="aws", codes=[shared]
+            )
+
+        self.assertEqual(json.loads(json.dumps(documents)), before)
+        self.assertNotIn("variants", app)
+
+    def test_replace_code_leaves_documents_unchanged_on_error(self):
+        old = entry("old", "1")
+        new = entry("new", "2")
+        code = old["productID"]["aws"][0]
+        old["variants"] = {"aws": {code: 123}}
+        documents = [("mock", [old, new])]
+        before = json.loads(json.dumps(documents))
+
+        with self.assertRaisesRegex(ValueError, "not a string"):
+            offer_codes.replace_code(
+                documents, old_app="old", new_app="new", platforms=["aws"]
+            )
+
+        self.assertEqual(json.loads(json.dumps(documents)), before)
+
+    def test_write_documents_preserves_mode(self):
+        with tempfile.TemporaryDirectory() as name:
+            path = Path(name) / "offer.json"
+            path.write_text("[]", encoding="utf-8")
+            os.chmod(path, 0o640)
+            documents = [(str(path), [entry("a", "1")])]
+
+            offer_codes.write_documents(documents, [str(path)])
+
+            self.assertEqual(path.stat().st_mode & 0o777, 0o640)
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8")), [entry("a", "1")])
+
     def test_load_source_reads_directory_in_order(self):
         with tempfile.TemporaryDirectory() as name:
             directory = Path(name)
@@ -472,6 +1284,8 @@ class ReachabilityTests(unittest.TestCase):
                  "--platform", "aws", "--strict"],
             )
         self.assertEqual(result.exit_code, 1)
+        self.assertIsInstance(result.exception, SystemExit)
+        self.assertIn("not-found code(s)", result.output)
 
     def test_command_prints_unsupported_platform(self):
         path = self.write([entry("a", "1", aws=["aaaaaaaaaaaaaaaaaaaaaaaaa"])])

@@ -35,6 +35,7 @@ SPECIAL_CASES = DATA / "app-special-cases.json"
 SPECIAL_CASE_SLOTS = {
     "editionLabel": "text",
     "pricingLead": "text",
+    "titleTrademark": "text",
     "multiVersion": "flag",
 }
 DEFAULT_EDITION_LABEL = "Community Edition"
@@ -232,8 +233,9 @@ def load_special_cases(path: Path = SPECIAL_CASES) -> dict[str, dict[str, str | 
                 raise ValueError(f"{path} entry {app_id!r} {key} must be a string")
             if value != value.strip():
                 raise ValueError(f"{path} entry {app_id!r} {key} has surrounding whitespace")
-        if "pricingLead" in entry and not entry["pricingLead"]:
-            raise ValueError(f"{path} entry {app_id!r} pricingLead must not be empty")
+        for key in ("pricingLead", "titleTrademark"):
+            if key in entry and not entry[key]:
+                raise ValueError(f"{path} entry {app_id!r} {key} must not be empty")
         cases[app_id] = dict(entry)
     return cases
 
@@ -259,6 +261,13 @@ def edition_values(catalog_item: dict, special_cases: dict[str, dict[str, str | 
         "hasLabel": has_label,
         "pricingLead": entry.get("pricingLead") or default_pricing,
     }
+
+
+def branding_values(catalog_item: dict, special_cases: dict[str, dict[str, str | bool]]) -> dict:
+    """Resolve the trademark used in the AWS product title."""
+    entry = special_cases.get(catalog_item.get("id")) or {}
+    trademark = str(catalog_item.get("trademark") or "").strip()
+    return {"titleTrademark": str(entry.get("titleTrademark") or trademark)}
 
 
 def is_os_label(label: str) -> bool:
@@ -308,7 +317,7 @@ def with_variant(bundle: dict, label: str, strict: bool = True) -> dict:
     content = dict(bundle["content"])
     title = variant_title(
         str(content.get("ProductTitle", "")),
-        str(bundle.get("trademark") or ""),
+        str(bundle.get("titleTrademark") or bundle.get("trademark") or ""),
         label,
     )
     warnings = []
@@ -469,6 +478,12 @@ def render(catalog_item: dict, version: str, vendor_path: Path = DATA / "vendor.
     options = list(dict.fromkeys(options))
     multi_version = bool((special_cases.get(catalog_item.get("id")) or {}).get("multiVersion")) and len(options) >= 2
     selection = f" {'/'.join(options)} for selection" if multi_version else ""
+    short_choices = version_choices(options)
+    displayed_version = display_version(version) if version else ""
+    # Includes its leading space so a missing version does not leave a double space.
+    version_choice = (
+        f" {short_choices}" if multi_version else (f" {displayed_version}" if displayed_version else "")
+    )
     namespaces = template.get("namespaces")
     if not isinstance(namespaces, list) or not namespaces or any(not isinstance(namespace, str) or not namespace for namespace in namespaces):
         raise ValueError("template.namespaces must contain at least one namespace")
@@ -498,14 +513,17 @@ def render(catalog_item: dict, version: str, vendor_path: Path = DATA / "vendor.
     if not isinstance(catalog_values.get("hasenterprise"), bool):
         catalog_values["hasenterprise"] = True
     editions = edition_values(catalog_values, special_cases)
+    branding = branding_values(catalog_values, special_cases)
     available = {
         "catalog": catalog_values,
+        "branding": branding,
         "versions": {
             "id": catalog_item.get("id"),
-            "version": display_version(version) if version else "",
+            "version": displayed_version,
+            "choice": version_choice,
             "selection": selection,
             "multi": multi_version,
-            "shortChoices": version_choices(options),
+            "shortChoices": short_choices,
         },
         "vendor": vendor,
         "editions": editions,
@@ -589,6 +607,7 @@ def render(catalog_item: dict, version: str, vendor_path: Path = DATA / "vendor.
         "templateId": template["templateId"], "content": content, "preview": preview,
         "targets": targets,
         "trademark": catalog_item.get("trademark") or "",
+        "titleTrademark": branding["titleTrademark"],
         "offerCodes": catalog_item.get("offerCodes") or {},
         "publishBlockers": blockers,
         "sourceHash": digest({"catalog": catalog_item, "version": version, "vendor": vendor, "template": template, "specialCases": special_cases.get(catalog_item["id"])}),
@@ -628,23 +647,33 @@ def validate_content(content: dict) -> None:
             urls = [item["Url"] for item in value]
         if any(not isinstance(url, str) or not re.fullmatch(r"https://[^\s?#]+", url) for url in urls):
             raise ValueError(f"{field} requires unsigned HTTPS URLs")
-    def text_values(value):
+    def text_values(value, path):
         if isinstance(value, str):
-            yield value
+            yield path, value
         elif isinstance(value, list):
-            for item in value:
-                yield from text_values(item)
+            for index, item in enumerate(value):
+                yield from text_values(item, f"{path}[{index}]")
         elif isinstance(value, dict):
-            for item in value.values():
-                yield from text_values(item)
+            for key, item in value.items():
+                yield from text_values(item, f"{path}.{key}")
 
-    strings = list(text_values(content))
-    if any(re.search(r"[\x00-\x08\x0b-\x1f]", value) for value in strings):
-        raise ValueError("content contains unsupported control characters")
-    if any("  " in value for value in strings):
-        raise ValueError("content contains consecutive spaces")
-    if any(re.search(r"\{[A-Za-z][A-Za-z0-9_]*\}", value) for value in strings):
-        raise ValueError("content contains unresolved template placeholders")
+    values = list(text_values(content, "content"))
+
+    def first_match(predicate):
+        return next(((path, value) for path, value in values if predicate(value)), None)
+
+    match = first_match(lambda value: re.search(r"[\x00-\x08\x0b-\x1f]", value))
+    if match:
+        path, value = match
+        raise ValueError(f"{path} contains unsupported control characters: {value[:120]!r}")
+    match = first_match(lambda value: "  " in value)
+    if match:
+        path, value = match
+        raise ValueError(f"{path} contains consecutive spaces: {value[:120]!r}")
+    match = first_match(lambda value: re.search(r"\{[A-Za-z][A-Za-z0-9_]*\}", value))
+    if match:
+        path, value = match
+        raise ValueError(f"{path} contains unresolved template placeholders: {value[:120]!r}")
 
 
 def plan(bundle: dict, entity: dict) -> dict:

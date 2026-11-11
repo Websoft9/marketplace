@@ -12,7 +12,8 @@
     },
     "mongodb": {
       "multiVersion": true,
-      "editionLabel": "Community Server"
+      "editionLabel": "Community Server",
+      "titleTrademark": "Document DB"
     },
     "redis": {
       "multiVersion": true,

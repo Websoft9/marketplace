@@ -1,6 +1,6 @@
 ---
 name: offer-code-verify
-description: Validate local marketplace offer codes, fetch marketplace listing titles for duplicate and multi-code entries, and report which application each code most likely belongs to. Advisory only; never edits files.
+description: Validate and find local marketplace offer codes, investigate listing titles, and propose scoped maintenance commands. Advisory only; never edits offer data. Read-only seller API checks require explicit backend opt-in.
 ---
 
 # Offer Code Verify
@@ -16,8 +16,10 @@ a machine cannot judge from the JSON alone:
 2. one application carrying several codes on the same platform.
 
 This skill is **read-only**. It never edits `data/offer-codes/`, never pushes to
-Contentful, and never calls a marketplace seller API. It ends with
-recommendations for a human to apply.
+Contentful, and never calls a marketplace write API. Read-only seller APIs may
+be queried only when the caller explicitly enables `backend=true`; available
+credentials alone are not authorization to run backend checks. It ends with
+recommendations for a human to apply, never executing `add`, `remove` or `replace`.
 
 ## Inputs
 
@@ -26,6 +28,8 @@ recommendations for a human to apply.
 | `apps` | no | Comma-separated application ids such as `django,odoo`. Omit, or use `all`, to check every entry in the offer source |
 | `platforms` | no | Comma-separated platform keys: `aws`, `aliyun`, `alibabacloud`, `huaweicloud`, `huaweiyun`, `azure`. Default: every platform present |
 | `fetch` | no | `true` (default) to open listing pages; `false` for an offline pass using CLI evidence only |
+| `backend` | no | `false` (default). `true` explicitly authorizes read-only seller API checks, restricted to the selected apps, codes and platforms. Cannot be combined with `fetch=false` |
+| `product_catalog` | no | Full `product_en.json` URL or local snapshot for application-existence checks. For an offline pass, only a local snapshot is allowed |
 
 If `apps` contains an id that is not in the offer source, report it as
 unsupported and continue with the remaining ids. This skill does not ask
@@ -42,6 +46,9 @@ interactive questions.
 - Read `data/.work/catalog.json` for `id` and `trademark` when matching a
   listing title to an application. A missing catalog is not fatal; skip
   trademark matching and say so.
+- That staging catalog may contain only selected applications. It is not proof
+  that an absent application is missing or delisted. Only a full product catalog
+  can support a catalog-difference finding, never a delisting conclusion.
 - Never print credentials.
 
 ## Workflow
@@ -52,26 +59,39 @@ interactive questions.
 make cli ARGS="offer-codes verify --json"
 ```
 
+When `product_catalog` is supplied, pass `--product-catalog` with that source.
+For `fetch=false`, never fetch a catalog URL: use the supplied local full
+snapshot, or add `--skip-catalog-check` and explicitly report that catalog
+membership was not checked. Reject `fetch=false, backend=true` as contradictory
+inputs before running any checks. Do not infer missing applications when
+`productCatalog` is null in the verification result.
+
 - Exit non-zero with **errors**: stop. Report the exact errors; structure is
   broken and page checks are not meaningful yet.
 - Warnings only (exit 0): continue. The current dataset normally has duplicate
   codes, orphan ids and length drift as warnings.
 - Keep the JSON: it is the authoritative issue list. Use it for severities and
-  messages, and read the offer source files only to build the per-app and
-  per-code maps the JSON does not expose.
-- When credentials are available, run
-  `make cli ARGS="offer-codes listing-check --json"` for backend existence and
-  visibility: each platform adapter reads its credentials from the environment.
-  Treat `unsupported` and `skipped` as unverified, not as missing. It does not
-  test public URL reachability, so do not use it as proof that a page opens.
+  messages. Use `mk offer-codes find --json` (with the same offer source) to
+  obtain app/code/platform/label/source rows and avoid reimplementing parsing.
+- Do not run backend checks yet: select the scope first.
 
 ### 2. Select the scope
 
-- `apps` given: keep only entries whose `id` matches. Duplicate-code issues
+- `apps` given: match entry `id` or `applications` aliases, as `find` does. Duplicate-code issues
   count as selected when at least one owner is selected.
 - `apps` omitted or `all`: every entry.
 - Apply `platforms` to every check.
 - Record the selection in the report.
+
+If and only if `backend=true`, run `mk offer-codes listing-check --json` with
+the same `--offer` source, selected `--app` values, `--platform` values and
+relevant `--code` values. Omit an app/platform filter only when the caller
+actually selected all of that dimension. Always use `--limit 40` per platform;
+report selected codes omitted by that limit as unverified. Never broaden a
+single-app request to the entire source. Missing credentials yield `skipped`;
+do not seek or provision credentials. Treat `unsupported`, `skipped` and `error`
+as unverified, not missing. This check is not proof of public URL reachability
+or of which application owns a listing.
 
 ### 3. Investigate duplicate codes
 
@@ -93,7 +113,8 @@ For each conflict that touches the selection:
 | --- | --- |
 | Title names one owner clearly | The code belongs to that owner; recommend removing it from the other |
 | Title names neither owner, or both | Ambiguous; recommend manual review and list both candidates |
-| One owner is absent from the catalog or is known delisted | Recommend clearing the code from the offline owner first |
+| One owner is absent from the catalog | Catalog difference only; mark for review, never recommend clearing the code on this evidence alone |
+| An independent current source confirms an old owner was delisted and the listing now names the other owner | Recommend moving/clearing only the confirmed old assignment, citing both sources |
 | Page unreachable, blocked, or only a generic site title | `unverified`; give the URL and the reason |
 | Both owners legitimately share a bundle listing | `uncertain`; explain that a shared bundle is possible, do not force a removal |
 
@@ -117,8 +138,10 @@ removal only because a list has more than one entry.
 ### 5. Add the remaining checks
 
 - Orphan ids: an `id` not present in `product_en.json` (the source of truth for
-  existing applications). Recommend deleting the whole entry when the
-  application is confirmed delisted; otherwise mark for review.
+  existing applications). Absence does not imply delisting: the two datasets
+  are not required to match. Recommend deleting the whole entry only with
+  independent, current delisting evidence for the entire entry, considering
+  aliases and all platforms. Otherwise mark for review.
 - Code format or length drift: report it, with the platform's usual pattern.
 - Unreachable listing: a 404 on a code that is still assigned suggests a
   delisted product or a changed URL template. Report as `unverified`.
@@ -160,6 +183,7 @@ Start with the CLI result, then add the evidence.
 - Source: data/offer-codes/
 - Selection: django, laravel (2 of 108 entries)
 - CLI: 0 error(s), N warning(s)
+- Backend: disabled / N checked, M unverified (skipped, unsupported, errors or limit)
 - Pages fetched: 4 (3 titles read, 1 unverified)
 
 ### Duplicate codes
@@ -181,6 +205,14 @@ Start with the CLI result, then add the evidence.
 
 1. ... (each with confidence: confirmed / likely / uncertain / unverified)
 ```
+
+For confirmed maintenance recommendations, include a **proposed**, not executed,
+CLI command: `remove --app ... --platform ... --code ... --dry-run` or
+`replace --from ... --to ... --platform ... --code ... --dry-run`. Always specify
+the exact code and platform; never propose an unbounded replacement. Include
+`--offer` for non-default sources. Shared bundle ownership is not itself a
+reason for removal. Do not use `--skip-catalog-check` in a recommendation to
+bypass an unresolved target application.
 
 Finish with the unverified list, with the reason for each, and:
 
