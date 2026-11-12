@@ -1,7 +1,7 @@
 ---
 name: Update App Basic Info
 about: Update Contentful app content with the app-content-gen skill
-title: '[ ] Update app basic info - <app-ids>'
+title: 'Update apps basic info - <app-ids>'
 labels: 'enhancement'
 assignees:
 
@@ -15,13 +15,11 @@ The agent works in a pull request. Answer questions or request changes in the PR
 
 ## 1. Apps
 
-<!-- One id per line, e.g.
-dify
-moodle
--->
+List your apps here, please modify below list before submit issue
 
-```text
-<app-id>
+```
+app1
+app2
 ```
 
 ## 2. Fields
@@ -38,5 +36,3 @@ moodle
 ## 3. Additional context
 
 <!-- Optional: audience, wording, links, or "assessment only". -->
-
--
