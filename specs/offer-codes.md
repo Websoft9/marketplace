@@ -169,8 +169,9 @@ rollback. Snapshot checks also cannot lock out arbitrary external editors.
 
 The command only changes repository data. Publish the new application's listing
 content separately (for AWS, `mk offer preflight`, `mk offer plan` and
-`mk offer apply`), then run `mk offer-codes verify` and
-`mk list --update-readme README.md`.
+`mk offer apply`), then run `mk offer-codes verify`.
+Use `mk list` to view application links; it only prints to standard output and
+does not generate or update a README section.
 
 ## Listing check
 

@@ -13,7 +13,6 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from cli.cli import cli  # noqa: E402
-from cli.marketplace import END_MARKER, START_MARKER  # noqa: E402
 from cli.commands import versions as versions_module  # noqa: E402
 from cli.versioning import extract_marketplace_version, extract_summary_version  # noqa: E402
 
@@ -79,20 +78,16 @@ class ListCommandTests(unittest.TestCase):
             result.output,
         )
 
-    def test_list_updates_readme_in_place(self) -> None:
+    def test_list_rejects_removed_readme_option_without_writing(self) -> None:
         readme = self.directory / "README.md"
-        readme.write_text(
-            f"# Project\n\n{START_MARKER}\nold\n{END_MARKER}\n",
-            encoding="utf-8",
-        )
+        original = "# Project\n\nIntro\n"
+        readme.write_text(original, encoding="utf-8")
 
         result = self.invoke("--update-readme", str(readme))
 
-        self.assertEqual(result.exit_code, 0, result.output)
-        updated = readme.read_text(encoding="utf-8")
-        self.assertIn("Elasticsearch", updated)
-        self.assertIn("AFFiNE", updated)
-        self.assertNotIn("old", updated)
+        self.assertEqual(result.exit_code, 2, result.output)
+        self.assertIn("No such option: --update-readme", result.output)
+        self.assertEqual(readme.read_text(encoding="utf-8"), original)
 
     def test_help_lists_the_command(self) -> None:
         result = self.runner.invoke(cli, ["--help"])

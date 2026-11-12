@@ -42,6 +42,49 @@ def dataset(*items: dict) -> dict:
 
 
 class CatalogVerifyTests(unittest.TestCase):
+    def test_generated_profile_enforces_formats_but_keeps_semantic_warnings(self) -> None:
+        data = dataset(app("target", "Target", keywords=["ERP."],
+                           usecases=["AI agent development"], overview="Team application!", summary="Team application."))
+        existing = catalog_verify.verify(data)
+        generated = catalog_verify.verify(data, profile="generated")
+        self.assertEqual(existing["errors"], 0)
+        self.assertGreaterEqual(generated["errors"], 4)
+        self.assertEqual(generated["checked"]["target"]["summary"], "error")
+        data = dataset(app("target", "Target", summary="Leading application"))
+        result = catalog_verify.verify(data, profile="generated")
+        self.assertEqual(result["errors"], 0)
+        self.assertEqual(result["warnings"], 1)
+
+    def test_generated_related_apps_cap_and_runtime_are_errors(self) -> None:
+        others = [app(f"app{i}", f"App{i}") for i in range(9)]
+        data = dataset(app("target", "Target", relatedApps=[f"App{i}" for i in range(9)]), *others)
+        self.assertEqual(catalog_verify.verify(data, app_ids=["target"], fields=["relatedApps"], profile="generated")["errors"], 1)
+        self.assertEqual(catalog_verify.verify(data, app_ids=["target"], fields=["relatedApps"])["errors"], 0)
+        data = dataset(app("target", "Target", relatedApps=["Docker"]), app("docker", "Docker"))
+        self.assertEqual(catalog_verify.verify(data, app_ids=["target"], fields=["relatedApps"], profile="generated")["errors"], 1)
+
+    def test_push_profile_permits_partial_empty_fields_and_platform_link_normalization(self) -> None:
+        data = dataset({"id": "odoo", "summary": None, "hasenterprise": False,
+                        "relatedApps": ["NotInLocalFile", "NotInLocalFile"]})
+        result = catalog_verify.verify(data, profile="push")
+        self.assertEqual(result["errors"], 0)
+        self.assertEqual(result["checked"]["odoo"]["summary"], "skipped-empty")
+        self.assertEqual(result["checked"]["odoo"]["hasenterprise"], "ok")
+
+    def test_generated_ascii_punctuation_preserves_published_product_names(self) -> None:
+        data = dataset(app("target", "App—Name", overview="App—Name manages workflows."))
+        self.assertEqual(catalog_verify.verify(data, fields=["overview"], profile="generated")["errors"], 0)
+        data["items"][0]["overview"] = "App—Name manages workflows—visually."
+        self.assertEqual(catalog_verify.verify(data, fields=["overview"], profile="generated")["errors"], 1)
+
+    def test_baseline_detects_absent_versus_null_unselected_fields(self) -> None:
+        before = dataset(app("odoo", "Odoo"))
+        before["items"][0]["extra"] = None
+        after = json.loads(json.dumps(before))
+        del after["items"][0]["extra"]
+        result = catalog_verify.verify(after, fields=["summary"], baseline=before)
+        self.assertEqual(result["errors"], 1)
+
     def test_all_keyword_selects_every_item(self) -> None:
         self.assertIsNone(_parse_app_ids("all"))
         self.assertIsNone(_parse_app_ids("ALL"))

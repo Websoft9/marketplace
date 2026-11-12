@@ -50,6 +50,14 @@ mk catalog pull --apps wordpress,odoo --merge
 existing order. Without `--merge`, `--apps` writes a dataset that contains only
 the selected applications.
 
+Merge replaces **whole matching items**, including local fields not returned by
+pull; it is not a selected-field merge. Explicit refresh can discard unpushed
+generated content and local listing metadata for those items. Every file pull
+retains exact previous bytes in a unique sibling `catalog.json.before-*.json`
+backup before atomic replacement. CLI writers coordinate with a sibling lock;
+changes since the initial read cause refusal rather than an overwrite. Stdout
+pull does not create backups or locks. Scratch backups/locks must not be committed.
+
 Preview API example:
 
 ```sh
@@ -146,6 +154,9 @@ so `--fields` typos fail loudly.
 
 By default a target application absent from Contentful still fails the export;
 `--allow-missing` writes the available records and adds a `missing` array.
+With merge, missing ids from this pull are retained in that array even when an
+old local item remains; recovered ids are removed and unrelated prior missing
+ids are preserved. Item presence alone does not prove a successful refresh.
 
 `offerCodes` maps the local offer-codes source's `productID` values by platform.
 It is copied from the JSON files under `data/offer-codes/` (merged by application
@@ -177,10 +188,65 @@ layers. Summaries that contain `open source`/`open-source` are errors. Add
 `--json` for a machine-readable result. Errors exit non-zero; warnings are
 reported but do not block.
 
+### Validation profiles and ownership
+
+`--profile existing` is the compatible default. `--profile generated` requires
+non-empty keywords/usecases, lowercase keywords without surrounding/trailing
+punctuation, Title Case usecases (allowing internal minor words), a period at
+the end of overview, no trailing punctuation on summary, no generic-runtime
+relationships and at most eight related apps. It does not truncate existing
+values. Generated prose uses ASCII punctuation, with published target product
+names exempt. Use it only for fields being regenerated. `--profile push` permits
+missing/empty fields, validates non-empty selected values and leaves relationship
+filtering, deduplication and linked-entry resolution to the push adapter.
+Explicit clears remain supported by push; empty fields are not new-content errors
+in the push profile. JSON `checked` statuses distinguish errors, warnings and
+skipped-empty fields; use `issues` for details.
+
+All profiles are mechanical, not factual review. Product roles, official evidence,
+edition boundaries, English language, editorial AI requirements, stack order,
+real integrations, competitors and justified layer exceptions remain skill
+responsibilities. Layer conflicts, hype detection and repeated summary/overview
+are advisory warnings, not automatic semantic decisions.
+
+### Safely applying generated candidates
+
+Do not copy a generated catalog over the staging file. Save a baseline and a
+separate full candidate, then use:
+
+```sh
+mk catalog apply --input data/.work/catalog.json \
+  --candidate /tmp/opencode/run/batch.json \
+  --baseline /tmp/opencode/run/batch.before.json \
+  --apps wordpress,odoo --fields summary,keywords --skip-invalid
+```
+
+`--input` defaults to the same staging path as pull/verify, including
+`MK_CATALOG_DIR`. Apps and generated fields must be explicit; `all` selects
+all local items. Candidate and baseline must be separate from the destination.
+The current staging data must equal the baseline. The command rejects changed
+metadata, item set/order, unselected items/fields (including missing versus null)
+and malformed/duplicate/missing ids regardless of `--skip-invalid`.
+
+Without `--skip-invalid`, any validation error prevents a commit. With it, only
+selected-app content errors are recoverable: the whole failed app is restored
+from baseline, surviving apps are strictly verified again, and an exact backup
+plus atomic replacement are performed. No changes means no replacement. The
+persisted file is checked again. JSON output includes succeeded/skipped ids,
+actual changed fields, validation issues, backup and output paths; save it in a
+unique per-run directory as a batch checkpoint. Exit zero with skipped apps is
+partial success, not success for every requested app.
+
+Locks coordinate CLI writers on Linux; external editors must not write during
+commit. Pre-commit external changes are detected, but arbitrary external writes
+are not prevented. Batch scheduling, semantic correction, evidence reports and
+resume selection remain skill responsibilities; CLI does not generate content,
+fetch evidence, classify roles or offer unattended resume.
+
 ## Validation
 
 ```sh
-python3 -m unittest tests.test_catalog_pull tests.test_catalog_verify
+python3 -m unittest tests.test_catalog_pull tests.test_catalog_verify tests.test_catalog_apply
 ```
 
 Tests use synthetic Contentful responses. A live run requires a valid Contentful

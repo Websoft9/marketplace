@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import urllib.error
-from pathlib import Path
 
 import click
 
@@ -12,7 +11,6 @@ from ..marketplace import (
     load_json,
     read_offers,
     render_markdown,
-    update_readme as update_readme_section,
 )
 
 
@@ -26,12 +24,6 @@ from ..marketplace import (
     help="product_en.json URL or local path",
 )
 @click.option(
-    "--update-readme",
-    type=click.Path(path_type=Path, exists=True, dir_okay=False),
-    metavar="PATH",
-    help="replace the generated table section in an existing README",
-)
-@click.option(
     "--timeout",
     type=float,
     default=30,
@@ -41,7 +33,6 @@ from ..marketplace import (
 def list_command(
     offer: str,
     catalog: str,
-    update_readme: Path | None,
     timeout: float,
 ) -> None:
     """List applications and their Marketplace product links."""
@@ -55,19 +46,4 @@ def list_command(
         raise click.ClickException("offer and catalog data must be JSON arrays")
 
     rows = collect_rows(offers, catalog_data)
-    section = render_markdown(rows)
-
-    if update_readme is None:
-        click.echo(section)
-        return
-
-    changed = update_readme_section(update_readme, section)
-    listed = sum(1 for row in rows if row.in_catalog and row.has_links)
-    unlisted = sum(1 for row in rows if row.in_catalog and not row.has_links)
-    outside = sum(1 for row in rows if not row.in_catalog and row.has_links)
-    state = "updated" if changed else "unchanged"
-    click.echo(
-        f"{state}: {update_readme} "
-        f"(listed={listed}, unlisted={unlisted}, outside_catalog={outside})",
-        err=True,
-    )
+    click.echo(render_markdown(rows))

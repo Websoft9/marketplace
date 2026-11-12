@@ -11,7 +11,7 @@ help:
 	@printf '  %-18s %s\n' 'help' 'show available local development targets'
 	@printf '  %-18s %s\n' 'cli' 'enter the mk business CLI shell (ARGS: one-shot command)'
 	@printf '  %-18s %s\n' 'opencode' 'start OpenCode with proxy variables disabled'
-	@printf '  %-18s %s\n' 'opencode-clear' 'list and safely clear OpenCode sessions (ARGS: --all/--dry-run/--yes)'
+	@printf '  %-18s %s\n' 'opencode-clear' 'clear OpenCode V2 repo sessions via API (ARGS: --all/--directory PATH/--dry-run/--yes)'
 	@printf '  %-18s %s\n' 'branch-update' 'rebase the current development branch onto origin/main (ARGS: --dry-run)'
 	@printf '\nInside the CLI shell run: mk --help\n\n'
 

@@ -14,6 +14,7 @@ from typing import Any, Callable
 
 from .contentful import ContentfulError, USER_AGENT, _field_matcher, load_target_catalog, select_target_keys
 from .marketplace import CATALOG_URL
+from . import catalog_verify
 
 DEFAULT_API_URL = "https://api.contentful.com"
 ALLOWED_INPUT_FIELDS = ("trademark", "overview", "keywords", "usecases", "relatedApps", "summary", "hasenterprise")
@@ -487,6 +488,18 @@ def push(
         raise ContentfulError("--publish cannot be combined with --dry-run.")
     by_id, order = load_input(input_path)
     selected = select_target_keys(order, app_ids)
+    # Validate the exact in-memory input that will be pushed, including stdin.
+    # Link filtering/resolution remains owned by the platform adapter.
+    selected_fields = tuple(name for name in ALLOWED_INPUT_FIELDS if field_names is None or name in field_names)
+    if field_names is not None and (not field_names or field_names - set(ALLOWED_INPUT_FIELDS)):
+        raise ContentfulError("Unsupported or empty push field selection.")
+    local = catalog_verify.verify({"items": list(by_id.values())}, app_ids=selected,
+                                  fields=selected_fields, profile="push")
+    if local["errors"]:
+        raise ContentfulError("local push validation failed: " + "; ".join(
+            f"{i['app']} {i['field']}: {i['message']}" for i in local["issues"] if i["severity"] == "error"))
+    for issue in local["issues"]:
+        _print(progress, f"Validation {issue['severity']}: {issue['app']} {issue['field']}: {issue['message']}")
     _print(progress, f"Selected applications: {len(selected)}")
     schema = fetch_schema(token=token.strip(), space_id=space_id.strip(), environment=environment.strip(),
                           content_type=content_type.strip(), api_url=api_url, timeout=timeout)

@@ -70,10 +70,6 @@ PLATFORM_URL_TEMPLATES = {
 }
 ROUTING = CONFIG["routing"]
 
-START_MARKER = "<!-- marketplace-apps:start -->"
-END_MARKER = "<!-- marketplace-apps:end -->"
-
-
 @dataclass
 class AppRow:
     key: str
@@ -339,12 +335,10 @@ def render_markdown(rows: list[AppRow]) -> str:
     outside_catalog = [row for row in rows if not row.in_catalog and row.has_links]
 
     parts = [
-        START_MARKER,
         "## Marketplace 应用对应表",
         "",
         "下表列出 `product_en.json` 中的应用及其在各 Marketplace 的商品链接。"
-        f"数据源：`data/offer-codes/`、[product_en.json]({CATALOG_URL})；"
-        "运行 `mk list --update-readme README.md` 重新生成。",
+        f"数据源：`data/offer-codes/`、[product_en.json]({CATALOG_URL})。",
         "",
         f"已上架应用：{len(listed_catalog)} 个；未上架应用：{len(unlisted)} 个。",
         "",
@@ -373,19 +367,4 @@ def render_markdown(rows: list[AppRow]) -> str:
             ]
         )
 
-    parts.append(END_MARKER)
     return "\n".join(parts)
-
-
-def update_readme(path: Path, section: str) -> bool:
-    text = path.read_text(encoding="utf-8")
-    if START_MARKER in text and END_MARKER in text:
-        before, remainder = text.split(START_MARKER, 1)
-        _, after = remainder.split(END_MARKER, 1)
-        new_text = before + section + after
-    else:
-        new_text = text.rstrip() + "\n\n" + section + "\n"
-    changed = new_text != text
-    if changed:
-        path.write_text(new_text, encoding="utf-8")
-    return changed

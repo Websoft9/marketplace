@@ -1,88 +1,118 @@
 #!/usr/bin/env python3
-"""List and safely clear OpenCode sessions from the local database."""
+"""List and safely clear OpenCode V2 sessions through the running service API."""
 
 from __future__ import annotations
 
 import argparse
-import os
-import sqlite3
+import json
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote, urlencode
 
 
-def default_db_path() -> Path:
-    data_dir = os.environ.get("OPENCODE_DATA_DIR")
-    if data_dir:
-        return Path(data_dir) / "opencode.db"
-    if sys.platform == "darwin":
-        return Path.home() / "Library/Application Support/opencode/opencode.db"
-    if sys.platform == "win32":
-        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local"))
-        return base / "opencode/opencode.db"
-    return Path.home() / ".local/share/opencode/opencode.db"
+class OpenCodeError(RuntimeError):
+    """A service request or response failed; never expose raw API output."""
 
 
-def columns(connection: sqlite3.Connection, table: str) -> set[str]:
-    quoted = table.replace('"', '""')
-    return {row[1] for row in connection.execute(f'PRAGMA table_info("{quoted}")')}
+class OpenCodeAPI:
+    def __init__(self, server: str | None = None) -> None:
+        self.server = server
 
-
-def selected_sessions(
-    connection: sqlite3.Connection, directory: Path | None
-) -> list[sqlite3.Row]:
-    session_columns = columns(connection, "session")
-    if "id" not in session_columns:
-        raise sqlite3.DatabaseError("OpenCode session table has no id column")
-
-    fields = ["id"]
-    for optional in ("title", "directory", "parent_id", "time_created"):
-        if optional in session_columns:
-            fields.append(optional)
-    query = f"SELECT {', '.join(fields)} FROM session"
-    params: tuple[str, ...] = ()
-    if directory is not None:
-        if "directory" not in session_columns:
-            raise sqlite3.DatabaseError("OpenCode session table has no directory column")
-        query += " WHERE directory = ?"
-        params = (str(directory),)
-    query += " ORDER BY " + ("time_created" if "time_created" in session_columns else "id")
-    roots = connection.execute(query, params).fetchall()
-
-    ids = {row["id"] for row in roots}
-    connection.execute("CREATE TEMP TABLE selected_session (id TEXT PRIMARY KEY)")
-    if ids:
-        connection.executemany(
-            "INSERT OR IGNORE INTO selected_session (id) VALUES (?)",
-            ((session_id,) for session_id in ids),
-        )
-    if "parent_id" in session_columns and ids:
-        connection.execute(
-            """
-            WITH RECURSIVE descendants (id) AS (
-                SELECT id FROM selected_session
-                UNION
-                SELECT child.id
-                FROM session AS child
-                JOIN descendants ON child.parent_id = descendants.id
+    def request(self, method: str, path: str) -> object:
+        command = ["opencode", "api", method, path]
+        if self.server:
+            command.extend(["--server", self.server])
+        try:
+            result = subprocess.run(
+                command, capture_output=True, text=True, check=False, timeout=60
             )
-            INSERT OR IGNORE INTO selected_session (id)
-            SELECT id FROM descendants
-            """
-        )
-        ids.update(
-            row["id"]
-            for row in connection.execute("SELECT id FROM selected_session")
-        )
-    if not ids:
-        return []
+        except FileNotFoundError as error:
+            raise OpenCodeError("opencode is not installed or not on PATH") from error
+        except subprocess.TimeoutExpired as error:
+            raise OpenCodeError(f"OpenCode API {method} request timed out") from error
+        if result.returncode:
+            # stderr / response bodies may contain credentials or private session data.
+            raise OpenCodeError(
+                f"OpenCode API {method} request failed (exit {result.returncode}); "
+                "check `opencode service status` and your server configuration"
+            )
+        if method == "delete":
+            return None  # V2 DELETE responds with 204 No Content.
+        try:
+            return json.loads(result.stdout)
+        except ValueError as error:
+            raise OpenCodeError("OpenCode API did not return valid V2 JSON") from error
 
-    placeholders = ",".join("?" for _ in ids)
-    return connection.execute(
-        f"SELECT {', '.join(fields)} FROM session WHERE id IN ({placeholders}) ORDER BY "
-        + ("time_created" if "time_created" in session_columns else "id"),
-        tuple(ids),
-    ).fetchall()
+    def sessions(self) -> list[dict]:
+        sessions: dict[str, dict] = {}
+        cursor = None
+        seen_cursors: set[str] = set()
+        while True:
+            query = {"cursor": cursor} if cursor else {"limit": 100}
+            page = self.request("get", "/api/session?" + urlencode(query))
+            if (
+                not isinstance(page, dict)
+                or not isinstance(page.get("data"), list)
+                or not isinstance(page.get("cursor"), dict)
+            ):
+                raise OpenCodeError("Unexpected V2 session list response")
+            for session in page["data"]:
+                if (
+                    not isinstance(session, dict)
+                    or not isinstance(session.get("id"), str)
+                    or not session["id"]
+                    or not isinstance(session.get("location"), dict)
+                    or not isinstance(session["location"].get("directory"), str)
+                    or not Path(session["location"]["directory"]).is_absolute()
+                    or ("parentID" in session and not isinstance(session["parentID"], str))
+                    or ("time" in session and not isinstance(session["time"], dict))
+                ):
+                    raise OpenCodeError("Unexpected V2 session record")
+                sessions[session["id"]] = session
+            cursor = page["cursor"].get("next")
+            if cursor is None:
+                return list(sessions.values())
+            if not isinstance(cursor, str) or not cursor or cursor in seen_cursors:
+                raise OpenCodeError("Invalid or repeated V2 pagination cursor")
+            seen_cursors.add(cursor)
+
+    def remove(self, session_id: str) -> None:
+        self.request("delete", "/api/session/" + quote(session_id, safe=""))
+
+
+def default_directory() -> Path:
+    """Use the current repository root, even when invoked from a subdirectory."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, check=False, timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return Path.cwd().resolve()
+    if result.returncode == 0 and result.stdout.strip():
+        return Path(result.stdout.strip()).resolve()
+    return Path.cwd().resolve()
+
+
+def selected_sessions(sessions: list[dict], directory: Path | None) -> list[dict]:
+    ids = {
+        session["id"]
+        for session in sessions
+        if directory is None
+        or Path(session["location"]["directory"]).is_relative_to(directory)
+    }
+    # DELETE cascades to children, including children moved outside this directory.
+    # Include them in the preview / confirmation rather than silently deleting them.
+    while True:
+        descendants = {
+            session["id"] for session in sessions if session.get("parentID") in ids
+        }
+        expanded = ids | descendants
+        if expanded == ids:
+            return [session for session in sessions if session["id"] in ids]
+        ids = expanded
 
 
 def format_created(value: object) -> str:
@@ -91,86 +121,69 @@ def format_created(value: object) -> str:
         if timestamp > 10_000_000_000:
             timestamp /= 1000
         return datetime.fromtimestamp(timestamp, timezone.utc).strftime("%Y-%m-%d %H:%M")
-    except (TypeError, ValueError, OSError):
+    except (TypeError, ValueError, OSError, OverflowError):
         return "unknown"
 
 
-def display(sessions: list[sqlite3.Row], directory: Path | None) -> None:
+def display(sessions: list[dict], directory: Path | None) -> None:
+    print(f"Scope: {directory or 'all directories'} (including child sessions)")
     if not sessions:
         print("No sessions found.")
         return
     print(f"{len(sessions)} session(s)")
     for session in sessions:
-        title = session["title"] if "title" in session.keys() else ""
-        created = format_created(session["time_created"]) if "time_created" in session.keys() else "unknown"
-        session_id = session["id"]
-        session_directory = session["directory"] if "directory" in session.keys() else str(directory or "")
-        print(f"{created}  {session_id}  {title or '(untitled)'}  {session_directory}")
-
-
-def delete_sessions(connection: sqlite3.Connection) -> int:
-    tables = {
-        row[0]
-        for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
-    }
-    session_ids = [
-        row["id"] for row in connection.execute("SELECT id FROM selected_session")
-    ]
-    if not session_ids:
-        return 0
-    placeholders = ",".join("?" for _ in session_ids)
-    with connection:
-        for table in sorted(tables):
-            if table in {"session", "selected_session"}:
-                continue
-            table_columns = columns(connection, table)
-            if "aggregate_id" in table_columns and table in {"event", "event_sequence"}:
-                quoted = table.replace('"', '""')
-                connection.execute(
-                    f'DELETE FROM "{quoted}" WHERE aggregate_id IN ({placeholders})',
-                    tuple(session_ids),
-                )
-            elif "session_id" in table_columns:
-                quoted = table.replace('"', '""')
-                connection.execute(
-                    f'DELETE FROM "{quoted}" WHERE session_id IN ({placeholders})',
-                    tuple(session_ids),
-                )
-        cursor = connection.execute(
-            f"DELETE FROM session WHERE id IN ({placeholders})", tuple(session_ids)
+        created = format_created(session.get("time", {}).get("created"))
+        print(
+            f"{created}  {session['id']}  {session.get('title') or '(untitled)'}  "
+            f"{session['location']['directory']}"
         )
-    return cursor.rowcount
+
+
+def delete_sessions(api: OpenCodeAPI, sessions: list[dict]) -> int:
+    ids = {session["id"] for session in sessions}
+    roots = [session for session in sessions if session.get("parentID") not in ids]
+    reachable = {session["id"] for session in roots}
+    while True:
+        expanded = reachable | {
+            session["id"] for session in sessions if session.get("parentID") in reachable
+        }
+        if expanded == reachable:
+            break
+        reachable = expanded
+    if reachable != ids:
+        raise OpenCodeError("Invalid session parent graph; refusing to delete")
+    # A parent delete also removes descendants. Do not delete them again (404).
+    for session in roots:
+        api.remove(session["id"])
+    return len(sessions)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--db", type=Path, help="database path (default: detect OpenCode data directory)")
-    parser.add_argument("--all", action="store_true", help="include sessions from all directories")
-    parser.add_argument("--directory", type=Path, help="limit sessions to this directory (default: current directory)")
+    scope = parser.add_mutually_exclusive_group()
+    scope.add_argument("--all", action="store_true", help="include sessions from all directories")
+    scope.add_argument(
+        "--directory", type=Path,
+        help="include this directory and subdirectories (default: current repo root)",
+    )
+    parser.add_argument("--server", help="explicit OpenCode V2 server URL (default: shared service)")
     parser.add_argument("--dry-run", action="store_true", help="list selected sessions without deleting")
     parser.add_argument("--yes", action="store_true", help="skip confirmation (required in non-interactive use)")
-    return parser.parse_args()
+    parser.add_argument("--db", help=argparse.SUPPRESS)
+    args = parser.parse_args()
+    if args.db is not None:
+        parser.error("--db is no longer supported; V2 cleanup uses the service API, not SQLite")
+    return args
 
 
 def main() -> int:
     args = parse_args()
-    database = (args.db or default_db_path()).expanduser()
-    directory = None if args.all else (args.directory or Path.cwd()).expanduser().resolve()
-    if not database.is_file():
-        print(f"error: OpenCode database not found: {database}", file=sys.stderr)
-        return 1
-
+    directory = None if args.all else (
+        args.directory.expanduser().resolve() if args.directory else default_directory()
+    )
+    api = OpenCodeAPI(args.server)
     try:
-        connection = sqlite3.connect(database)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute("PRAGMA busy_timeout = 5000")
-    except sqlite3.Error as error:
-        print(f"error: could not open OpenCode database: {error}", file=sys.stderr)
-        return 1
-
-    try:
-        sessions = selected_sessions(connection, directory)
+        sessions = selected_sessions(api.sessions(), directory)
         display(sessions, directory)
         if not sessions or args.dry_run:
             return 0
@@ -187,14 +200,22 @@ def main() -> int:
                 print("Aborted; nothing was deleted.")
                 return 0
 
-        deleted = delete_sessions(connection)
-        print(f"Deleted {deleted} session(s).")
+        deleted = delete_sessions(api, sessions)
+        after = api.sessions()
+        expected_ids = {session["id"] for session in sessions}
+        scope_ids = {session["id"] for session in selected_sessions(after, directory)}
+        remaining = [session for session in after if session["id"] in expected_ids | scope_ids]
+        if remaining:
+            display(remaining, directory)
+            raise OpenCodeError(
+                f"Cleanup incomplete: {len(remaining)} session(s) remain in scope "
+                "(possibly created during cleanup); review and retry"
+            )
+        print(f"Deleted {deleted} session(s). Verified no sessions remain in scope.")
         return 0
-    except sqlite3.Error as error:
-        print(f"error: OpenCode database operation failed: {error}", file=sys.stderr)
+    except (OpenCodeError, OSError) as error:
+        print(f"error: {error}", file=sys.stderr)
         return 1
-    finally:
-        connection.close()
 
 
 if __name__ == "__main__":

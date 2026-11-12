@@ -6,7 +6,7 @@ import urllib.error
 
 import click
 
-from .. import catalog_verify, contentful, contentful_management
+from .. import catalog_apply, catalog_file, catalog_verify, contentful, contentful_management
 from .. import marketplace
 from ..marketplace import CATALOG_URL, OFFER_SOURCE, catalog_default_path
 
@@ -55,12 +55,20 @@ def _merge_dataset(path: Path, dataset: dict) -> dict:
         if key in dataset:
             merged[key] = dataset[key]
     merged["source"] = {**(existing.get("source") or {}), **(dataset.get("source") or {})}
+    missing = dataset.get("missing") or []
+    refreshed = {item["id"] for item in pulled} | set(missing)
+    remaining_missing = [app for app in (existing.get("missing") or []) if app not in refreshed]
+    combined_missing = list(dict.fromkeys(remaining_missing + missing))
+    if combined_missing:
+        merged["missing"] = combined_missing
+    else:
+        merged.pop("missing", None)
     return merged
 
 
 @click.group("catalog")
 def catalog_command() -> None:
-    """Read application metadata from Contentful."""
+    """Pull, validate, safely stage and push application metadata."""
 
 
 @catalog_command.command("pull")
@@ -134,6 +142,11 @@ def pull_command(
     if app_ids is not None and not app_ids:
         raise click.ClickException("--apps must contain at least one application id.")
     reporter = _progress(progress)
+    output = output if output is not None else catalog_default_path()
+    try:
+        expected = catalog_file.read_bytes(output) if str(output) != "-" else None
+    except OSError as error:
+        raise click.ClickException(str(error)) from None
     try:
         dataset = contentful.pull_dataset(
             token=token,
@@ -164,7 +177,6 @@ def pull_command(
         item["offerCodes"] = codes.get(item["id"], {})
     dataset.setdefault("source", {})["offer"] = offer_source
 
-    output = output if output is not None else catalog_default_path()
     if str(output) == "-":
         if merge:
             raise click.ClickException("--merge requires a file output, not stdout.")
@@ -173,9 +185,15 @@ def pull_command(
     if merge:
         dataset = _merge_dataset(output, dataset)
     text = contentful.dumps_dataset(dataset) + "\n"
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(text, encoding="utf-8")
+    try:
+        backup = catalog_file.replace(output, text, expected=expected)
+    except (OSError, ValueError) as error:
+        raise click.ClickException(str(error)) from None
     if progress:
+        if backup:
+            click.echo(f"Backup: {backup}", err=True)
+        if dataset.get("missing"):
+            click.echo(f"Missing in Contentful: {', '.join(dataset['missing'])}", err=True)
         click.echo(f"Wrote {dataset['count']} application(s) to {output}", err=True)
 
 
@@ -298,6 +316,8 @@ def push_command(
 
 
 @catalog_command.command("verify")
+@click.option("--profile", type=click.Choice(["existing", "generated", "push"]), default="existing", show_default=True,
+              help="Generated enforces new-content format; push permits absent/empty fields and normalizes links downstream.")
 @click.option("--input", "input_path", type=click.Path(dir_okay=False, path_type=Path),
               metavar="PATH", help="Catalog dataset to validate. Default: data/.work/catalog.json.")
 @click.option("--apps", "app_list", metavar="IDS",
@@ -312,6 +332,7 @@ def push_command(
 @click.option("--json", "as_json", is_flag=True, help="Print the full result as JSON.")
 @click.option("--verbose", is_flag=True, help="Show a status line for applications without issues.")
 def verify_command(
+    profile: str,
     input_path: Path | None,
     app_list: str | None,
     field_list: str,
@@ -342,6 +363,7 @@ def verify_command(
         result = catalog_verify.verify(
             data, app_ids=app_ids, fields=fields, baseline=baseline_data,
             require_non_empty=require_non_empty,
+            profile=profile,
         )
     except ValueError as error:
         raise click.ClickException(str(error)) from None
@@ -372,3 +394,25 @@ def verify_command(
             )
     if result["errors"]:
         raise click.ClickException(f"{result['errors']} catalog validation error(s).")
+
+
+@catalog_command.command("apply")
+@click.option("--candidate", required=True, type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--baseline", required=True, type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--input", "output", type=click.Path(dir_okay=False, path_type=Path), help="Catalog to commit to; honors MK_CATALOG_DIR by default.")
+@click.option("--apps", "app_list", required=True, help="Explicit application ids or all.")
+@click.option("--fields", "field_list", required=True, help="Generated fields allowed to change.")
+@click.option("--skip-invalid", is_flag=True, help="Restore invalid selected apps; never ignore isolation/structure errors.")
+def apply_command(candidate: Path, baseline: Path, output: Path | None, app_list: str,
+                  field_list: str, skip_invalid: bool) -> None:
+    """Strictly validate and atomically commit a generated catalog candidate."""
+    app_ids = _parse_app_ids(app_list)
+    if app_ids is not None and not app_ids:
+        raise click.ClickException("--apps must contain at least one application id.")
+    fields = tuple(dict.fromkeys(f.strip() for f in field_list.split(",") if f.strip()))
+    try:
+        result = catalog_apply.apply(candidate, baseline, output or catalog_default_path(),
+                                     app_ids=app_ids, fields=fields, skip_invalid=skip_invalid)
+    except (OSError, ValueError) as error:
+        raise click.ClickException(str(error)) from None
+    click.echo(json.dumps(result, indent=2, ensure_ascii=False))

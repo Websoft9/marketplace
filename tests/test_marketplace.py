@@ -170,33 +170,12 @@ class RenderTests(unittest.TestCase):
 
         markdown = app_list.render_markdown(rows)
 
-        self.assertIn(app_list.START_MARKER, markdown)
+        self.assertNotIn("<!-- marketplace-apps:", markdown)
+        self.assertNotIn("--update-readme", markdown)
         self.assertIn("Elasticsearch", markdown)
         self.assertIn("[sku](https://aws.example/sku)", markdown)
         self.assertIn("未在 Marketplace 找到商品的应用", markdown)
         self.assertIn("- AFFiNE", markdown)
-
-    def test_update_readme_replaces_only_the_generated_section(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            readme = Path(directory) / "README.md"
-            readme.write_text(
-                "# Project\n\nIntro\n\n"
-                f"{app_list.START_MARKER}\nold\n{app_list.END_MARKER}\n\nFooter\n",
-                encoding="utf-8",
-            )
-
-            changed = app_list.update_readme(
-                readme,
-                f"{app_list.START_MARKER}\nnew\n{app_list.END_MARKER}",
-            )
-
-            self.assertTrue(changed)
-            self.assertEqual(
-                readme.read_text(encoding="utf-8"),
-                "# Project\n\nIntro\n\n"
-                f"{app_list.START_MARKER}\nnew\n{app_list.END_MARKER}\n\nFooter\n",
-            )
-
 
 if __name__ == "__main__":
     unittest.main()

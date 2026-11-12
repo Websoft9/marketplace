@@ -182,6 +182,31 @@ class InputTests(unittest.TestCase):
 
 
 class PushTests(unittest.TestCase):
+    def test_local_validation_stops_before_api_for_dry_run_and_write(self) -> None:
+        item = {**ITEM, "summary": "word " * 11}
+        self.path.write_text(json.dumps({"items": [item]}), encoding="utf-8")
+        for dry_run in (True, False):
+            with self.subTest(dry_run=dry_run):
+                with self.assertRaisesRegex(contentful.ContentfulError, "local push validation failed"):
+                    self.run_push(dry_run=dry_run)
+                self.schema.assert_not_called()
+                self.entries.assert_not_called()
+                self.update.assert_not_called()
+
+    def test_push_validation_respects_selected_fields_and_empty_values(self) -> None:
+        item = {**ITEM, "keywords": "legacy malformed value", "summary": None, "hasenterprise": False}
+        self.path.write_text(json.dumps({"items": [item]}), encoding="utf-8")
+        result = self.run_push(field_names={"summary", "hasenterprise"}, dry_run=True)
+        self.assertEqual(result["errors"], [])
+        self.assertEqual(result["skippedEmpty"], 1)
+
+    def test_stdin_is_validated_before_any_api_access(self) -> None:
+        with mock.patch.object(cma, "fetch_schema") as schema, \
+             mock.patch("sys.stdin", io.StringIO(json.dumps([{"id": "wordpress", "summary": "word " * 11}]))):
+            with self.assertRaisesRegex(contentful.ContentfulError, "local push validation failed"):
+                cma.push(token="secret", space_id="space", environment="master", input_path="-", dry_run=True)
+            schema.assert_not_called()
+
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.path = Path(self.temp.name) / "input.json"

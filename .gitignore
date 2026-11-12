@@ -9,6 +9,8 @@ build/
 dist/
 
 data/.work/
+# CLI pull/apply backups, wherever the output file lives
+catalog.json.before-*.json
 
 # Local build metadata
 .build/*

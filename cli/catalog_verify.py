@@ -9,6 +9,8 @@ applications and fields changed.
 from __future__ import annotations
 
 import json
+import re
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -78,14 +80,20 @@ def verify(
     fields: list[str] | tuple[str, ...] | None = None,
     baseline: dict[str, Any] | None = None,
     require_non_empty: bool = False,
+    profile: str = "existing",
+    check_content: bool = True,
 ) -> dict[str, Any]:
     """Validate selected fields for selected applications.
 
     ``app_ids`` defaults to every item and ``fields`` defaults to every
     generated field. When ``baseline`` is supplied, every item outside the
     selection and every field outside the selection must be unchanged.
+    ``check_content=False`` checks shape, selection and isolation only, so a
+    caller can distinguish fatal structural errors from recoverable content errors.
     """
     issues: list[dict[str, str]] = []
+    if profile not in {"existing", "generated", "push"}:
+        raise ValueError(f"unknown validation profile: {profile}")
     selected_fields = tuple(dict.fromkeys(fields or GENERATED_FIELDS))
     unknown_fields = [name for name in selected_fields if name not in FIELDS]
     if unknown_fields:
@@ -131,9 +139,22 @@ def verify(
         if item is None:
             continue
         checked[app_id] = {}
-        for name in selected_fields:
-            _check_field(item, name, trademarks, issues, require_non_empty)
-            checked[app_id][name] = "ok"
+        for name in selected_fields if check_content else ():
+            start = len(issues)
+            if profile == "push" and (name not in item or item[name] is None or item[name] == "" or item[name] == []):
+                checked[app_id][name] = "skipped-empty"
+                continue
+            if profile == "push" and name == "relatedApps":
+                value = item[name]
+                if not isinstance(value, list) or any(not isinstance(v, str) for v in value):
+                    _issue(issues, "error", app_id, name, "must be an array of application Trademarks")
+            else:
+                _check_field(item, name, trademarks, issues,
+                             require_non_empty or profile == "generated", generated=profile == "generated")
+            if profile == "generated":
+                _check_generated(item, name, issues)
+            field_issues = issues[start:]
+            checked[app_id][name] = "error" if any(i["severity"] == "error" for i in field_issues) else "warning" if field_issues else "ok"
 
     if data.get("count") is not None and data.get("count") != len(items):
         _issue(issues, "error", None, None, f"count is {data.get('count')}, items has {len(items)}")
@@ -150,6 +171,7 @@ def verify(
         "errors": len(errors),
         "warnings": len(issues) - len(errors),
         "baseline": baseline is not None,
+        "profile": profile,
     }
 
 
@@ -170,12 +192,45 @@ def _issue(
     )
 
 
+def _check_generated(item: dict[str, Any], name: str, issues: list[dict[str, str]]) -> None:
+    """Generation-only format rules; role, evidence and relationships stay semantic."""
+    value = item.get(name)
+    app_id = item["id"]
+    if name in {"keywords", "usecases", "overview", "summary"}:
+        texts = value if isinstance(value, list) else [value]
+        trademark = item.get("trademark")
+        for text in texts:
+            if not isinstance(text, str):
+                continue
+            # Published product names are exempt; generated prose is not.
+            if isinstance(trademark, str) and trademark:
+                text = text.replace(trademark, "").replace(trademark.lower(), "")
+            if any(not char.isascii() and unicodedata.category(char).startswith("P") for char in text):
+                _issue(issues, "error", app_id, name, "must use ASCII punctuation outside product names")
+                break
+    if name == "overview" and isinstance(value, str) and value and not value.endswith("."):
+        _issue(issues, "error", app_id, name, "must end with a period")
+    if name in {"keywords", "usecases"} and isinstance(value, list):
+        minor_words = {"a", "an", "and", "as", "at", "by", "for", "in", "of", "on", "or", "the", "to", "with"}
+        for index, text in enumerate(value):
+            if not isinstance(text, str) or not text:
+                continue
+            if text[0] in TRAILING_PUNCTUATION + "\"'([" or text[-1] in "\"')]":
+                _issue(issues, "error", app_id, name, f"[{index}] has surrounding punctuation")
+            if name == "usecases":
+                words = re.findall(r"[A-Za-z][A-Za-z0-9]*", text)
+                if any(word[:1].islower() and (i == 0 or word not in minor_words) for i, word in enumerate(words)):
+                    _issue(issues, "error", app_id, name, f"[{index}] must use Title Case")
+
+
 def _check_field(
     item: dict[str, Any],
     name: str,
     trademarks: set[str],
     issues: list[dict[str, str]],
     require_non_empty: bool,
+    *,
+    generated: bool = False,
 ) -> None:
     app_id = item["id"]
     if name not in item:
@@ -183,15 +238,15 @@ def _check_field(
         return
     value = item[name]
     if name == "keywords":
-        _check_keywords(app_id, value, issues, require_non_empty)
+        _check_keywords(app_id, value, issues, require_non_empty, generated=generated)
     elif name == "usecases":
         _check_usecases(app_id, value, issues, require_non_empty)
     elif name == "relatedApps":
-        _check_related_apps(app_id, item, value, trademarks, issues)
+        _check_related_apps(app_id, item, value, trademarks, issues, generated=generated)
     elif name == "overview":
         _check_overview(app_id, value, item.get("summary"), issues)
     elif name == "summary":
-        _check_summary(app_id, value, issues)
+        _check_summary(app_id, value, issues, generated=generated)
     elif name == "hasenterprise":
         if not isinstance(value, bool):
             _issue(issues, "error", app_id, name, "must be a JSON Boolean")
@@ -214,6 +269,8 @@ def _check_keywords(
     value: Any,
     issues: list[dict[str, str]],
     require_non_empty: bool,
+    *,
+    generated: bool = False,
 ) -> None:
     if not isinstance(value, list):
         _issue(issues, "error", app_id, "keywords", "must be an array")
@@ -249,9 +306,9 @@ def _check_keywords(
             _issue(issues, "error", app_id, "keywords", f"[{index}] duplicates {keyword!r}")
         seen.add(keyword)
         if keyword != keyword.lower():
-            _issue(issues, "warning", app_id, "keywords", f"[{index}] is not lowercase")
+            _issue(issues, "error" if generated else "warning", app_id, "keywords", f"[{index}] is not lowercase")
         if keyword.endswith(tuple(TRAILING_PUNCTUATION)):
-            _issue(issues, "warning", app_id, "keywords", f"[{index}] ends with punctuation")
+            _issue(issues, "error" if generated else "warning", app_id, "keywords", f"[{index}] ends with punctuation")
 
 
 def _check_usecases(
@@ -314,6 +371,8 @@ def _check_related_apps(
     value: Any,
     trademarks: set[str],
     issues: list[dict[str, str]],
+    *,
+    generated: bool = False,
 ) -> None:
     if not isinstance(value, list):
         _issue(issues, "error", app_id, "relatedApps", "must be an array")
@@ -321,7 +380,7 @@ def _check_related_apps(
     if len(value) > MAX_RELATED_APPS:
         _issue(
             issues,
-            "warning",
+            "error" if generated else "warning",
             app_id,
             "relatedApps",
             f"has {len(value)} items; AI-generated lists must stay at "
@@ -353,7 +412,7 @@ def _check_related_apps(
                 f"[{index}] {related!r} is not a trademark in this catalog",
             )
         if related.lower() in GENERIC_RUNTIME:
-            _issue(issues, "warning", app_id, "relatedApps", f"[{index}] is generic runtime")
+            _issue(issues, "error" if generated else "warning", app_id, "relatedApps", f"[{index}] is generic runtime")
     _check_layer_conflicts(app_id, value, issues)
 
 
@@ -406,7 +465,7 @@ def _check_overview(
     _check_hype(app_id, "overview", text, issues)
 
 
-def _check_summary(app_id: str, value: Any, issues: list[dict[str, str]]) -> None:
+def _check_summary(app_id: str, value: Any, issues: list[dict[str, str]], *, generated: bool = False) -> None:
     _check_string(app_id, "summary", value, issues)
     if not isinstance(value, str):
         return
@@ -423,7 +482,7 @@ def _check_summary(app_id: str, value: Any, issues: list[dict[str, str]]) -> Non
             f"has {len(words)} words, maximum {MAX_SUMMARY_WORDS}",
         )
     if text[-1] in TRAILING_PUNCTUATION:
-        _issue(issues, "warning", app_id, "summary", "has trailing punctuation")
+        _issue(issues, "error" if generated else "warning", app_id, "summary", "has trailing punctuation")
     lowered = text.lower()
     if "open source" in lowered or "open-source" in lowered:
         _issue(
@@ -472,11 +531,11 @@ def _compare_baseline(
         if app_id in selected:
             keys = (set(before) | set(after)) - selected_fields - {"id"}
             for key in sorted(keys):
-                if before.get(key) != after.get(key):
+                if (key in before) != (key in after) or before.get(key) != after.get(key):
                     _issue(issues, "error", app_id, key, "unselected field changed")
         elif before != after:
             _issue(issues, "error", app_id, None, "unselected item changed")
 
     for key in sorted((set(current) | set(baseline)) - {"items"}):
-        if current.get(key) != baseline.get(key):
+        if (key in current) != (key in baseline) or current.get(key) != baseline.get(key):
             _issue(issues, "error", None, key, "dataset metadata changed")

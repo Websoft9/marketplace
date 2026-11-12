@@ -439,7 +439,7 @@ def add_command(
             f"--offer-codes {','.join(item['code'] for item in plan['added'])}"
         )
         click.echo("  publish the listing content under the new code(s)")
-    click.echo("  mk offer-codes verify && mk list --update-readme README.md")
+    click.echo("  mk offer-codes verify")
 
 
 @offer_codes_command.command("remove")
@@ -551,7 +551,7 @@ def remove_command(
     )
     _print_new_warnings(new_warnings)
     click.echo("Next steps:")
-    click.echo("  mk offer-codes verify && mk list --update-readme README.md")
+    click.echo("  mk offer-codes verify")
 
 
 @offer_codes_command.command("replace")
@@ -714,7 +714,7 @@ def replace_command(
             f"--offer-codes {','.join(aws_codes)}"
         )
     click.echo("  publish the new application's listing content under the moved code(s)")
-    click.echo("  mk offer-codes verify && mk list --update-readme README.md")
+    click.echo("  mk offer-codes verify")
 
 
 def _issue_key(issue: dict[str, str]) -> tuple[str, str, str, str, str]:

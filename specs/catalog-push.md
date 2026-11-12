@@ -35,8 +35,12 @@ mk catalog push --apps wordpress,odoo
 mk catalog push --apps wordpress,odoo --publish
 ```
 
-Run `mk catalog verify --apps <ids> --fields <fields>` before pushing to catch
-field-rule violations locally.
+For optional diagnostics use `mk catalog verify --apps <ids> --fields <fields>
+--profile push`. Every push invocation, including dry runs, also validates the
+exact loaded input before platform access; safety does not depend on a skill
+remembering to invoke verify separately. Validation failure stops that invocation
+before remote requests or writes. Generation-specific editorial policy is not
+re-applied to historical content during push.
 
 `--input` defaults to `data/.work/catalog.json` (git-ignored). Set
 `MK_CATALOG_DIR` to use another directory. It accepts the object produced by
@@ -105,6 +109,10 @@ write `""` for text fields, `[]` for array fields or `false` for Boolean fields.
 - Existing `product` entries only; no create/delete.
 - `tags` and other linked fields except `relatedApps` are not pushed.
 - Factual accuracy is not validated; the input dataset must be reviewed.
+- Dry-run review and draft/publish authorization remain skill responsibilities.
+  A separate earlier dry run is not a server-side transaction or authorization
+  token; another edit between dry run and push can change the proposed diff.
+  Version headers protect against edits after the entry is fetched for writing.
 
 ## Validation
 

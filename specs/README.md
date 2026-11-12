@@ -12,6 +12,7 @@
 - AI collaboration rules are in the root `AGENTS.md`; reusable workflows are in `skills/`.
 - Reusable automation scripts live in the root `ci/` directory.
 - Business commands use the `mk` CLI in `cli/`, separate from development `make` targets; `make cli` creates `.venv`, installs the CLI, and enters the `mk` command shell.
+- OpenCode V2 session cleanup through `make opencode-clear`, including repository scope, confirmation, and dry-run behavior, is documented in [`opencode-session-cleanup.md`](opencode-session-cleanup.md).
 - To list marketplace product versions from cloud APIs, see [`marketplace-versions.md`](marketplace-versions.md). The initial implementation supports Aliyun China.
 - Marketplace title/summary version extraction rules are in [`marketplace-version-extraction.md`](marketplace-version-extraction.md).
 - Marketplace platform URL templates, Websoft9 store homepages, and code routing live in `config/marketplace.json`, and the local `data/offer-codes/` folder is the source of truth for product offer codes; application catalog and version sources live in `config/app.json`, while per-application offer rendering settings live in `data/listing/app-special-cases.json`. Both `mk` and the Astro site read these configuration files. The entry structure, validation rules and the `mk offer-codes find/add/remove/replace/verify` commands are in [`offer-codes.md`](offer-codes.md).

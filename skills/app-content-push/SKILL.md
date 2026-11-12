@@ -11,6 +11,12 @@ Push content that is already present in `data/.work/catalog.json` to
 Contentful. This skill does not generate or rewrite content; use
 `app-content-gen` for that.
 
+CLI owns input validation, schema/link resolution, field/locale merging,
+version-conflict handling and API writes. This skill owns selection of the
+intended apps/fields, draft versus publish authorization, review of dry-run
+results and reporting. CLI validation does not prove factual accuracy; do not
+invent a second validator or rewrite content to make push pass.
+
 ## Inputs
 
 | Input | Required | Values |
@@ -48,6 +54,8 @@ default is a full content sync, not a per-run diff.
   `CONTENTFUL_TOKEN` (`CFPAT-`). A Delivery/Preview token returns HTTP 401.
   Never print, echo or store the token.
 - `data/.work/catalog.json` is git-ignored scratch data and must exist.
+- Resolve `<catalog>` once, honoring `$MK_CATALOG_DIR/catalog.json` when set,
+  and pass `--input <catalog>` to every command.
 - Every requested id must exist in the catalog. If an id is missing, stop and
   report that `app-content-gen` must prepare the data first. Do not pull
   here: a pull would overwrite freshly generated content.
@@ -60,21 +68,23 @@ list to every command so the default is explicit.
 
 ### 1. Validate before writing
 
-Run the mechanical check for the same selection:
+An optional diagnostic check uses the push contract, not generation policy:
 
 ```sh
-make cli ARGS="catalog verify --apps <apps> --fields <resolved-fields> --verbose"
+make cli ARGS="catalog verify --input <catalog> --apps <apps> --fields <resolved-fields> --profile push --verbose"
 ```
 
 Prefer the same `fields` that were regenerated: the catalog may contain
 unrelated empty or legacy values that are not part of this push. If it reports
 errors, stop and send the result back to `app-content-gen`; do not push invalid
-content.
+content. Every `catalog push`, including dry runs, also validates its exact
+in-memory input before platform access. Absent and empty fields are permitted;
+store filtering and linked-entry resolution remain CLI/platform responsibilities.
 
 ### 2. Dry run
 
 ```sh
-make cli ARGS="catalog push --apps <apps> --fields <resolved-fields> --dry-run --verbose"
+make cli ARGS="catalog push --input <catalog> --apps <apps> --fields <resolved-fields> --dry-run --verbose"
 ```
 
 The dry run prints selected, matched, would-update, unchanged and skipped-empty
@@ -84,7 +94,7 @@ stop and report the exact output. If `preview=true`, stop here.
 ### 3. Push drafts
 
 ```sh
-make cli ARGS="catalog push --apps <apps> --fields <resolved-fields> --verbose"
+make cli ARGS="catalog push --input <catalog> --apps <apps> --fields <resolved-fields> --verbose"
 ```
 
 Add `--publish` only when `publish=true`.
@@ -100,12 +110,13 @@ per-application error unchanged.
 When practical, run the dry run once more:
 
 ```sh
-make cli ARGS="catalog push --apps <apps> --fields <resolved-fields> --dry-run --verbose"
+make cli ARGS="catalog push --input <catalog> --apps <apps> --fields <resolved-fields> --dry-run --verbose"
 ```
 
-Expect `Would update: 0`; any remaining update means the earlier write did not
-persist. Do not run this check when `publish=true` created a new draft version
-that is intentionally pending review.
+Expect `Would update: 0` after draft or published updates. A remaining update
+requires investigation (failed persistence or a concurrent edit); do not blindly
+repeat the write. Publishing updates and publishes the new version; it does not
+intentionally leave that version as a pending draft.
 
 ## Field notes
 
