@@ -228,6 +228,30 @@ class CatalogVerifyTests(unittest.TestCase):
         )
         self.assertTrue(any(issue["message"] == "unselected item changed" for issue in result["issues"]))
 
+    def test_reference_catalog_supplies_related_app_trademarks(self) -> None:
+        data = dataset(app("target", "Target", relatedApps=["CloudBeaver"]))
+        local = catalog_verify.verify(
+            data, app_ids=["target"], fields=["relatedApps"], profile="generated")
+        self.assertEqual(local["errors"], 1)
+        reference = [{"key": "cloudbeaver", "trademark": "CloudBeaver"}]
+        result = catalog_verify.verify(
+            data, app_ids=["target"], fields=["relatedApps"],
+            profile="generated", reference=reference)
+        self.assertEqual(result["errors"], 0)
+
+    def test_cli_verify_reference_catalog(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "catalog.json"
+            reference = Path(directory) / "product_en.json"
+            path.write_text(json.dumps(dataset(app("target", "Target", relatedApps=["CloudBeaver"]))), encoding="utf-8")
+            reference.write_text(json.dumps([{"key": "cloudbeaver", "trademark": "CloudBeaver"}]), encoding="utf-8")
+            result = CliRunner().invoke(
+                cli, ["catalog", "verify", "--input", str(path), "--apps", "target",
+                      "--fields", "relatedApps", "--profile", "generated",
+                      "--reference", str(reference), "--json"])
+            self.assertEqual(result.exit_code, 0, result.output)
+            self.assertEqual(json.loads(result.output)["errors"], 0)
+
     def test_cli_verify_prints_issues_and_exits_nonzero(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "catalog.json"

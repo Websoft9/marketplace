@@ -22,8 +22,8 @@ HTTP 401. The token is sent in the `Authorization` header and is never printed.
 ## Usage
 
 ```sh
-# Preview changes; no Contentful writes
-mk catalog push --apps wordpress,odoo --dry-run --verbose
+# Preview changes; no Contentful writes, with a field-by-field diff
+mk catalog push --apps wordpress,odoo --dry-run --json --no-progress
 
 # Push only the regenerated fields
 mk catalog push --apps wordpress,odoo --fields summary,keywords --dry-run --verbose
@@ -35,18 +35,56 @@ mk catalog push --apps wordpress,odoo
 mk catalog push --apps wordpress,odoo --publish
 ```
 
-For optional diagnostics use `mk catalog verify --apps <ids> --fields <fields>
---profile push`. Every push invocation, including dry runs, also validates the
-exact loaded input before platform access; safety does not depend on a skill
-remembering to invoke verify separately. Validation failure stops that invocation
-before remote requests or writes. Generation-specific editorial policy is not
-re-applied to historical content during push.
+Every push invocation, including a dry run, validates the exact loaded input
+before platform access with the mechanical `push` validation profile; safety does
+not depend on a separate verification step. Validation failure stops that
+invocation before remote requests or writes. Generation-specific editorial policy
+is not re-applied to historical content during push.
 
 `--input` defaults to `data/.work/catalog.json` (git-ignored). Set
 `MK_CATALOG_DIR` to use another directory. It accepts the object produced by
 `catalog pull` (`items`), a bare JSON array, or `-` for stdin. `--apps` defaults
 to every item in the input and preserves the requested order. Single-app and
 multi-app data use the same file shape; only the number of `items` changes.
+
+## Comparison and JSON output
+
+`--json` writes one machine-readable result to stdout while progress and errors
+remain on stderr. It includes the existing counts and an `errors` array, plus a
+`changes` array with one entry per application that would change:
+
+```json
+{
+  "selected": 1,
+  "matched": 1,
+  "updated": 1,
+  "published": 0,
+  "unchanged": 0,
+  "skippedEmpty": 0,
+  "missing": [],
+  "errors": [],
+  "dryRun": true,
+  "changes": [
+    {
+      "app": "wordpress",
+      "fields": [
+        {
+          "field": "summary",
+          "before": {"present": true, "value": "Old summary"},
+          "after": {"present": true, "value": "New summary"}
+        }
+      ]
+    }
+  ]
+}
+```
+
+`before` is the entry's current value for the selected locale; `after` is the
+value that would be written. `present: false` means the field or locale was
+absent, which is distinct from a present `null`, `""` or `[]`. Text and Boolean
+values are returned as-is, arrays as JSON arrays, and `relatedApps` as application
+Trademarks; a link that cannot be mapped back to a sold application is shown as
+`<link:ENTRY_ID>`. `changes` is populated for both dry runs and writes.
 
 ## Field mapping and merge
 
@@ -100,7 +138,8 @@ write `""` for text fields, `[]` for array fields or `false` for Boolean fields.
   they are errors.
 - The command continues through independent application errors and exits
   non-zero if any occurred. Summary counts and per-app details go to stderr;
-  `--verbose` shows changed field names.
+  `--verbose` shows changed field names, and `--json` emits counts, errors and
+  per-field before/after values on stdout.
 - `--progress` shows schema/entry pagination progress; `--no-progress` disables it.
 
 ## Limitations

@@ -440,7 +440,7 @@ class WorkflowContractTests(unittest.TestCase):
 
 class SkillContractTests(unittest.TestCase):
     def test_skill_keeps_backend_opt_in_and_requires_independent_evidence(self):
-        path = Path(__file__).resolve().parents[1] / "skills/offer-code-verify/SKILL.md"
+        path = Path(__file__).resolve().parents[1] / ".agents/skills/offer-code-verify/SKILL.md"
         text = path.read_text()
         self.assertIn("| `backend` | no | `false` (default)", text)
         self.assertIn("never calls a marketplace write API", text)

@@ -14,7 +14,7 @@ A Websoft9 automated operations project for mainstream cloud marketplaces. It ma
 
 - Repository guidelines and constraints: [`AGENTS.md`](AGENTS.md)
 - Project overview and conventions: [`specs/`](specs/README.md)
-- Repository-specific skills: [`skills/`](skills/README.md)
+- Repository-specific skills: [`.agents/skills/`](.agents/skills/README.md)
 - VS Code MCP configuration: `.vscode/mcp.json` (GitHub MCP uses GitHub OAuth; Playwright MCP requires Node.js/npx)
 
 ## For Business

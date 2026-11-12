@@ -1,8 +1,5 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "skills": {
-    "paths": ["skills"]
-  },
   "permissions": [
     { "action": "external_directory", "resource": "/tmp/*", "effect": "allow" },
     { "action": "read", "resource": "/tmp/*", "effect": "allow" },

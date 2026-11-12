@@ -9,9 +9,13 @@ exceptions that also affect `usecases`, `hasenterprise`, `summary` and `overview
 ### Output language and formatting
 
 - Write English (`en-US`), regardless of the conversation language.
-- Use ASCII punctuation; keep product names and trademarks as published.
-- `keywords`: lowercase, no surrounding or trailing punctuation.
-- `usecases`: Title Case, no trailing punctuation.
+- Use ASCII punctuation; keep product names and trademarks as published in
+  prose.
+- `keywords`: lowercase, no surrounding or trailing punctuation, including
+  product names (`mysql`).
+- `usecases`: Title Case, no trailing punctuation. The mechanical check rejects
+  lowercase-initial words, so avoid product names such as `n8n` here
+  (`Workflow Automation`, not `Workflow Automation with n8n`).
 - `overview`: sentence case, ends with `.`, no surrounding whitespace.
 - `summary`: sentence case, no trailing `.`, no surrounding whitespace.
 - Avoid hype: `leading`, `best`, `world-class`, `cutting-edge`, `revolutionary`,

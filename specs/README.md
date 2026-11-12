@@ -3,13 +3,13 @@
 - This repository manages Websoft9 marketplace product production and maintenance tasks. Existing platform data and issue workflows are core business assets.
 - The business positioning and scope are defined in [`business-positioning.md`](business-positioning.md).
 - GitHub Actions connects to AWS through OIDC; see [`cloud-connector.md`](cloud-connector.md).
-- For product master data, personalized AWS AMI listing content and Catalog metadata update commands, see [`marketplace-product-content.md`](marketplace-product-content.md) and the [`marketplace-product-content`](../skills/marketplace-product-content/SKILL.md) skill.
+- For product master data, personalized AWS AMI listing content and Catalog metadata update commands, see [`marketplace-product-content.md`](marketplace-product-content.md) and the [`marketplace-product-content`](../.agents/skills/marketplace-product-content/SKILL.md) skill.
 - For the paused product-file Issue workflow and its replacement by catalog/CLI flow, including the approved GitHub Actions apply workflow, see [`marketplace-offer-update-workflow.md`](marketplace-offer-update-workflow.md); Odoo preparation is in [`odoo-first-publication.md`](odoo-first-publication.md).
 - Per-application offer wording exceptions, such as an open-source edition that is not called "Community Edition", are defined in [`app-offer-special-cases.md`](app-offer-special-cases.md).
 - To export English Contentful application fields for the current `product_en.json` applications, see [`catalog-pull.md`](catalog-pull.md). To validate the catalog and confirm only selected fields changed, use `mk catalog verify`. To write reviewed metadata to Contentful drafts or publish it, see [`catalog-push.md`](catalog-push.md).
 - The local marketplace offer-codes dataset, including per-code display labels, is described in [`offer-codes.md`](offer-codes.md).
 - Files such as `aliyun.json`, `aws.json`, `azure.json`, `huawei.json`, and `qcloud.json` contain existing task data. Check downstream consumers before editing and preserve their schemas.
-- AI collaboration rules are in the root `AGENTS.md`; reusable workflows are in `skills/`.
+- AI collaboration rules are in the root `AGENTS.md`; reusable workflows are in `.agents/skills/`.
 - Reusable automation scripts live in the root `ci/` directory.
 - Business commands use the `mk` CLI in `cli/`, separate from development `make` targets; `make cli` creates `.venv`, installs the CLI, and enters the `mk` command shell.
 - OpenCode V2 session cleanup through `make opencode-clear`, including repository scope, confirmation, and dry-run behavior, is documented in [`opencode-session-cleanup.md`](opencode-session-cleanup.md).
@@ -18,6 +18,6 @@
 - Marketplace platform URL templates, Websoft9 store homepages, and code routing live in `config/marketplace.json`, and the local `data/offer-codes/` folder is the source of truth for product offer codes; application catalog and version sources live in `config/app.json`, while per-application offer rendering settings live in `data/listing/app-special-cases.json`. Both `mk` and the Astro site read these configuration files. The entry structure, validation rules and the `mk offer-codes find/add/remove/replace/verify` commands are in [`offer-codes.md`](offer-codes.md).
 - The static Marketplace dashboard lives in `site/` (Astro): `/` is the overview, `/apps` is the application list, and `/apps/<key>` is the application detail page; pages read the marketplace data sources at build time.
 - Application detail pages read use cases and keywords directly from `product_en.json`; they no longer depend on `data/app-metadata.json`.
-- To query Aliyun products and check application image versions, use [`aliyun-product-freshness`](../skills/aliyun-product-freshness/SKILL.md).
+- To query Aliyun products and check application image versions, use [`aliyun-product-freshness`](../.agents/skills/aliyun-product-freshness/SKILL.md).
 - The scheduled and manually triggered multi-cloud product freshness entry point is documented in [`product-freshness-workflow.md`](product-freshness-workflow.md).
 - The MCP client configuration is `.vscode/mcp.json`: GitHub uses remote OAuth, Context7 uses its remote service, and Playwright is launched with `npx`. Complete any authorization or dependency setup requested by the MCP client before use.

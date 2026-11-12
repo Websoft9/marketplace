@@ -176,12 +176,17 @@ fail on unintended edits:
 mk catalog verify --apps wordpress,odoo --fields keywords,summary --verbose
 mk catalog verify --apps wordpress,odoo --fields summary \
   --baseline /tmp/catalog.before.json
+mk catalog verify --apps wordpress,odoo --fields relatedApps \
+  --reference product_en.json
 ```
 
 The baseline form verifies that no other application and no unselected field
 changed. `--require-non-empty` treats empty `keywords` and `usecases` as errors;
-use it after generation, not when checking a partial catalog. `relatedApps` is
-also checked for repeated layers, such as multiple relational data stores,
+use it after generation, not when checking a partial catalog. When the staging
+catalog is partial, pass `--reference product_en.json` to validate `relatedApps`
+against the store catalog instead of the Trademarks in the input file.
+`catalog apply` accepts the same option. `relatedApps` is also checked for
+repeated layers, such as multiple relational data stores,
 database admin tools, model runtimes, vector stores or SCM tools; these are
 warnings because universal clients and data pipelines can legitimately span
 layers. Summaries that contain `open source`/`open-source` are errors. Add
@@ -190,56 +195,46 @@ reported but do not block.
 
 ### Validation profiles and ownership
 
-`--profile existing` is the compatible default. `--profile generated` requires
-non-empty keywords/usecases, lowercase keywords without surrounding/trailing
-punctuation, Title Case usecases (allowing internal minor words), a period at
-the end of overview, no trailing punctuation on summary, no generic-runtime
-relationships and at most eight related apps. It does not truncate existing
-values. Generated prose uses ASCII punctuation, with published target product
-names exempt. Use it only for fields being regenerated. `--profile push` permits
-missing/empty fields, validates non-empty selected values and leaves relationship
-filtering, deduplication and linked-entry resolution to the push adapter.
-Explicit clears remain supported by push; empty fields are not new-content errors
-in the push profile. JSON `checked` statuses distinguish errors, warnings and
-skipped-empty fields; use `issues` for details.
+`--profile existing` is the compatible default. `--profile generated` applies
+the generated-content checks implemented by `cli/catalog_verify.py` to the fields
+being regenerated; it does not truncate existing values. Use it only for
+regenerated fields. `--profile push` permits missing/empty fields, validates
+non-empty selected values and leaves relationship filtering, deduplication and
+linked-entry resolution to the push adapter. Explicit clears remain supported by
+push; empty fields are not new-content errors in the push profile. JSON `checked`
+statuses distinguish errors, warnings and skipped-empty fields; use `issues` for
+details.
 
+The exact generated-field formatting and editorial rules live with the
+[`app-content-gen` field rules](../.agents/skills/app-content-gen/references/field-rules.md).
 All profiles are mechanical, not factual review. Product roles, official evidence,
 edition boundaries, English language, editorial AI requirements, stack order,
 real integrations, competitors and justified layer exceptions remain skill
 responsibilities. Layer conflicts, hype detection and repeated summary/overview
 are advisory warnings, not automatic semantic decisions.
 
-### Safely applying generated candidates
+### Applying generated candidates
 
-Do not copy a generated catalog over the staging file. Save a baseline and a
-separate full candidate, then use:
+`catalog apply` commits a validated candidate against a baseline without copying
+a generated catalog over the staging file. `--input` defaults to the same staging
+path as pull/verify, including `MK_CATALOG_DIR`. `--apps` and `--fields` must be
+explicit; `all` selects all local items. Candidate and baseline must be separate
+from the destination, and the current staging data must equal the baseline.
 
-```sh
-mk catalog apply --input data/.work/catalog.json \
-  --candidate /tmp/opencode/run/batch.json \
-  --baseline /tmp/opencode/run/batch.before.json \
-  --apps wordpress,odoo --fields summary,keywords --skip-invalid
-```
-
-`--input` defaults to the same staging path as pull/verify, including
-`MK_CATALOG_DIR`. Apps and generated fields must be explicit; `all` selects
-all local items. Candidate and baseline must be separate from the destination.
-The current staging data must equal the baseline. The command rejects changed
-metadata, item set/order, unselected items/fields (including missing versus null)
-and malformed/duplicate/missing ids regardless of `--skip-invalid`.
-
-Without `--skip-invalid`, any validation error prevents a commit. With it, only
-selected-app content errors are recoverable: the whole failed app is restored
-from baseline, surviving apps are strictly verified again, and an exact backup
-plus atomic replacement are performed. No changes means no replacement. The
-persisted file is checked again. JSON output includes succeeded/skipped ids,
-actual changed fields, validation issues, backup and output paths; save it in a
-unique per-run directory as a batch checkpoint. Exit zero with skipped apps is
-partial success, not success for every requested app.
+The command rejects changed metadata, item set/order, unselected items/fields
+(including missing versus null), malformed/duplicate/missing ids, and a stale
+baseline regardless of `--skip-invalid`. Without `--skip-invalid`, any validation
+error prevents a commit. With it, only selected-app content errors are
+recoverable: the failed app is restored in full from baseline, surviving apps are
+verified again, and the result is written with an exact backup and atomic
+replacement. No changes means no replacement. JSON output includes
+succeeded/skipped ids, actual changed fields, validation issues, backup and output
+paths. Exit zero with skipped apps is partial success, not success for every
+requested app.
 
 Locks coordinate CLI writers on Linux; external editors must not write during
 commit. Pre-commit external changes are detected, but arbitrary external writes
-are not prevented. Batch scheduling, semantic correction, evidence reports and
+are not prevented. Batch scheduling, semantic correction, evidence gathering and
 resume selection remain skill responsibilities; CLI does not generate content,
 fetch evidence, classify roles or offer unattended resume.
 

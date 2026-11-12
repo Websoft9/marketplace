@@ -12,6 +12,7 @@ from . import catalog_file, catalog_verify, contentful
 def apply(
     candidate: Path, baseline: Path, output: Path, *,
     app_ids: tuple[str, ...] | None, fields: tuple[str, ...], skip_invalid: bool = False,
+    reference: dict[str, Any] | list[Any] | None = None,
 ) -> dict[str, Any]:
     if not fields or set(fields) - set(catalog_verify.GENERATED_FIELDS):
         raise ValueError("apply requires a non-empty subset of generated fields")
@@ -25,11 +26,13 @@ def apply(
     data = catalog_verify.load_dataset(str(candidate))
     # Isolation/shape violations are never recoverable by dropping an app.
     isolation = catalog_verify.verify(data, app_ids=app_ids, fields=fields,
-                                      baseline=before, check_content=False)
+                                      baseline=before, check_content=False,
+                                      reference=reference)
     if isolation["errors"]:
         raise ValueError("candidate isolation/structure failed: " + "; ".join(
             i["message"] for i in isolation["issues"] if i["severity"] == "error"))
-    validation = catalog_verify.verify(data, app_ids=app_ids, fields=fields, profile="generated")
+    validation = catalog_verify.verify(data, app_ids=app_ids, fields=fields,
+                                       profile="generated", reference=reference)
     failed = {i["app"] for i in validation["issues"] if i["severity"] == "error"}
     if failed and not skip_invalid:
         raise ValueError("candidate validation failed: " + "; ".join(
@@ -41,7 +44,8 @@ def apply(
     data["items"] = [copy.deepcopy(originals[item["id"]]) if item["id"] in failed else item
                      for item in data["items"]]
     final = catalog_verify.verify(data, app_ids=succeeded, fields=fields,
-                                  baseline=before, profile="generated")
+                                  baseline=before, profile="generated",
+                                  reference=reference)
     if final["errors"]:
         raise ValueError("restored candidate failed final validation")
     changed = {}

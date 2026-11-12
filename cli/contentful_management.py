@@ -332,6 +332,63 @@ def _validate_value(name: str, value: Any, meta: dict[str, Any]) -> None:
     raise ContentfulError(f"{name} uses unsupported Contentful field type {field_type!r}.")
 
 
+def _current_field(
+    entry: dict[str, Any], schema_field: str, locale: str, localized: bool,
+) -> tuple[bool, Any]:
+    """Return (present, raw current value), matching build_changes semantics."""
+    raw = (entry.get("fields") or {}).get(schema_field)
+    if schema_field not in (entry.get("fields") or {}):
+        return False, None
+    if isinstance(raw, dict):
+        if locale in raw:
+            value = raw[locale]
+            if value is None and not localized and raw:
+                value = next(iter(raw.values()), None)
+            return True, value
+        if not localized and raw:
+            return True, next(iter(raw.values()), None)
+        return False, None
+    return True, raw
+
+
+def _display_related(value: Any, reverse: dict[str, str]) -> Any:
+    if value is None:
+        return None
+    return [reverse.get(link_id, f"<link:{link_id}>") for link_id in _link_ids(value)]
+
+
+def describe_changes(
+    entry: dict[str, Any],
+    merged_fields: dict[str, Any],
+    schema: dict[str, dict[str, Any]],
+    changed: list[str],
+    *,
+    locale: str,
+    related_app_ids: dict[str, str] | None = None,
+) -> list[dict[str, Any]]:
+    """Build a JSON-friendly before/after description for changed fields."""
+    reverse = {entry_id: name for name, entry_id in (related_app_ids or {}).items()}
+    result: list[dict[str, Any]] = []
+    for name in changed:
+        schema_field = _field_matcher(schema, name)
+        if schema_field is None:
+            continue
+        localized = bool(schema[schema_field].get("localized"))
+        before_present, before = _current_field(entry, schema_field, locale, localized)
+        after_present, after = _current_field(
+            {"fields": merged_fields}, schema_field, locale, localized
+        )
+        if name == "relatedApps":
+            before = _display_related(before, reverse)
+            after = _display_related(after, reverse)
+        result.append({
+            "field": name,
+            "before": {"present": before_present, "value": before},
+            "after": {"present": after_present, "value": after},
+        })
+    return result
+
+
 def build_changes(
     item: dict[str, Any],
     entry: dict[str, Any],
@@ -534,7 +591,8 @@ def push(
             page_size=page_size, timeout=timeout, progress=progress,
             keys=tuple(catalog_keys) if catalog_keys else None)
     summary = {"selected": len(selected), "matched": 0, "updated": 0, "published": 0,
-               "unchanged": 0, "skippedEmpty": 0, "missing": [], "errors": []}
+               "unchanged": 0, "skippedEmpty": 0, "missing": [], "errors": [],
+               "changes": []}
     for app_id in selected:
         entry = by_key.get(app_id)
         if entry is None:
@@ -554,6 +612,14 @@ def push(
             summary["errors"].append(f"{app_id}: {error}")
             continue
         summary["skippedEmpty"] += len(skipped)
+        if changed:
+            summary["changes"].append({
+                "app": app_id,
+                "fields": describe_changes(
+                    entry, fields, schema, changed, locale=locale,
+                    related_app_ids=related_app_ids,
+                ),
+            })
         if not changed:
             summary["unchanged"] += 1
             if verbose:

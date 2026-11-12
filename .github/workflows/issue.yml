@@ -10,7 +10,7 @@ jobs:
       GH_TOKEN: ${{secrets.ISSUE_TOKEN}}
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v6
       name: Check out code
     - name: handle-list
       run: |

@@ -64,7 +64,8 @@ Resolution rules:
    `urlTemplate` and `variant` labels from `data/offer-codes/matrix.json`.
    Applications without a code on a selected platform are reported as
    `no offer code`, not as missing products.
-2. **Run local checks first.** `codes` needs no network access.
+2. **Run local checks first.** `codes` is local-only unless a conflict needs
+   ownership evidence.
 3. **Run page checks with a budget.** `status`, `versions`, and `content` each
    use the same product page. Fetch each URL once with
    `python3 ci/scripts/marketplace_ops_page.py --url <url> --json` and reuse the
@@ -77,14 +78,15 @@ Resolution rules:
    `references/platforms/_template.md` and mark that platform `unsupported`.
 5. **Classify findings.** Use only `confirmed`, `unverified`, `unsupported`,
    and `informational`. Never turn a fetch failure, a missing field, or a local
-   data gap into a confirmed product problem.
+   data gap into a confirmed product problem. For `versions`, run
+   `python3 ci/scripts/marketplace_ops_version.py` instead of comparing by eye.
 6. **Report.** Fill the table below and finish with limitations.
 
 ## Check registry
 
 | Check | Network | Output | Reference |
 | --- | --- | --- | --- |
-| `codes` | no | Code presence, duplicates, variant labels, link buildability | [codes](references/checks/codes.md) |
+| `codes` | local; 1 fetch per conflict code | Code presence, duplicates, variants, format drift, ownership evidence | [codes](references/checks/codes.md) |
 | `status` | 1 fetch/product | Reachable, identity match, access restriction | [status](references/checks/status.md) |
 | `versions` | reuse page | Marketplace version vs version baseline | [versions](references/checks/versions.md) |
 | `content` | reuse page | Title, description, images, version visibility | [content](references/checks/content.md) |

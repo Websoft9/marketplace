@@ -144,6 +144,38 @@ class CatalogApplyTests(unittest.TestCase):
         self.assertIn("changed since", result.output)
         self.assertEqual(json.loads(self.output.read_text())["items"][0]["summary"], "Concurrent edit")
 
+    def test_reference_catalog_supplies_related_app_trademarks(self) -> None:
+        self.before["items"][0]["relatedApps"] = ["CloudBeaver"]
+        self.write(self.output, self.before)
+        self.write(self.baseline, self.before)
+        data = copy.deepcopy(self.before)
+        data["items"][0]["summary"] = "Modular ERP suite"
+        self.write(self.candidate, data)
+        reference = [{"key": "cloudbeaver", "trademark": "CloudBeaver"}]
+        result = catalog_apply.apply(
+            self.candidate, self.baseline, self.output, app_ids=("odoo",),
+            fields=("summary", "relatedApps"), reference=reference)
+        self.assertEqual(result["succeeded"], ["odoo"])
+        self.assertEqual(result["changed"], {"odoo": ["summary"]})
+
+    def test_cli_apply_reference_catalog(self) -> None:
+        self.before["items"][0]["relatedApps"] = ["CloudBeaver"]
+        self.write(self.output, self.before)
+        self.write(self.baseline, self.before)
+        data = copy.deepcopy(self.before)
+        data["items"][0]["summary"] = "Modular ERP suite"
+        self.write(self.candidate, data)
+        reference = self.root / "product_en.json"
+        self.write(reference, [{"key": "cloudbeaver", "trademark": "CloudBeaver"}])
+        result = CliRunner().invoke(cli, [
+            "catalog", "apply", "--candidate", str(self.candidate),
+            "--baseline", str(self.baseline), "--input", str(self.output),
+            "--apps", "odoo", "--fields", "summary,relatedApps",
+            "--reference", str(reference),
+        ])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(json.loads(result.output)["succeeded"], ["odoo"])
+
     def test_cli_honors_catalog_dir_and_returns_checkpoint(self) -> None:
         data = copy.deepcopy(self.before)
         data["items"][0]["summary"] = "Modular ERP suite"

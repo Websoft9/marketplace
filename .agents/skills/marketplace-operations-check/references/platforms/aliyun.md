@@ -29,7 +29,8 @@
 - `status`: identity matching should accept Chinese product names and common
   Chinese suffixes; otherwise mark `unverified` rather than mismatch.
 - `versions`: app version text is often absent from the raw page; `imageVersion`
-  is not an app version. Expect `unverified` unless the version is stated.
+  is not an app version. Expect `unverified` unless the version is stated in
+  the title, summary, or a spec field.
 - `content`: description and images are in Chinese; check presence only.
 
 ## Do not

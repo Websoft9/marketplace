@@ -79,6 +79,7 @@ def verify(
     app_ids: list[str] | tuple[str, ...] | None = None,
     fields: list[str] | tuple[str, ...] | None = None,
     baseline: dict[str, Any] | None = None,
+    reference: dict[str, Any] | list[Any] | None = None,
     require_non_empty: bool = False,
     profile: str = "existing",
     check_content: bool = True,
@@ -87,7 +88,9 @@ def verify(
 
     ``app_ids`` defaults to every item and ``fields`` defaults to every
     generated field. When ``baseline`` is supplied, every item outside the
-    selection and every field outside the selection must be unchanged.
+    selection and every field outside the selection must be unchanged. When
+    ``reference`` is supplied, its Trademarks validate ``relatedApps`` instead
+    of the Trademarks in the input catalog.
     ``check_content=False`` checks shape, selection and isolation only, so a
     caller can distinguish fatal structural errors from recoverable content errors.
     """
@@ -127,10 +130,19 @@ def verify(
             if app_id not in by_id:
                 _issue(issues, "error", app_id, None, "not present in catalog")
 
+    if reference is not None:
+        reference_items = reference.get("items") if isinstance(reference, dict) else reference
+        if not isinstance(reference_items, list):
+            raise ValueError("reference catalog must be a JSON array or an object with an items array")
+        trademark_items = reference_items
+    else:
+        trademark_items = list(by_id.values())
     trademarks = {
         item["trademark"].strip()
-        for item in by_id.values()
-        if isinstance(item.get("trademark"), str) and item["trademark"].strip()
+        for item in trademark_items
+        if isinstance(item, dict)
+        and isinstance(item.get("trademark"), str)
+        and item["trademark"].strip()
     }
 
     checked: dict[str, dict[str, str]] = {}

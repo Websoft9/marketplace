@@ -13,7 +13,9 @@ or `$MK_CATALOG_DIR/catalog.json`). In the generation stage, after any explicitl
 requested refresh or missing-item pull,
 preserve every other application, every unselected field, `schemaVersion`,
 `generatedAt`, `count`, `source` and item order. In pull-only mode, refresh the
-selected items and let the pull update `generatedAt` and `count`.
+selected items and let the pull update `generatedAt` and `count`. Relationship
+candidates come from the store catalog (`product_en.json`), not from the
+staging file.
 
 Resolve the requested intent and fields before choosing a mode. Explicit
 natural-language generation requests can supply the field selection even when
@@ -71,6 +73,7 @@ Before any pull or write:
    generation request using the scenarios above. Combine fields only when the
    user requests both tasks for the same applications. For different per-app
    scopes, process separate selections rather than applying the union to all apps.
+   Run each selection as its own batch, verify and apply.
 3. A pure pull request, or a maintenance request without generation intent and
    without a field selection, resolves to pull-only. Do not treat merely naming
    a field for inspection as generation intent. If explicit parameters conflict
@@ -89,9 +92,9 @@ Before any pull or write:
 
 If apps cannot be resolved, fields contain an unsupported name, or intent/scope
 is ambiguous, print the accepted values and stop without changing anything.
-This skill does not ask interactive questions during execution. The completion
-report may offer a separate Contentful push for actual validated changes, as
-specified below; that offer is not authorization to write remotely.
+This skill does not ask questions before or during generation. The completion
+report may ask once about a separate Contentful push for actual validated
+changes, as specified below; that offer is not authorization to write remotely.
 
 ## Reference loading
 
@@ -102,7 +105,7 @@ loading this skill does not automatically load supporting files.
 | Task / selected fields | Required reading |
 | --- | --- |
 | Any generation | [field-rules.md](references/field-rules.md): common formatting and selected field sections |
-| `relatedApps` | [related-apps.md](references/related-apps.md): complete stack rules and exceptions |
+| `relatedApps` | [related-apps.md](references/related-apps.md): complete stack rules and store-catalog candidates |
 | Framework/runtime with `usecases` or `hasenterprise` | [Frameworks and language runtimes](references/related-apps.md#frameworks-and-language-runtimes) |
 | Workflow/automation app with `summary` or `overview` | [Workflow tools with AI capability](references/related-apps.md#workflow-tools-with-ai-capability), checking whether native AI applies |
 | Pull-only | No generation references required |
@@ -116,8 +119,7 @@ was not selected. References guide selected fields only, never expand scope.
 ### Responsibility boundary
 
 - CLI owns pull behavior, backups, format validation, change isolation, failed
-  candidate restoration and atomic local commits. See the repository-root
-  [catalog specification](../../specs/catalog-pull.md).
+  candidate restoration and atomic local commits.
 - This skill owns evidence gathering, product classification, copy generation,
   relationship decisions and semantic warning review. A CLI pass does **not**
   prove factual accuracy, edition availability, English language, lack of hype,
@@ -134,6 +136,10 @@ was not selected. References guide selected fields only, never expand scope.
 - Resolve the staging path once as `<catalog>` and pass it explicitly to every
   command (`--output` for pull, `--input` for verify/apply). Keep scratch data,
   candidates, snapshots, CLI backup files and reports out of git.
+- When `relatedApps` is selected, fetch the store catalog once to
+  `<run>/product_en.json` from `sources.catalog` in `config/app.json`, and pass
+  `--reference <run>/product_en.json` to verify/apply. Do not use the staging
+  file as the authoritative candidate list; it may be partial.
 - Validate `batch-size` as a positive integer and `refresh` as a Boolean before
   any write. Create a unique run directory under `/tmp/opencode` (or an approved
   `$TMPDIR`); never use shared fixed temporary filenames.
@@ -149,15 +155,17 @@ absence of the raw `fields` parameter.
 use `catalog pull --output <catalog> --allow-missing`; for specific ids use
 `catalog pull --apps <ids> --output <catalog> --merge --allow-missing`.
 This explicitly refreshes complete target items, including unselected local
-fields. CLI creates an exact pre-write backup automatically.
+fields. CLI creates an exact pre-write backup automatically; report its path
+and that whole items were replaced.
 
 **Generation:** load the existing catalog. If missing, pull the full catalog
-once with `--output <catalog> --allow-missing` so relationship candidates are
-available. If targets are missing, pull only those ids with `--merge` and
-`--allow-missing`. With `refresh=true`, pull the target ids once instead.
-Refresh is explicit authorization to replace entire target items, not a
-field-scoped refresh; report its backup separately from generation changes.
-With `refresh=false`, retain existing local content; do not silently refresh it.
+once with `--output <catalog> --allow-missing`. If targets are missing, pull
+only those ids with `--merge` and `--allow-missing`. With `refresh=true`, pull
+the target ids once with `--apps <ids> --merge --allow-missing` (omit `--apps`
+for `all`). Refresh is explicit authorization to replace entire target items,
+not a field-scoped refresh; report its backup separately from generation
+changes. With `refresh=false`, retain existing local content; do not silently
+refresh it.
 
 Stop on credential, network, malformed-file or unknown store-id errors. A
 successful `--allow-missing` pull can omit Contentful records; report and exclude
@@ -183,8 +191,10 @@ these semantics; CLI does not classify applications or verify those policies.
 Process eligible ids in catalog order, `batch-size` at a time:
 
 1. Save the current catalog as `<run>/batch-N.before.json` and generate a full
-   candidate copy `<run>/batch-N.json`, changing only requested fields. Read
-   available trademarks from the catalog when `relatedApps` is selected.
+   candidate copy `<run>/batch-N.json`, changing only requested fields. When
+   `relatedApps` is selected, read candidate Trademarks from
+   `<run>/product_en.json` and add `--reference <run>/product_en.json` to both
+   verify and apply.
 2. Perform factual and semantic review of generated fields, including evidence,
    real relationships, edition boundaries and the documented category exceptions.
    Remove insufficiently supported apps from `<batch-ids>` and record them as
@@ -217,6 +227,8 @@ If any apps succeeded, run:
 make cli ARGS="catalog verify --input <catalog> --apps <succeeded-ids> --fields <fields> --baseline <run>/before.json --profile generated --verbose"
 ```
 
+Add `--reference <run>/product_en.json` when `relatedApps` is selected.
+
 Using succeeded ids also confirms skipped and unselected apps stayed unchanged
 through generation; it does not require legacy values of skipped apps to pass
 new-content checks. If none succeeded, report no generation changes. Do not
@@ -242,27 +254,71 @@ For generation, use this table, one row per selected application:
 
 Determine actual persisted generation changes from successful batch `changed`
 results and the final comparison with `<run>/before.json`, not merely from the
-requested field list. Include the catalog path and the changed fields per app.
+requested field list. Include the catalog path and a before/after comparison for
+every changed field.
+
+Build the comparison from `<run>/before.json` (the post-refresh generation
+baseline) and the final persisted catalog, after successful apps and the final
+verification are known. Group it by app under a clear app id/trademark heading.
+For each app with actual changes, show:
+
+| field | before | after |
+| --- | --- | --- |
+| `summary` | `Previous tagline` | `New tagline` |
+| `keywords` | `["old", "terms"]` | `["new", "terms"]` |
+| `hasenterprise` | `false` | `true` |
+
+Comparison rules:
+
+- Include every actual changed field for every successful app. Do not omit or
+  silently truncate values needed for the decision. Preserve complete text for
+  `overview` and `summary`; render arrays as JSON so additions, removals and
+  reordering are visible.
+- Distinguish `<missing>` (field absent), `null`, `""` and `[]` from each other.
+  Do not normalize them into an empty cell or imply that a displayed empty value
+  will necessarily clear Contentful.
+- Use the pre-generation baseline, not the current Contentful API state. Label
+  the comparison as local catalog before/after; it does not prove Contentful is
+  unchanged since the pull. The push dry run remains the authoritative remote
+  diff.
+- Exclude skipped/failed apps, no-op fields, unselected fields, unrelated local
+  changes and pull/refresh-only differences from the proposed update set.
+- Keep different per-app field scopes separate. Do not merge values from
+  different apps into one comparison.
+- Escape Markdown table separators and line breaks, or use code blocks, so the
+  data cannot break the report layout.
+
+For a large change set, group the comparison by app and preserve every field
+above. If the result is too large for one table, write the complete comparison
+to `<run>/contentful-diff.md`, include its path, and still show each app with
+every changed field and the full before/after values in the report or linked
+section. A shortened preview alone is not sufficient for approval.
+
+After presenting the comparison:
 
 - If at least one field actually changed, all proposed handoff changes passed
   mechanical validation and semantic review, and the final persisted-selection
-  verification passed, end the report with a follow-up in the user's language:
+  verification passed, present the comparison and end the report with a
+  follow-up in the user's language:
 
   > 已更新本地目录中的 <apps / changed-fields>，尚未推送到 Contentful。
-  > 是否使用 app-content-push 将这些变更推送回 Contentful 草稿（不发布）？
+  > 变更对比见上表。
+  > 是否使用 app-content-push 推送这些变更？该技能会先展示远端 before/after，
+  > 再由你选择仅更新草稿、更新并发布，或取消。
 
   English equivalent: "Local catalog fields changed; not pushed to Contentful.
-  Would you like to use app-content-push to send only these changes to Contentful
-  drafts (without publishing)?"
+  See the before/after comparison above. Would you like to use app-content-push?
+  It shows the remote before/after, then lets you update drafts, update and
+  publish, or cancel."
 - Offer only successful apps and their actual changed fields, keeping different
-  per-app field scopes separate. Exclude skipped/failed apps, no-op fields,
-  unrelated local changes and pull/refresh-only differences.
+  per-app field scopes separate.
 - If nothing changed, this was pull-only/read-only, or final validation failed,
   report that outcome and "Not pushed" without an unnecessary push question.
 - Asking is a completion-report handoff, not an interactive execution step.
   Do not load or execute `app-content-push`, write Contentful, use `--clear` or
   publish automatically. A new explicit user approval/request authorizes the
-  separate push workflow, which must start with a dry run and defaults to drafts.
+  separate push workflow, which starts with a dry run and asks once whether to
+  update drafts, publish, or cancel.
 - Flag intentional empty-array changes such as `relatedApps=[]`: push skips
   empties by default. Clearing Contentful needs separate explicit authorization;
   do not imply that an ordinary push will apply a clear.
@@ -276,3 +332,4 @@ requested field list. Include the catalog path and the changed fields per app.
 - A value still violates the rules after one corrective pass: drop that
   application, report it, and continue.
 - Credentials are missing when a pull is required.
+- The store catalog cannot be fetched when `relatedApps` is selected.

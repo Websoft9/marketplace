@@ -12,14 +12,14 @@ evidence rules live in [field-rules.md](field-rules.md).
 Build a **working stack**, not a list of similar apps. One app per layer, only
 real relationships.
 
-- Array of 0–8 unique **Trademarks of applications that already exist in
-  `catalog.json`**. Use the exact `trademark`, never the `id`.
-- Read the candidate set from `catalog.json` at runtime. Do not rely on a
-  hardcoded app list; offerings change.
+- Array of 0–8 unique **Trademarks of applications sold in the store catalog**
+  (`product_en.json`). Use the exact `trademark`, never the `id`.
+- Read the candidate set from `product_en.json` at runtime, not from the local
+  staging file, which may be partial. Do not rely on a hardcoded app list.
 - Include only real relationships: the image bundles, preinstalls or requires
   the app, or the app is a complement that forms a working solution.
 - Exclude the target itself, alternatives/competitors, and generic runtime
-  (`Docker`, `Nginx`, `Linux`, `Kubernetes`).
+  (`Docker`, `Nginx`, `Linux`, `Kubernetes`, `containerd`, `Podman`).
 - Order: required data store → category-critical capability → auxiliary.
 - Leave the array empty when no real relationship exists.
 
@@ -46,6 +46,10 @@ both. This is the most common failure mode.
 | Collection | Prometheus, Elastic Logstash, Kafka | One collector per pipeline |
 | Storage | Elasticsearch, OpenSearch, ClickHouse, InfluxDB | One store per pipeline |
 | Analysis / BI | Grafana, Elastic Kibana, Metabase, SuperSet | One visualization layer |
+
+The validator only warns about the layers it knows (relational data stores, DB
+admin, model runtimes, vector stores and SCM). Still pick one per layer for
+access analytics, proxy/load balancing, observability and media.
 
 If the app already bundles a layer, do not add an alternative for that layer.
 For example, a DevOps platform with built-in CI and registry should not list a
@@ -124,7 +128,7 @@ Next.js, and PHP, Python or Node.js runtime images.
 | Messaging / infra | console + proxy/load balancing + observability |
 | Home / media / IoT | automation + media + DB |
 
-Examples of the failure mode (trademarks must still be re-read from the current
+Examples of the failure mode (trademarks must still be re-read from the store
 catalog):
 
 - `Gitea: [PostgreSQL, MySQL, MariaDB]` → `[PostgreSQL, Redis, Jenkins, SonarQube]`

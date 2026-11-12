@@ -279,6 +279,49 @@ class PushTests(unittest.TestCase):
         self.update.assert_not_called()
         self.publish.assert_not_called()
 
+    def test_dry_run_reports_before_and_after_values(self) -> None:
+        summary = self.run_push(dry_run=True)
+        changes = {item["app"]: {f["field"]: f for f in item["fields"]}
+                   for item in summary["changes"]}
+        wordpress = changes["wordpress"]
+        self.assertEqual(wordpress["summary"]["before"], {"present": True, "value": "Old summary"})
+        self.assertEqual(wordpress["summary"]["after"], {"present": True, "value": "New summary"})
+        self.assertEqual(wordpress["keywords"]["before"], {"present": True, "value": ["old"]})
+        self.assertEqual(wordpress["keywords"]["after"], {"present": True, "value": ["site", "cms"]})
+        self.assertEqual(wordpress["hasenterprise"]["before"], {"present": True, "value": False})
+        self.assertEqual(wordpress["hasenterprise"]["after"], {"present": True, "value": True})
+        self.assertEqual(wordpress["relatedApps"]["before"], {"present": True, "value": ["<link:old-link>"]})
+        self.assertEqual(wordpress["relatedApps"]["after"],
+                         {"present": True, "value": ["PostgreSQL", "pgAdmin"]})
+
+    def test_dry_run_distinguishes_missing_from_empty_values(self) -> None:
+        entry = {**ENTRY, "fields": {**ENTRY["fields"]}}
+        entry["fields"].pop("summary")
+        entry["fields"]["overview"] = {"en-US": ""}
+        self.entries.side_effect = None
+        self.entries.return_value = [entry]
+        self.path.write_text(json.dumps(
+            {"items": [{"id": "wordpress", "summary": "New summary", "overview": "New overview"}]}
+        ), encoding="utf-8")
+        summary = self.run_push(dry_run=True)
+        changes = {f["field"]: f for f in summary["changes"][0]["fields"]}
+        self.assertEqual(changes["summary"]["before"], {"present": False, "value": None})
+        self.assertEqual(changes["summary"]["after"], {"present": True, "value": "New summary"})
+        self.assertEqual(changes["overview"]["before"], {"present": True, "value": ""})
+
+    def test_non_localized_before_value_uses_existing_locale_fallback(self) -> None:
+        entry = {**ENTRY, "fields": {**ENTRY["fields"]}}
+        entry["fields"]["hasenterprise"] = {"zh-CN": False}
+        self.entries.side_effect = None
+        self.entries.return_value = [entry]
+        self.path.write_text(json.dumps(
+            {"items": [{"id": "wordpress", "hasenterprise": True}]}
+        ), encoding="utf-8")
+        summary = self.run_push(dry_run=True)
+        change = {f["field"]: f for f in summary["changes"][0]["fields"]}["hasenterprise"]
+        self.assertEqual(change["before"], {"present": True, "value": False})
+        self.assertEqual(change["after"], {"present": True, "value": True})
+
     def test_without_publish_only_the_draft_is_updated(self) -> None:
         summary = self.run_push()
         self.assertEqual(summary["updated"], 1)
@@ -400,6 +443,46 @@ class PushCliTests(unittest.TestCase):
         self.assertNotEqual(result.exit_code, 0)
         self.assertIn("unsupported push field", result.stderr)
 
+    def test_json_output_includes_before_after_changes(self) -> None:
+        summary = {
+            "selected": 1, "matched": 1, "updated": 1, "published": 0,
+            "unchanged": 0, "skippedEmpty": 0, "missing": [], "errors": [],
+            "changes": [{"app": "wordpress", "fields": [{
+                "field": "summary",
+                "before": {"present": True, "value": "Old"},
+                "after": {"present": True, "value": "New"},
+            }]}],
+        }
+        runner = CliRunner(mix_stderr=False)
+        with mock.patch.object(cma, "push", return_value=summary):
+            result = runner.invoke(
+                cli,
+                ["catalog", "push", "--space-id", "space", "--token", "secret",
+                 "--dry-run", "--json", "--no-progress"],
+            )
+        self.assertEqual(result.exit_code, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertTrue(payload["dryRun"])
+        self.assertEqual(payload["changes"][0]["fields"][0]["before"]["value"], "Old")
+        self.assertEqual(payload["changes"][0]["fields"][0]["after"]["value"], "New")
+
+    def test_json_output_remains_parseable_when_errors_exit_nonzero(self) -> None:
+        summary = {
+            "selected": 1, "matched": 1, "updated": 0, "published": 0,
+            "unchanged": 0, "skippedEmpty": 0, "missing": [],
+            "errors": ["wordpress: version conflict"], "changes": [],
+        }
+        runner = CliRunner(mix_stderr=False)
+        with mock.patch.object(cma, "push", return_value=summary):
+            result = runner.invoke(
+                cli,
+                ["catalog", "push", "--space-id", "space", "--token", "secret",
+                 "--dry-run", "--json", "--no-progress"],
+            )
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertEqual(json.loads(result.stdout)["errors"], ["wordpress: version conflict"])
+        self.assertIn("ERROR", result.stderr)
+
     def test_token_is_required_and_help_lists_options(self) -> None:
         runner = CliRunner(mix_stderr=False)
         result = runner.invoke(cli, ["catalog", "push", "--space-id", "space"],
@@ -408,7 +491,7 @@ class PushCliTests(unittest.TestCase):
         self.assertIn("token", (result.stderr or result.stdout).lower())
         result = runner.invoke(cli, ["catalog", "push", "--help"])
         self.assertEqual(result.exit_code, 0)
-        for option in ("--input", "--apps", "--fields", "--dry-run", "--publish", "--clear"):
+        for option in ("--input", "--apps", "--fields", "--dry-run", "--publish", "--clear", "--json"):
             self.assertIn(option, result.output)
 
 

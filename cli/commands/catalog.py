@@ -225,6 +225,8 @@ def pull_command(
 @click.option("--allow-missing", is_flag=True,
               help="Skip input applications that are absent from Contentful.")
 @click.option("--verbose", is_flag=True, help="Print per-application update details to stderr.")
+@click.option("--json", "as_json", is_flag=True,
+              help="Print counts, errors and per-field before/after changes as JSON on stdout.")
 @click.option("--progress/--no-progress", default=True, show_default=True,
               help="Print progress to stderr.")
 def push_command(
@@ -245,6 +247,7 @@ def push_command(
     clear: bool,
     allow_missing: bool,
     verbose: bool,
+    as_json: bool,
     progress: bool,
 ) -> None:
     """Push repository/catalog changes to Contentful drafts (and optionally publish).
@@ -297,22 +300,25 @@ def push_command(
     except contentful.ContentfulError as error:
         raise click.ClickException(str(error)) from None
 
-    label = "Would update" if dry_run else "Updated"
-    click.echo(f"Selected applications: {summary['selected']}", err=True)
-    click.echo(f"Matched in Contentful: {summary['matched']}", err=True)
-    click.echo(f"{label}: {summary['updated']}", err=True)
-    if publish and not dry_run:
-        click.echo(f"Published: {summary['published']}", err=True)
-    click.echo(f"Unchanged: {summary['unchanged']}", err=True)
-    click.echo(f"Skipped empty fields: {summary['skippedEmpty']}", err=True)
-    if summary["missing"]:
-        click.echo(f"Missing in Contentful: {', '.join(summary['missing'])}", err=True)
+    if as_json:
+        click.echo(json.dumps({**summary, "dryRun": dry_run}, indent=2, ensure_ascii=False))
+    else:
+        label = "Would update" if dry_run else "Updated"
+        click.echo(f"Selected applications: {summary['selected']}", err=True)
+        click.echo(f"Matched in Contentful: {summary['matched']}", err=True)
+        click.echo(f"{label}: {summary['updated']}", err=True)
+        if publish and not dry_run:
+            click.echo(f"Published: {summary['published']}", err=True)
+        click.echo(f"Unchanged: {summary['unchanged']}", err=True)
+        click.echo(f"Skipped empty fields: {summary['skippedEmpty']}", err=True)
+        if summary["missing"]:
+            click.echo(f"Missing in Contentful: {', '.join(summary['missing'])}", err=True)
+        if dry_run:
+            click.echo("Dry run: no Contentful changes were written.", err=True)
     if summary["errors"]:
         for error in summary["errors"]:
             click.echo(f"ERROR: {error}", err=True)
         raise click.ClickException(f"{len(summary['errors'])} push error(s).")
-    if dry_run:
-        click.echo("Dry run: no Contentful changes were written.", err=True)
 
 
 @catalog_command.command("verify")
@@ -327,6 +333,8 @@ def push_command(
               help="Comma-separated fields to validate.")
 @click.option("--baseline", type=click.Path(dir_okay=False, path_type=Path), metavar="PATH",
               help="Earlier catalog snapshot; fail if unselected items or fields changed.")
+@click.option("--reference", type=click.Path(exists=True, dir_okay=False, path_type=Path), metavar="PATH",
+              help="Application catalog used to validate relatedApps Trademarks; defaults to the input catalog.")
 @click.option("--require-non-empty", is_flag=True,
               help="Treat empty keywords/usecases as errors; use after generation.")
 @click.option("--json", "as_json", is_flag=True, help="Print the full result as JSON.")
@@ -337,6 +345,7 @@ def verify_command(
     app_list: str | None,
     field_list: str,
     baseline: Path | None,
+    reference: Path | None,
     require_non_empty: bool,
     as_json: bool,
     verbose: bool,
@@ -351,6 +360,7 @@ def verify_command(
     try:
         data = catalog_verify.load_dataset(str(path))
         baseline_data = catalog_verify.load_dataset(str(baseline)) if baseline else None
+        reference_data = catalog_verify.load_dataset(str(reference)) if reference else None
     except ValueError as error:
         raise click.ClickException(str(error)) from None
     fields = tuple(item.strip() for item in field_list.split(",") if item.strip())
@@ -362,6 +372,7 @@ def verify_command(
     try:
         result = catalog_verify.verify(
             data, app_ids=app_ids, fields=fields, baseline=baseline_data,
+            reference=reference_data,
             require_non_empty=require_non_empty,
             profile=profile,
         )
@@ -403,16 +414,20 @@ def verify_command(
 @click.option("--apps", "app_list", required=True, help="Explicit application ids or all.")
 @click.option("--fields", "field_list", required=True, help="Generated fields allowed to change.")
 @click.option("--skip-invalid", is_flag=True, help="Restore invalid selected apps; never ignore isolation/structure errors.")
+@click.option("--reference", type=click.Path(exists=True, dir_okay=False, path_type=Path), metavar="PATH",
+              help="Application catalog used to validate relatedApps Trademarks; defaults to the input catalog.")
 def apply_command(candidate: Path, baseline: Path, output: Path | None, app_list: str,
-                  field_list: str, skip_invalid: bool) -> None:
+                  field_list: str, skip_invalid: bool, reference: Path | None) -> None:
     """Strictly validate and atomically commit a generated catalog candidate."""
     app_ids = _parse_app_ids(app_list)
     if app_ids is not None and not app_ids:
         raise click.ClickException("--apps must contain at least one application id.")
     fields = tuple(dict.fromkeys(f.strip() for f in field_list.split(",") if f.strip()))
     try:
+        reference_data = catalog_verify.load_dataset(str(reference)) if reference else None
         result = catalog_apply.apply(candidate, baseline, output or catalog_default_path(),
-                                     app_ids=app_ids, fields=fields, skip_invalid=skip_invalid)
+                                     app_ids=app_ids, fields=fields, skip_invalid=skip_invalid,
+                                     reference=reference_data)
     except (OSError, ValueError) as error:
         raise click.ClickException(str(error)) from None
     click.echo(json.dumps(result, indent=2, ensure_ascii=False))

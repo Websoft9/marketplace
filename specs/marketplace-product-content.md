@@ -22,7 +22,7 @@ per-application fact audit for unchanged source data and template output.
 | `data/listing/vendor.json` | Shared vendor identity, highlights, console capabilities, support and trademark text |
 | `data/listing/templates/aws-ami.json` | Fixed copy structure with named placeholders, no credentials or per-product IDs |
 | `cli/aws_marketplace.py` | AWS Marketplace adapter: field names/limits, read normalization, update request shape |
-| `skills/marketplace-product-content/SKILL.md` | Fact checking and personalized content authoring procedure |
+| `.agents/skills/marketplace-product-content/SKILL.md` | Fact checking and personalized content authoring procedure |
 
 ## Layered architecture
 

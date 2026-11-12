@@ -26,6 +26,9 @@
   describe the plan. Do not merge two SKUs into one finding without evidence.
 - `status`: a 404 can also mean the SKU was replaced by a newer one. Report
   `unverified` and suggest checking the seller profile.
-- `versions`: version text may appear only in the title or an AMI detail line.
+- `versions`: the listing usually states the version set near the summary, for
+  example `Odoo 20/19/18/17 - Ubuntu 26.04`. Take only the application
+  versions. Related-product blocks may carry a `RecommendedVersion` for another
+  application; ignore those.
 - `content`: images may be lazy-loaded; scroll or wait before calling an image
   missing.

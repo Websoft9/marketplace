@@ -46,7 +46,7 @@ class ValidateMarketplaceOpsSkillTests(unittest.TestCase):
     def make_root(self) -> tempfile.TemporaryDirectory:
         tmp = tempfile.TemporaryDirectory()
         root = Path(tmp.name)
-        skill = root / "skills/marketplace-operations-check"
+        skill = root / ".agents/skills/marketplace-operations-check"
         (skill / "references/checks").mkdir(parents=True)
         (skill / "references/platforms").mkdir(parents=True)
         (skill / "SKILL.md").write_text(SKILL_MD, encoding="utf-8")
@@ -80,7 +80,7 @@ class ValidateMarketplaceOpsSkillTests(unittest.TestCase):
     def test_registry_mismatch_fails(self) -> None:
         tmp = self.make_root()
         root = Path(tmp.name)
-        (root / "skills/marketplace-operations-check/references/checks/extra.md").write_text(
+        (root / ".agents/skills/marketplace-operations-check/references/checks/extra.md").write_text(
             "x\n", encoding="utf-8"
         )
         code, errors = self.run_validator(root)
@@ -90,7 +90,7 @@ class ValidateMarketplaceOpsSkillTests(unittest.TestCase):
     def test_unknown_platform_reference_fails(self) -> None:
         tmp = self.make_root()
         root = Path(tmp.name)
-        (root / "skills/marketplace-operations-check/references/platforms/gcp.md").write_text(
+        (root / ".agents/skills/marketplace-operations-check/references/platforms/gcp.md").write_text(
             "- Listing URL: `https://example.test/gcp/{code}`\n", encoding="utf-8"
         )
         code, errors = self.run_validator(root)
@@ -100,7 +100,7 @@ class ValidateMarketplaceOpsSkillTests(unittest.TestCase):
     def test_url_drift_fails(self) -> None:
         tmp = self.make_root()
         root = Path(tmp.name)
-        (root / "skills/marketplace-operations-check/references/platforms/aws.md").write_text(
+        (root / ".agents/skills/marketplace-operations-check/references/platforms/aws.md").write_text(
             "- Listing URL: `https://example.test/old/{code}`\n", encoding="utf-8"
         )
         code, errors = self.run_validator(root)

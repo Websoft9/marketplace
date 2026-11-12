@@ -3,7 +3,7 @@
 ## Before You Start
 
 - Read `specs/README.md` and the relevant specifications first. Follow the repository's existing JSON, issue-template, and workflow conventions.
-- Put reusable workflows in `skills/<skill-name>/SKILL.md` and list them in `skills/README.md`.
+- Put reusable workflows in `.agents/skills/<skill-name>/SKILL.md` and list them in `.agents/skills/README.md`.
 - Put reusable automation scripts in the repository-root `ci/` directory.
 - Existing GitHub Actions may consume business data files such as cloud-platform JSON files. Do not change their schemas or reformat them in bulk unless requested.
 
@@ -18,6 +18,6 @@
 ## References
 
 - Project specifications: `specs/`
-- Reusable workflows: `skills/`
+- Reusable workflows: `.agents/skills/`
 - Copilot repository instructions: `.github/copilot-instructions.md`
 - Repository MCP client configuration: `.vscode/mcp.json`

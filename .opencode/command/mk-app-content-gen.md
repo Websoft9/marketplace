@@ -4,7 +4,8 @@ description: Pull catalog data, or regenerate selected catalog fields, then vali
 
 Use the `app-content-gen` skill.
 
-Do not ask interactive questions. Read `apps` and optional `fields` from
+Do not ask questions before or during generation. The completion report may ask
+once about a separate Contentful push. Read `apps` and optional `fields` from
 `$ARGUMENTS`. Stop with the accepted values when `apps` is missing.
 
 Examples:

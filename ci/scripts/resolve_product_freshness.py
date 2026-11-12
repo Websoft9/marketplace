@@ -29,14 +29,14 @@ def main() -> None:
     configured = []
     skipped = []
     for platform, skill in candidates:
-        if (root / "skills" / skill / "SKILL.md").is_file():
+        if (root / ".agents" / "skills" / skill / "SKILL.md").is_file():
             configured.append({"platform": platform, "skill": skill})
         elif selected == "all":
             skipped.append(platform)
         else:
             raise SystemExit(
                 f"No skill is configured for {platform}. Add "
-                f"skills/{skill}/SKILL.md before selecting this platform."
+                f".agents/skills/{skill}/SKILL.md before selecting this platform."
             )
 
     if not configured:

@@ -55,6 +55,7 @@ class ResolveProductFreshnessTests(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("No skill is configured for azure", result.stderr)
+        self.assertIn(".agents/skills/azure-product-freshness/SKILL.md", result.stderr)
 
 
 if __name__ == "__main__":

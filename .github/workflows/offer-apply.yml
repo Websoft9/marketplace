@@ -169,7 +169,7 @@ jobs:
           role-session-name: MarketplaceOfferPlan-${{ github.run_id }}
 
       - name: Restore offer code EntityId cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: /tmp/opencode/offer-entity-map.json
           key: offer-entity-map-${{ inputs.cloud }}-${{ github.run_id }}

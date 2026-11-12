@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 
-SKILL_DIR = Path("skills/marketplace-operations-check")
+SKILL_DIR = Path(".agents/skills/marketplace-operations-check")
 CONFIG = Path("config/marketplace.json")
 MATRIX = Path("data/offer-codes/matrix.json")
 REGISTRY_ROW = re.compile(r"^\|\s*`([a-z0-9_-]+)`\s*\|")
