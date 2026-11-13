@@ -62,10 +62,11 @@ jobs:
         if: steps.active.outputs.url != ''
         env:
           GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           SESSION_URL: ${{ steps.active.outputs.url }}
         run: |
-          gh issue comment "$ISSUE_NUMBER" --body "A session is already running for this issue: $SESSION_URL"
+          gh issue comment "$ISSUE_NUMBER" --repo "$REPOSITORY" --body "A session is already running for this issue: $SESSION_URL"
 
       - name: Start Copilot session
         if: steps.active.outputs.url == ''
@@ -88,13 +89,20 @@ jobs:
           )
           payload=$(jq -n --arg prompt "$prompt" --arg base "$DEFAULT_BRANCH" \
             '{prompt: $prompt, create_pull_request: false, base_ref: $base}')
-          response=$(curl -sS -X POST \
+          status=$(curl -sS -o /tmp/app-content-task.json -w '%{http_code}' -X POST \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${TASK_TOKEN}" \
             -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/agents/repos/${REPOSITORY}/tasks" \
             -d "$payload")
-          echo "$response" | jq -e '.id' >/dev/null
+          echo "$status" > /tmp/app-content-task-status
+          echo "Agent tasks API HTTP $status"
+          cat /tmp/app-content-task.json
+          if [[ "$status" != "201" ]]; then
+            echo "::error::Agent tasks API returned HTTP $status"
+            exit 1
+          fi
+          response=$(cat /tmp/app-content-task.json)
           task_id=$(echo "$response" | jq -r '.id')
           task_url=$(echo "$response" | jq -r '.html_url // empty')
           if [[ -z "$task_url" ]]; then
@@ -106,10 +114,11 @@ jobs:
         if: steps.active.outputs.url == ''
         env:
           GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           SESSION_URL: ${{ steps.start.outputs.url }}
         run: |
-          gh issue comment "$ISSUE_NUMBER" --body "Copilot session started: $SESSION_URL
+          gh issue comment "$ISSUE_NUMBER" --repo "$REPOSITORY" --body "Copilot session started: $SESSION_URL
 
           Continue the conversation in the session. Post follow-up prompts there, not in this issue."
 
@@ -117,7 +126,11 @@ jobs:
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          gh issue comment "$ISSUE_NUMBER" --body "Failed to start the agent session. Check the workflow run: $RUN_URL"
+          status=$(cat /tmp/app-content-task-status 2>/dev/null || echo "unknown")
+          detail=$(head -c 1500 /tmp/app-content-task.json 2>/dev/null || true)
+          body=$(printf 'Failed to start the agent session (HTTP %s).\n\n```json\n%s\n```\n\nRun: %s' "$status" "$detail" "$RUN_URL")
+          gh issue comment "$ISSUE_NUMBER" --repo "$REPOSITORY" --body "$body" || true
