@@ -7,6 +7,8 @@ assignees:
 
 ---
 
+<!-- app-content-update-issue -->
+
 ## 1. Apps
 
 List your apps here, please modify below list before submit issue
@@ -33,7 +35,7 @@ app2
 
 ## 4. Agent prompt
 
-Copy this prompt into a new agent session, replace `<issue-number>`, and start:
+Copy this prompt into a new agent session and start:
 
 ```text
 Use the app-content-gen skill, then app-content-push with publish=true, for this issue:
