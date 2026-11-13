@@ -1,17 +1,22 @@
 ---
 name: Update App Basic Info
-about: Update Contentful app content with the app-content-gen skill
+about: Update and publish Contentful app content with app-content-gen and app-content-push
 title: 'Update apps basic info - <app-ids>'
 labels: 'enhancement'
 assignees:
 
 ---
 
-Use the `app-content-gen` skill for this issue.
+Update and publish Contentful with `app-content-gen` and `app-content-push`.
 
-The agent works in a pull request. Answer questions or request changes in the PR with `@copilot`.
+Fill this issue, then comment:
 
-<!-- Agent: section 1 = `apps`; checked keys in section 2 = `fields`. -->
+```text
+/update-app-content
+```
+
+<!-- app-content-update-issue -->
+<!-- Agent: section 1 = `apps`; checked keys in section 2 = `fields`. Use app-content-push with `publish=true`; verify the published entries; post the result on the issue. Do not create a pull request. -->
 
 ## 1. Apps
 
