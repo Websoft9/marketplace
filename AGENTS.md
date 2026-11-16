@@ -20,4 +20,4 @@
 - Project specifications: `specs/`
 - Reusable workflows: `.agents/skills/`
 - Copilot repository instructions: `.github/copilot-instructions.md`
-- Repository MCP client configuration: `.vscode/mcp.json`
+- Repository OpenCode MCP configuration: `.opencode/opencode.json`

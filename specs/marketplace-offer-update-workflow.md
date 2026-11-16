@@ -30,31 +30,54 @@ EntityId and an explicitly reviewed plan.
 
 `.github/workflows/offer-apply.yml` runs manually for one
 application and one cloud. Inputs are the catalog application id, an optional
-display name used for the run label, an optional comma-separated list of offer
-codes, and a cloud selector (currently only `aws`). When no offer codes are
-given, every code recorded for the application is targeted. It does not publish
-files committed under `data/.work/<cloud>/`; that directory is git-ignored.
-The workflow builds the preview there, resolves every target EntityId, generates
-one live revision-bound plan per target, uploads the plans and source snapshots
-as artifacts, then waits for approval on the `<cloud>-marketplace-production`
-environment before running `mk offer apply`.
+display name used for the run label, a cloud selector (only platforms
+implemented by the workflow are listed), an optional `code`, and an optional
+`offer` variant. The variant is a value from the application's `multiOffers` in
+`data/listing/app-special-cases.json`; `base` means the offer with no extra
+label. It does not publish files committed under `data/.work/<cloud>/`; that
+directory is git-ignored.
+
+`app` accepts exactly one id. Comma-separated or whitespace-separated lists
+are rejected by preflight and the offer commands before catalog/API access.
+
+The workflow pulls the application from Contentful with
+`--skip-offer-codes`, snapshots versions with `mk offer versions`, resolves live
+AWS listings with `mk offer resolve`, builds
+the preview, generates one live revision-bound plan per target, uploads the
+plans and source snapshots as artifacts, then waits for approval on the
+`<cloud>-marketplace-production` environment before running `mk offer apply`.
+Step summaries are rendered by `mk offer report preflight|plan|apply` plus the
+resolve table.
+
+Live resolution:
+
+- `mk offer resolve` loads the full product catalog (`--product-catalog`) to
+  identify all trademarks in a live title. Title matches win, including titles
+  belonging to other applications. Only if the title has no known trademark
+  may the short description before its first English/Chinese comma be used.
+  Multiple application matches are ambiguous; without an explicit code the
+  run stops. It does not require the local offer-code matrix.
+- With `--code`, that code is authoritative. A code whose title does not match
+  the application is reported as an override and is still targeted.
+- Without `--code`, every matching product is grouped by its detected offer
+  variant. Each variant must map to exactly one code; two codes for the same
+  variant stop the run as ambiguous.
+- With `--offer`, only that variant is targeted. Combining `--code` and
+  `--offer` forces the requested variant onto that code. Every explicit offer
+  choice (including `base`) must be declared in that application's
+  `multiOffers`; applications without the field do not support selection.
+- Non-OS labels are detected from titles only. A summary saying "supports
+  Multisite" is not evidence that the listing is the Multisite variant.
+- Resolved targets are written into the temporary catalog, so build, plan and
+  apply share the same code/EntityId/offer mapping.
 
 Validation runs before any Contentful or AWS call:
 
-- `Validate inputs` fast-fails on characters that cannot appear in an
-  application id and rejects unknown clouds. Case and existence are reported by
-  `mk offer preflight`, so the correction message lives in one place.
-- `mk offer preflight` checks the application id against `product_en.json`,
-  suggests close or lowercase matches, and verifies that every requested offer
-  code belongs to that application. Offer codes come from the repository folder
-  `data/offer-codes/`, not a remote `matrix.json`. A code belonging to another
-  application fails here instead of updating the wrong product.
-- `mk offer targets` resolves each offer code to a Catalog EntityId and records
-  `targets` in the temporary catalog, so later steps do not repeat catalog
-  lookups. Codes that resolve to one entity collapse into a single target, and
-  the code-to-EntityId map is cached under `/tmp/opencode/` with `actions/cache`;
-  cached codes are re-verified by `DescribeEntity` instead of scanning every
-  product, and the cache is not uploaded with the plan artifact.
+- `mk offer doctor --cloud <cloud>` fails when the cloud has no plan/apply
+  implementation in the CLI and validates the plan or apply role ARN with the
+  same rule the AWS adapter uses.
+- `mk offer preflight --skip-code-check` checks the application id against
+  `product_en.json` without requiring codes from the local matrix.
 
 Required repository configuration:
 

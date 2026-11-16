@@ -14,16 +14,19 @@ from typing import Any
 from .aws_marketplace import (
     CONTENT_FIELDS as FIELDS,
     FIELD_LIMITS as LIMITS,
+    FIELD_SPECS,
     aws_call,
     aws_client,
     build_update_request,
     change_status,
     current_content,
+    validate_role_arn,
 )
 from .marketplace import (
     CATALOG_URL,
     OFFER_SOURCE,
     REPO_ROOT,
+    VERSIONS_URL,
     load_json,
     offer_codes_by_app,
     offer_variants_by_app,
@@ -32,11 +35,15 @@ from .marketplace import (
 ROOT = REPO_ROOT
 DATA = ROOT / "data" / "listing"
 SPECIAL_CASES = DATA / "app-special-cases.json"
+# Clouds with a plan/apply implementation. Extend only together with the
+# corresponding adapter, template and credential step.
+APPLY_CLOUDS = ("aws",)
 SPECIAL_CASE_SLOTS = {
     "editionLabel": "text",
     "pricingLead": "text",
     "titleTrademark": "text",
     "multiVersion": "flag",
+    "multiOffers": "list",
 }
 DEFAULT_EDITION_LABEL = "Community Edition"
 OS_NAMES = (
@@ -196,7 +203,7 @@ def version_choices(options: list[str]) -> str:
     return ", ".join(values[:-1]) + f", or {values[-1]}"
 
 
-def load_special_cases(path: Path = SPECIAL_CASES) -> dict[str, dict[str, str | bool]]:
+def load_special_cases(path: Path = SPECIAL_CASES) -> dict[str, dict[str, str | bool | list[str]]]:
     """Read per-application presentation exceptions from the repository.
 
     The file is optional: without it every application uses the template
@@ -212,7 +219,7 @@ def load_special_cases(path: Path = SPECIAL_CASES) -> dict[str, dict[str, str | 
     apps = data.get("apps") or {}
     if not isinstance(apps, dict):
         raise ValueError(f"{path} apps must be an object keyed by application id")
-    cases: dict[str, dict[str, str | bool]] = {}
+    cases: dict[str, dict[str, str | bool | list[str]]] = {}
     for app_id, entry in apps.items():
         if not isinstance(app_id, str) or not app_id.strip() or app_id != app_id.strip():
             raise ValueError(f"{path} has an invalid application id")
@@ -229,6 +236,48 @@ def load_special_cases(path: Path = SPECIAL_CASES) -> dict[str, dict[str, str | 
                 if not isinstance(value, bool):
                     raise ValueError(f"{path} entry {app_id!r} {key} must be a boolean")
                 continue
+            if kind == "list":
+                if not isinstance(value, list) or not value:
+                    raise ValueError(f"{path} entry {app_id!r} {key} must be a non-empty array")
+                seen: set[str] = set()
+                for item in value:
+                    if not isinstance(item, str):
+                        raise ValueError(
+                            f"{path} entry {app_id!r} {key} must contain strings"
+                        )
+                    if item != item.strip():
+                        raise ValueError(
+                            f"{path} entry {app_id!r} {key} item {item!r} has surrounding whitespace"
+                        )
+                    if not item and key != "multiOffers":
+                        raise ValueError(
+                            f"{path} entry {app_id!r} {key} must contain non-empty strings"
+                        )
+                    if item in seen:
+                        raise ValueError(
+                            f"{path} entry {app_id!r} {key} duplicates {item!r}"
+                        )
+                    seen.add(item)
+                    if key == "multiOffers" and item:
+                        parts = item.split(";")
+                        if any(not part.strip() for part in parts):
+                            raise ValueError(
+                                f"{path} entry {app_id!r} {key} item {item!r} has an empty part"
+                            )
+                        parts = [part.strip() for part in parts]
+                        if sum(1 for part in parts if is_os_label(part)) > 1:
+                            raise ValueError(
+                                f"{path} entry {app_id!r} {key} item {item!r} names more than one OS"
+                            )
+                        for part in parts:
+                            if is_os_label(part) and part.casefold() not in {
+                                name.casefold() for name in OS_NAMES
+                            }:
+                                raise ValueError(
+                                    f"{path} entry {app_id!r} {key} item {item!r} "
+                                    "must use an OS family name without a version"
+                                )
+                continue
             if not isinstance(value, str):
                 raise ValueError(f"{path} entry {app_id!r} {key} must be a string")
             if value != value.strip():
@@ -240,7 +289,7 @@ def load_special_cases(path: Path = SPECIAL_CASES) -> dict[str, dict[str, str | 
     return cases
 
 
-def edition_values(catalog_item: dict, special_cases: dict[str, dict[str, str | bool]]) -> dict:
+def edition_values(catalog_item: dict, special_cases: dict[str, dict[str, str | bool | list[str]]]) -> dict:
     """Resolve the edition label and pricing sentence for one application."""
     entry = special_cases.get(catalog_item.get("id")) or {}
     default_label = DEFAULT_EDITION_LABEL if catalog_item.get("hasenterprise") is True else ""
@@ -263,7 +312,7 @@ def edition_values(catalog_item: dict, special_cases: dict[str, dict[str, str | 
     }
 
 
-def branding_values(catalog_item: dict, special_cases: dict[str, dict[str, str | bool]]) -> dict:
+def branding_values(catalog_item: dict, special_cases: dict[str, dict[str, str | bool | list[str]]]) -> dict:
     """Resolve the trademark used in the AWS product title."""
     entry = special_cases.get(catalog_item.get("id")) or {}
     trademark = str(catalog_item.get("trademark") or "").strip()
@@ -410,23 +459,30 @@ def offer_codes_for(
     offer_codes: list[str] | None = None,
     offer_source: str = OFFER_SOURCE,
     timeout: float = 30,
-) -> tuple[list[str], str]:
-    """Return the offer codes for one application and cloud, with their origin."""
+    allow_unlisted: bool = False,
+) -> tuple[list[str], str, list[str]]:
+    """Return offer codes for one application and cloud, plus their origin.
+
+    With ``allow_unlisted`` an explicit code is authoritative even when the
+    offer-codes matrix records it under another application. That is how an
+    existing offer is deliberately reassigned; the returned third value lists
+    the codes that bypassed the matrix so the caller can surface them.
+    """
     by_app = offer_codes_by_app(offer_source, timeout)
     available = [str(code).strip() for code in ((by_app.get(app) or {}).get(cloud) or []) if str(code).strip()]
     requested = [str(code).strip() for code in (offer_codes or []) if str(code).strip()]
     requested = list(dict.fromkeys(requested))
     if requested:
-        unknown = [code for code in requested if code not in available]
-        if unknown:
+        unlisted = [code for code in requested if code not in available]
+        if unlisted and not allow_unlisted:
             known = ", ".join(available) if available else "none"
             raise ValueError(
-                f"offer code(s) {', '.join(unknown)} do not belong to {app!r} on {cloud} (known: {known})"
+                f"offer code(s) {', '.join(unlisted)} do not belong to {app!r} on {cloud} (known: {known})"
             )
-        return requested, "explicit"
+        return requested, "explicit", unlisted
     if not available:
         raise ValueError(f"{app!r} has no {cloud} offer code in the offer source")
-    return available, "catalog"
+    return available, "catalog", []
 
 
 def preflight(
@@ -436,17 +492,68 @@ def preflight(
     catalog_source: str = CATALOG_URL,
     offer_source: str = OFFER_SOURCE,
     timeout: float = 30,
+    allow_unlisted: bool = False,
+    skip_code_check: bool = False,
 ) -> dict:
     """Validate the application id and offer codes without touching any cloud API."""
     app = normalize_app_id(app, catalog_app_ids(catalog_source, timeout))
-    codes, code_source = offer_codes_for(app, cloud, offer_codes, offer_source, timeout)
-    return {
+    if skip_code_check:
+        return {
+            "schemaVersion": 1,
+            "app": app,
+            "cloud": cloud,
+            "codes": [],
+            "codeSource": "skipped",
+        }
+    codes, code_source, unlisted = offer_codes_for(
+        app, cloud, offer_codes, offer_source, timeout, allow_unlisted=allow_unlisted
+    )
+    value = {
         "schemaVersion": 1,
         "app": app,
         "cloud": cloud,
         "codes": codes,
         "codeSource": code_source,
     }
+    if unlisted:
+        value["unlistedCodes"] = unlisted
+    return value
+
+
+def versions_snapshot(source: str = VERSIONS_URL, timeout: float = 30) -> list[dict]:
+    """Read and validate the application version source for one run."""
+    try:
+        data = load_json(source, timeout)
+    except (OSError, ValueError, urllib.error.URLError) as error:
+        raise ValueError(f"failed to read versions: {error}") from None
+    if not isinstance(data, list):
+        raise ValueError("versions source must be a JSON array")
+    for index, item in enumerate(data):
+        if (
+            not isinstance(item, dict)
+            or not isinstance(item.get("id"), str)
+            or not item["id"].strip()
+        ):
+            raise ValueError(f"version source item {index} requires a non-empty string id")
+    return data
+
+
+def require_role_arn(cloud: str, kind: str, value: str) -> str:
+    """Validate the plan or apply role ARN for one cloud."""
+    names = {
+        "plan": "AWS_PLAN_ROLE_ARN, or AWS_ROLE_ARN",
+        "apply": "AWS_APPLY_ROLE_ARN, or AWS_ROLE_ARN",
+    }.get(kind)
+    if names is None:
+        raise ValueError(f"unknown role kind: {kind}")
+    location = (
+        f"on the {cloud}-marketplace-production environment"
+        if kind == "apply"
+        else "as a repository variable"
+    )
+    if not (value or "").strip():
+        raise ValueError(f"configure {names} {location}")
+    return validate_role_arn(value, f"{cloud} {kind} role ARN")
 
 
 def listing_targets(catalog_item: dict) -> list[dict]:
@@ -460,10 +567,49 @@ def listing_targets(catalog_item: dict) -> list[dict]:
             entity_id = entry.get("entityId")
             if not isinstance(entity_id, str) or not entity_id.strip():
                 raise ValueError("catalog target requires a non-empty entityId")
-            targets.append({"code": entry.get("code") or None, "entityId": entity_id.strip()})
+            target = {"code": entry.get("code") or None, "entityId": entity_id.strip()}
+            if entry.get("offer") is not None:
+                target["offer"] = entry["offer"]
+            targets.append(target)
     if not targets and catalog_item.get("entityId"):
         targets.append({"code": None, "entityId": str(catalog_item["entityId"])})
     return targets
+
+
+SEARCH_KEYWORDS = FIELD_SPECS["SearchKeywords"]
+
+
+def fit_search_keywords(content: dict) -> dict | None:
+    """Trim the trailing SearchKeywords that exceed the per-offer limits.
+
+    Keywords are priority-ordered, so keeping the leading entries is the
+    deterministic choice. Only list-level overflow is trimmed; a single
+    over-limit keyword, duplicates and an empty list still fail validation.
+    Returns the dropped tail for the preview and build warning, or ``None``
+    when the list already fits.
+    """
+    values = content.get("SearchKeywords")
+    if not isinstance(values, list) or not all(isinstance(value, str) for value in values):
+        return None
+    kept: list[str] = []
+    total = 0
+    for value in values:
+        if len(kept) >= SEARCH_KEYWORDS["maxItems"]:
+            break
+        if total + len(value) > SEARCH_KEYWORDS["maxCombined"]:
+            break
+        kept.append(value)
+        total += len(value)
+    if len(kept) == len(values) or not kept:
+        return None
+    content["SearchKeywords"] = kept
+    return {
+        "original": len(values),
+        "kept": len(kept),
+        "dropped": values[len(kept):],
+        "originalCharacters": sum(len(value) for value in values),
+        "combinedCharacters": total,
+    }
 
 
 def render(catalog_item: dict, version: str, vendor_path: Path = DATA / "vendor.json", template_path: Path = DATA / "templates/aws-ami.json", version_options: list[str] | None = None, special_cases_path: Path = SPECIAL_CASES) -> dict:
@@ -579,6 +725,7 @@ def render(catalog_item: dict, version: str, vendor_path: Path = DATA / "vendor.
             {key: format_template(str(value), roots) for key, value in item.items()} for item in resources
         ]
     content.update(catalog_item.get("contentOverrides") or {})
+    keyword_truncation = fit_search_keywords(content)
     # Absent optional fields preserve the current AWS value. Empty arrays never clear it implicitly.
     validate_content(content)
     blockers = []
@@ -602,12 +749,15 @@ def render(catalog_item: dict, version: str, vendor_path: Path = DATA / "vendor.
         "longDescriptionSections": rendered_sections,
         "previewOnlySections": preview_only_sections,
     }
+    if keyword_truncation:
+        preview["keywordTruncation"] = keyword_truncation
     return {
         "schemaVersion": 1, "key": catalog_item["id"], "entityId": entity_id, "entityType": entity_type,
         "templateId": template["templateId"], "content": content, "preview": preview,
         "targets": targets,
         "trademark": catalog_item.get("trademark") or "",
         "titleTrademark": branding["titleTrademark"],
+        "multiOffers": (special_cases.get(catalog_item["id"]) or {}).get("multiOffers"),
         "offerCodes": catalog_item.get("offerCodes") or {},
         "publishBlockers": blockers,
         "sourceHash": digest({"catalog": catalog_item, "version": version, "vendor": vendor, "template": template, "specialCases": special_cases.get(catalog_item["id"])}),

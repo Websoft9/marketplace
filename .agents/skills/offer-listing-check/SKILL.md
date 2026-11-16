@@ -1,9 +1,9 @@
 ---
-name: marketplace-operations-check
-description: Run a read-only multi-cloud marketplace operations check for selected products (offer codes, listing status, version information, content) and report evidence-backed findings. Standalone framework with per-check and per-platform references.
+name: offer-listing-check
+description: Run a read-only multi-cloud offer listing check for selected products (offer codes, listing status, version information, content) and report evidence-backed findings. Standalone framework with per-check and per-platform references.
 ---
 
-# Marketplace Operations Check
+# Offer Listing Check
 
 ## Scope
 
@@ -107,7 +107,7 @@ Resolution rules:
 ## Report
 
 ```markdown
-## Marketplace operations check
+## Offer listing check
 
 - Scope: platforms=aws,aliyun,azure apps=odoo,wordpress checks=codes,status,versions,content
 - Checked: 3 platforms, 6 products, 4 URLs (2 omitted by budget)

@@ -22,7 +22,7 @@ per-application fact audit for unchanged source data and template output.
 | `data/listing/vendor.json` | Shared vendor identity, highlights, console capabilities, support and trademark text |
 | `data/listing/templates/aws-ami.json` | Fixed copy structure with named placeholders, no credentials or per-product IDs |
 | `cli/aws_marketplace.py` | AWS Marketplace adapter: field names/limits, read normalization, update request shape |
-| `.agents/skills/marketplace-product-content/SKILL.md` | Fact checking and personalized content authoring procedure |
+| `.github/workflows/offer-apply.yml` | Manual AWS listing publication: preflight, preview, revision-bound plan, environment approval and apply |
 
 ## Layered architecture
 
@@ -135,29 +135,33 @@ resolved edition name and uses neutral wording when there is none.
 `contentOverrides` provides literal, per-listing replacements for the
 title/descriptions/highlights/keywords and still needs review.
 
-## Offer-code labels in the product title
+## Offer variants in the product title
 
-Offer codes may carry display labels in `data/offer-codes/` (`variants`). A
-label that names an operating system replaces the `on AWS` platform phrase with
-`on <OS>`; any other label is inserted after the title trademark. Several labels
-combine in the order written.
+The application's `multiOffers` in `data/listing/app-special-cases.json`
+declares the offer variants published on AWS. An entry that names an operating
+system replaces the `on AWS` platform phrase with `on <OS>`; any other entry is
+a label inserted after the title trademark. The empty string is the base offer
+with no extra label. Several parts combine in the order written.
 
-| Code label | ProductTitle |
+| Variant | ProductTitle |
 | --- | --- |
 | `Ubuntu` | `HAProxy on Ubuntu - Preconfigured, Hardened, Ready in Minutes` |
 | `Multisite` | `WordPress Multisite on AWS - Preconfigured, Hardened, Ready in Minutes` |
 | `Ubuntu; Multisite` | `WordPress Multisite on Ubuntu - Preconfigured, Hardened, Ready in Minutes` |
 
-OS labels are family names without a version, so both Ubuntu codes share the
-display name. An OS is recognised by a known name at the start of the label: Amazon Linux,
-Oracle Linux, Red Hat, Rocky Linux, AlmaLinux, CentOS, Debian, Ubuntu, SUSE,
-SLES, Fedora, Windows Server, FreeBSD and RHEL. Anything else is a non-OS label.
+OS labels are family names without a version, so both Ubuntu offers share the
+display name. An OS is recognised by a known name at the start of a part:
+Amazon Linux, Oracle Linux, Red Hat, Rocky Linux, AlmaLinux, CentOS, Debian,
+Ubuntu, SUSE, SLES, Fedora, Windows Server, FreeBSD and RHEL. Anything else is a
+non-OS label.
 
-Only `ProductTitle` varies by code. `mk offer build` writes one preview per code
-when the application has several codes on the platform; a single-code
-application keeps the existing single-preview shape. `mk offer plan` renders the
-title per target, and a label change makes an existing reviewed plan stale
-through `sourceHash`.
+Only `ProductTitle` varies by offer. `mk offer resolve` detects the variant from
+the live title/short description or accepts an explicit `--offer`, then records
+`code`, `entityId` and `offer` in the catalog `targets`. `mk offer build`
+previews those targets and `mk offer plan` renders the title per target. A
+variant change makes an existing reviewed plan stale through `sourceHash`.
+`mk offer build --offer-codes` remains available for an explicit preview and
+writes the `targets` array even for one code.
 
 A rendered `ProductTitle` over 72 characters does not block `mk offer build`:
 the command prints a warning and records `titleWarnings` in the written
@@ -195,6 +199,14 @@ AdditionalResources entries are the Learning resources rows. The support text
 uses LF-separated lines for Docs, Email and SLA. AWS allows `\n` (0x0A) but
 rejects other control characters including `\r` (0x0D), so use `\n` only.
 
+`SearchKeywords` is priority-ordered: the leading entries are the ones published
+when the list is longer than AWS accepts. Rendering keeps the leading entries
+that fit both the 15-entry and 250-combined-character limits, records the
+dropped tail as `keywordTruncation` in the preview, and `mk offer build` prints
+a warning. An individual keyword over 50 characters is not trimmed and still
+fails validation, because dropping a high-priority keyword would hide the
+defect instead of fixing it.
+
 Existing entity values are read from `Description`, `PromotionalResources` and
 `SupportInformation`; the read shape is not the update shape. The AWS adapter
 normalizes `Videos` to `VideoUrls`, reads `SupportInformation.Description` as
@@ -203,7 +215,9 @@ before comparison. Update payloads use `Text`/`Url` only for additional resource
 categories/media fields preserve existing AWS values; this version does not
 implement explicit deletion of them. Categories must be confirmed AWS category
 names (AWS also validates them). The local checker validates supported lengths,
-keyword combined length, duplicates, URL safety and unresolved placeholders.
+duplicates, URL safety and unresolved placeholders. List-level
+`SearchKeywords` overflow is trimmed before validation (see above); item-level
+limits still fail.
 Validation errors name the concrete field path and show an excerpt, for example
 `content.ShortDescription contains consecutive spaces: '...'`, so a source-data
 problem is not reported only as a generic content error. It cannot establish
@@ -230,12 +244,28 @@ default version source is remote; pass a local `--versions` file for a fully
 offline run. None of these commands contact AWS.
 
 ```sh
-mk offer build --app odoo --cloud aws
+mk offer build --app odoo --cloud aws [--offer-codes <code>[,<code>...]] [--allow-unlisted-codes]
 mk offer build --app odoo --cloud aws --output /tmp/odoo-preview.md
 mk offer build --app odoo --cloud aws --publish-ready
+mk offer resolve --app odoo --cloud aws [--code <code>] [--offer <variant>] --profile marketplace-seller
 mk offer plan --app odoo --profile marketplace-seller --output /tmp/odoo-plan.json
 python3 ci/validate_offers.py
 ```
+
+`resolve` reads the live seller Catalog and matches the application by trademark
+in the listing title first, using the full product catalog to detect other
+applications and ambiguous titles. Only a title with no catalog match allows
+fallback to the summary before its first English/Chinese comma. It does not
+read the local offer-code matrix. With `--code`, that code is authoritative and a mismatched title is an
+override. Without `--code`, each detected offer variant must map to exactly one
+code; two codes for the same variant stop the run. `--offer` restricts the
+selection to a declared `multiOffers` variant, and combining it with `--code`
+forces that variant. The resolved `code`/`entityId`/`offer` targets are written
+into the temporary catalog for `build`, `plan` and `apply`.
+Every explicit offer choice must belong to the target application's
+`multiOffers`; absence does not mean unrestricted selection. Non-OS labels
+are recognized from titles, not summary capability claims. `--app` always
+accepts one id, never a list.
 
 `plan` refuses to guess when an application has several Catalog targets: pass
 `--all-codes` or one or more `--offer-code` values.
@@ -243,15 +273,32 @@ python3 ci/validate_offers.py
 `build` is offline and does not contact AWS. It writes
 `data/.work/aws/<key>.json` by default (git-ignored) as a human-review preview
 that mirrors the authoring template: resolved `content`,
-`longDescriptionSections`, `target`, and `AdditionalResources`. AWS read/write
+`longDescriptionSections`, `target`, and `AdditionalResources`. By default it
+covers the codes recorded in the catalog item; `--offer-codes` previews an
+explicit set, and `--allow-unlisted-codes` admits a code recorded under another
+application so a forced reassignment is reviewable before `plan`. AWS read/write
 views and ChangeSet payloads remain internal program structures. `plan` remains
 the live revision-bound step; `--output` saves the complete plan/request for
 review and audit.
+
+When catalog targets have already been resolved, `--offer-codes` filters that
+set. Unknown/empty filters and `--allow-unlisted-codes` with resolved targets
+are errors; run `resolve` again to change the target set. Synchronous
+`apply --wait-seconds` verifies each target with its own OS/label rendering.
 
 `--catalog`, `--versions`, `--vendor` and `--template` allow
 alternate reviewed local source files. Defaults are
 `data/.work/catalog.json`, the configured version source,
 `data/listing/vendor.json` and the AWS template.
+
+`mk offer versions --output <path>` snapshots the configured version source so a
+plan and its apply reuse identical version data. `mk offer doctor --cloud <cloud>
+[--plan-role-arn <arn>] [--apply-role-arn <arn>]` checks that the cloud has a
+plan/apply implementation and validates role ARNs before a run.
+`mk offer report preflight|plan|apply --input <path> [--cloud <cloud>]
+[--app-name <name>] [--account-id <id>]` renders the same Markdown used for the
+GitHub step summary, including the entity ARN for AWS plans; locally it can be
+redirected to any review file.
 
 Install optional AWS dependencies and use AWS's normal credential provider
 chain (SSO/profile, environment, or assumed role). Do not put credentials in
@@ -259,8 +306,8 @@ master data, command arguments, generated plans or repository configuration.
 
 ```sh
 pip install '.[aws]'
-mk offer preflight --app odoo --cloud aws [--offer-codes <code>[,<code>...]]
-mk offer targets --app odoo --cloud aws [--offer-codes <code>[,<code>...]] [--entity-map <path>]
+mk offer preflight --app odoo --cloud aws [--offer-codes <code>[,<code>...]] [--allow-unlisted-codes] [--skip-code-check]
+mk offer targets --app odoo --cloud aws [--offer-codes <code>[,<code>...]] [--allow-unlisted-codes] [--entity-map <path>]
 mk offer plan --app odoo --all-codes --profile marketplace-seller
 ```
 
@@ -268,10 +315,17 @@ mk offer plan --app odoo --all-codes --profile marketplace-seller
 (`--product-catalog`, also accepted as `--catalog-source`) and every requested
 offer code against `data/offer-codes/` (`--offer`, also accepted as
 `--offer-source`), without calling Contentful or AWS. It reports lowercase and
-close-match suggestions. `targets` resolves each code to a seller-owned AMI
+close-match suggestions. `--skip-code-check` validates only the application id,
+which is the mode used before live resolution. `--allow-unlisted-codes` makes
+explicit codes authoritative: a code the matrix records under another
+application is accepted and listed as `unlistedCodes`, so an existing offer can
+be reassigned deliberately. `targets` remains available for an explicit
+code-to-EntityId resolution; the apply workflow uses `resolve` instead. It
+resolves each code to a seller-owned AMI
 Catalog EntityId with pagination and records `targets` in the temporary catalog
-item; a public SKU, product code or `prodview-` ID is not a substitute. Codes
-that resolve to the same EntityId are collapsed into one target and reported
+item; a public SKU, product code or `prodview-` ID is not a substitute. It
+accepts the same flag, but a forced code still has to resolve to exactly one
+entity. Codes that resolve to the same EntityId are collapsed into one target and reported
 under `duplicates`, so one entity is submitted once. `--entity-map` caches
 code-to-EntityId pairs: known codes are re-verified with one `DescribeEntity`
 call instead of scanning the whole product catalog. `plan --all-codes` writes one

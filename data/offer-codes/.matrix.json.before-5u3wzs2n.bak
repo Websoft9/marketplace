@@ -1,0 +1,1332 @@
+[
+    {
+        "id": "activemq",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "activemq_debian"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "activemq"
+        ]
+    },
+    {
+        "id": "affine",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "affine_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "affine"
+        ]
+    },
+    {
+        "id": "airflow",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "airflow_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "airflow"
+        ]
+    },
+    {
+        "id": "akeneo",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "akeneo_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "akeneo"
+        ]
+    },
+    {
+        "id": "canvas",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "canvas_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "canvas"
+        ]
+    },
+    {
+        "id": "chatwoot",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "chatwoot_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "chatwoot"
+        ]
+    },
+    {
+        "id": "chroma",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "chroma_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "chroma"
+        ]
+    },
+    {
+        "id": "couchdb",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "couchdb_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "couchdb"
+        ]
+    },
+    {
+        "id": "directus",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "directus_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "directus"
+        ]
+    },
+    {
+        "id": "django",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "django_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "django"
+        ]
+    },
+    {
+        "id": "erpnext",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "erpnext_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "erpnext"
+        ]
+    },
+    {
+        "id": "espocrm",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "espocrm_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "espocrm"
+        ]
+    },
+    {
+        "id": "geoserver",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "geoserver_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "geoserver"
+        ]
+    },
+    {
+        "id": "ghost",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "ghost_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "ghost"
+        ]
+    },
+    {
+        "id": "gitlab",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "gitlab_redhat",
+                "gitlab_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "gitlab"
+        ]
+    },
+    {
+        "id": "grafana",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "grafana_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "grafana"
+        ]
+    },
+    {
+        "id": "graylog",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "graylog_debian",
+                "graylog_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "graylog"
+        ]
+    },
+    {
+        "id": "haproxy",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "haproxy_debian",
+                "haproxy_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "haproxy"
+        ]
+    },
+    {
+        "id": "jellyfin",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "jellyfin_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "jellyfin"
+        ]
+    },
+    {
+        "id": "jenkins",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "jenkins_Ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "jenkins"
+        ]
+    },
+    {
+        "id": "kafka",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "kafka_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "kafka"
+        ]
+    },
+    {
+        "id": "kong",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "kongoss_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "kong"
+        ]
+    },
+    {
+        "id": "laravel",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "zvrec5x4z09py88sq4zsphyd"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "laravel"
+        ]
+    },
+    {
+        "id": "lobehub",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "lobehub_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "lobehub"
+        ]
+    },
+    {
+        "id": "mariadb",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "mariadb_dbian",
+                "mariadb_redhat"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "mariadb"
+        ]
+    },
+    {
+        "id": "mattermost",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "mattermost_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "mattermost"
+        ]
+    },
+    {
+        "id": "mautic",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "mautic_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "mautic"
+        ]
+    },
+    {
+        "id": "metabase",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "metabase_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "metabase"
+        ]
+    },
+    {
+        "id": "milvus",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "milvus_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "milvus"
+        ]
+    },
+    {
+        "id": "mongodb",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "mongodb_debian",
+                "mongodb_redhat",
+                "mongodb_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "mongodb"
+        ]
+    },
+    {
+        "id": "moodle",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "moodle_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "moodle"
+        ]
+    },
+    {
+        "id": "mysql",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "mysql_debian",
+                "mysql_redhat",
+                "mysql_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "mysql"
+        ]
+    },
+    {
+        "id": "n8n",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "n8n_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "n8n"
+        ]
+    },
+    {
+        "id": "neo4j",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "neo4j_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "neo4j"
+        ]
+    },
+    {
+        "id": "nextcloud",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "nextcloud_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "nextcloud"
+        ]
+    },
+    {
+        "id": "nifi",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "nifi_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "nifi"
+        ]
+    },
+    {
+        "id": "nopcommerce",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "nopCommerce_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "nopcommerce"
+        ]
+    },
+    {
+        "id": "odoo",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "odoo_debian",
+                "odoo_redhat",
+                "odoo_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "odoo"
+        ]
+    },
+    {
+        "id": "ollama",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "ollama_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "ollama"
+        ]
+    },
+    {
+        "id": "onlyofficedocs",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "onlyofficedocs_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "onlyofficedocs"
+        ]
+    },
+    {
+        "id": "openclaw",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "openclaw_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "openclaw"
+        ]
+    },
+    {
+        "id": "opendesign",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "haproxy_redhat",
+                "opendesign_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "opendesign"
+        ]
+    },
+    {
+        "id": "openhands",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "dolibarr_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "openhands"
+        ]
+    },
+    {
+        "id": "opensearch",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "opensearch_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "opensearch"
+        ]
+    },
+    {
+        "id": "openwebui",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "openwebui_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "openwebui"
+        ]
+    },
+    {
+        "id": "php",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "php5_fpm_nginx_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "php"
+        ]
+    },
+    {
+        "id": "phpmyadmin",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "phpmyadmin_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "phpmyadmin"
+        ]
+    },
+    {
+        "id": "portainer",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "portainer_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "portainer"
+        ]
+    },
+    {
+        "id": "postgresql",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "postgresql_debian",
+                "postgresql_redhat",
+                "postgresql_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "postgresql"
+        ]
+    },
+    {
+        "id": "prestashop",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "prestashop-ubuntu",
+                "prestashop_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "prestashop"
+        ]
+    },
+    {
+        "id": "prometheus",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "prometheus_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "prometheus"
+        ]
+    },
+    {
+        "id": "qwenpaw",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "qwenpaw_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "qwenpaw"
+        ]
+    },
+    {
+        "id": "rabbitmq",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "rabbitmq_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "rabbitmq"
+        ]
+    },
+    {
+        "id": "redis",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "redis_debian",
+                "redis_redhat",
+                "redis_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "redis"
+        ]
+    },
+    {
+        "id": "redmine",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "redmine_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "redmine"
+        ]
+    },
+    {
+        "id": "rethinkdb",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "rethinkdb_redhat",
+                "rethinkdb_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "rethinkdb"
+        ]
+    },
+    {
+        "id": "seafile",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "seafile_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "seafile"
+        ]
+    },
+    {
+        "id": "semaphoreui",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "semaphore_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "semaphoreui"
+        ]
+    },
+    {
+        "id": "sonarqube",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "sonarqube_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "sonarqube"
+        ]
+    },
+    {
+        "id": "springboot",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "springboot_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "springboot"
+        ]
+    },
+    {
+        "id": "supabase",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "supabase_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "supabase"
+        ]
+    },
+    {
+        "id": "superset",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "superset_debian",
+                "superset_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "superset"
+        ]
+    },
+    {
+        "id": "symfony",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "php8_apache_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "symfony"
+        ]
+    },
+    {
+        "id": "teamcity",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "teamcity_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "teamcity"
+        ]
+    },
+    {
+        "id": "teleport",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "teleport_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "teleport"
+        ]
+    },
+    {
+        "id": "tensorflow",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "tensorflow_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "tensorflow"
+        ]
+    },
+    {
+        "id": "thingsboard",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "thingsboard_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "thingsboard"
+        ]
+    },
+    {
+        "id": "typesense",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "typesense_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "typesense"
+        ]
+    },
+    {
+        "id": "typo3",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "typo3-ubuntu",
+                "typo3_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "typo3"
+        ]
+    },
+    {
+        "id": "umami",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "umami_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "umami"
+        ]
+    },
+    {
+        "id": "umbraco",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "umbraco_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "umbraco"
+        ]
+    },
+    {
+        "id": "vault",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "vault_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "vault"
+        ]
+    },
+    {
+        "id": "vaultwarden",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "vaultwarden_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "vaultwarden"
+        ]
+    },
+    {
+        "id": "wordpress",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "multi_wordpress",
+                "multi_wordpress_ubuntu",
+                "wordpress_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "wordpress"
+        ]
+    },
+    {
+        "id": "xwiki",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "xwiki_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "xwiki"
+        ]
+    },
+    {
+        "id": "zammad",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "zammad_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "zammad"
+        ]
+    },
+    {
+        "id": "zentao",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": [
+                "zentao_ubuntu"
+            ]
+        },
+        "type": "app",
+        "applications": [
+            "zentao"
+        ]
+    }
+]

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the marketplace-operations-check skill and its platform references."""
+"""Validate the offer-listing-check skill and its platform references."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 
-SKILL_DIR = Path(".agents/skills/marketplace-operations-check")
+SKILL_DIR = Path(".agents/skills/offer-listing-check")
 CONFIG = Path("config/marketplace.json")
 MATRIX = Path("data/offer-codes/matrix.json")
 REGISTRY_ROW = re.compile(r"^\|\s*`([a-z0-9_-]+)`\s*\|")
@@ -121,7 +121,9 @@ def validate(root: Path) -> list[str]:
 
     matrix_file = root / MATRIX
     if not matrix_file.is_file():
-        errors.append(f"missing {MATRIX}")
+        # matrix.json is generated from cloud APIs and may be absent in a fresh
+        # checkout; platform reference consistency is still checked above.
+        pass
     elif platforms:
         for entry in json.loads(matrix_file.read_text(encoding="utf-8")):
             for key in entry.get("productID", {}):
@@ -147,7 +149,7 @@ def main() -> None:
         for error in errors:
             print(f"error: {error}", file=sys.stderr)
         if not errors:
-            print("marketplace-operations-check references are consistent")
+            print("offer-listing-check references are consistent")
     raise SystemExit(1 if errors else 0)
 
 

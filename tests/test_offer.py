@@ -9,9 +9,10 @@ from unittest import mock
 
 from click.testing import CliRunner
 
-from cli import aws_marketplace, catalog_data, offer
+from cli import aws_marketplace, catalog_data, offer, offer_resolve
 from cli.cli import cli
 from cli.commands import offer as offer_commands
+from tests.offer_fixtures import odoo_item
 
 
 class OfferTests(unittest.TestCase):
@@ -22,8 +23,10 @@ class OfferTests(unittest.TestCase):
         self.versions_path = self.directory / "versions.json"
         self.vendor_path = self.directory / "vendor.json"
         self.plan_path = self.directory / "plan.json"
-        catalog = offer.read_json(offer.DATA.parent / ".work" / "catalog.json")
-        self.item = copy.deepcopy(next(item for item in catalog["items"] if item["id"] == "odoo"))
+        self.item = odoo_item()
+        labels_patch = mock.patch.object(offer_commands, "labels_for", return_value={})
+        labels_patch.start()
+        self.addCleanup(labels_patch.stop)
         self.item.update({
             "entityId": None,
             "hasenterprise": False,
@@ -291,6 +294,50 @@ class OfferTests(unittest.TestCase):
             offer.render(
                 self.item, "20.0", self.vendor_path, special_cases_path=path
             )
+
+    def test_special_case_multi_offers_are_accepted(self):
+        path = self.special_cases_file(
+            {"wordpress": {"multiOffers": ["", "Multisite"]}}
+        )
+        cases = offer.load_special_cases(path)
+        self.assertEqual(cases["wordpress"]["multiOffers"], ["", "Multisite"])
+
+    def test_special_case_multi_offers_allow_combined_os_and_label(self):
+        path = self.special_cases_file(
+            {"wordpress": {"multiOffers": ["Ubuntu; Multisite"]}}
+        )
+        cases = offer.load_special_cases(path)
+        self.assertEqual(cases["wordpress"]["multiOffers"], ["Ubuntu; Multisite"])
+
+    def test_special_case_multi_offers_reject_multiple_os_parts(self):
+        path = self.special_cases_file(
+            {"wordpress": {"multiOffers": ["Ubuntu; Debian"]}}
+        )
+        with self.assertRaisesRegex(ValueError, "more than one OS"):
+            offer.load_special_cases(path)
+
+    def test_special_case_multi_offers_reject_versioned_os(self):
+        path = self.special_cases_file(
+            {"odoo": {"multiOffers": ["Ubuntu 26.04"]}}
+        )
+        with self.assertRaisesRegex(ValueError, "family name without a version"):
+            offer.load_special_cases(path)
+
+    def test_special_case_multi_offers_reject_empty_parts(self):
+        path = self.special_cases_file(
+            {"wordpress": {"multiOffers": ["Ubuntu;"]}}
+        )
+        with self.assertRaisesRegex(ValueError, "empty part"):
+            offer.load_special_cases(path)
+
+    def test_special_case_multi_offers_reject_empty_and_duplicates(self):
+        for value, message in (
+            ([], "non-empty array"),
+            (["Ubuntu", "Ubuntu"], "duplicates"),
+        ):
+            path = self.special_cases_file({"odoo": {"multiOffers": value}})
+            with self.assertRaisesRegex(ValueError, message):
+                offer.load_special_cases(path)
 
     def test_display_version_keeps_at_most_two_components(self):
         self.assertEqual(offer.display_version("20.0.1"), "20.0")
@@ -619,6 +666,162 @@ class OfferTests(unittest.TestCase):
         self.assertEqual(warnings[0]["field"], "ProductTitle")
         self.assertGreater(warnings[0]["length"], 72)
 
+    def test_build_warns_when_search_keywords_are_truncated(self):
+        self.item["keywords"] = [f"keyword-{index}" for index in range(17)]
+        self.write()
+        runner = CliRunner(mix_stderr=False)
+        result = runner.invoke(
+            cli, self.args("build") + ["--cloud", "aws", "--output", "-"]
+        )
+        self.assertEqual(result.exit_code, 0, result.stderr)
+        self.assertIn(
+            "WARNING odoo: SearchKeywords truncated 17 -> 15", result.stderr
+        )
+        document = json.loads(result.stdout)
+        self.assertEqual(document["keywordTruncation"]["original"], 17)
+        self.assertEqual(len(document["content"]["SearchKeywords"]), 15)
+
+    def test_resolve_records_offer_targets_in_the_catalog(self):
+        product = offer_resolve.Product(
+            code="code-u",
+            entity_id="prod-example12345",
+            title="Odoo on Ubuntu 26.04",
+        )
+        with mock.patch.object(
+            offer_resolve, "list_aws_products", return_value=[product]
+        ), mock.patch.object(offer_resolve, "load_identities", return_value={"odoo": ["Odoo"]}):
+            result = self.runner.invoke(
+                cli,
+                self.args("resolve")
+                + ["--cloud", "aws", "--output", "-"],
+            )
+        self.assertEqual(result.exit_code, 0, result.output)
+        document = json.loads(result.stdout)
+        self.assertEqual(document["targets"][0]["offer"], "Ubuntu")
+        catalog = json.loads(self.catalog_path.read_text(encoding="utf-8"))
+        item = catalog["items"][0]
+        self.assertEqual(item["entityId"], "prod-example12345")
+        self.assertEqual(
+            item["targets"],
+            [
+                {
+                    "code": "code-u",
+                    "entityId": "prod-example12345",
+                    "offer": "Ubuntu",
+                }
+            ],
+        )
+
+    def test_offer_commands_reject_application_lists_before_io(self):
+        for app in ("odoo,wordpress", "odoo，wordpress", "odoo wordpress"):
+            for command in ("resolve", "build", "plan", "apply", "preflight", "targets"):
+                result = self.runner.invoke(cli, ["offer", command, "--app", app])
+                self.assertNotEqual(result.exit_code, 0)
+                self.assertIn("exactly one application", result.output)
+
+    def test_build_filters_resolved_targets_and_rejects_bad_combinations(self):
+        self.item.update({
+            "entityId": "prod-u",
+            "targets": [
+                {"code": "u", "entityId": "prod-u", "offer": "Ubuntu"},
+                {"code": "d", "entityId": "prod-d", "offer": "Debian"},
+            ],
+        })
+        self.write()
+        result = self.runner.invoke(cli, self.args("build") + [
+            "--cloud", "aws", "--offer-codes", "u", "--output", "-",
+        ])
+        self.assertEqual(result.exit_code, 0, result.output)
+        targets = json.loads(result.stdout)["targets"]
+        self.assertEqual([t["code"] for t in targets], ["u"])
+        self.assertIn("on Ubuntu", targets[0]["preview"]["content"]["ProductTitle"])
+        for flags in (["--offer-codes", "unknown"], ["--offer-codes", ","],
+                      ["--offer-codes", "u", "--allow-unlisted-codes"]):
+            result = self.runner.invoke(cli, self.args("build") + ["--cloud", "aws", *flags])
+            self.assertNotEqual(result.exit_code, 0)
+
+    def test_single_variant_apply_verifies_the_variant_not_base(self):
+        for variant in ("Ubuntu", "Multisite", "Ubuntu; Multisite"):
+            with self.subTest(variant=variant):
+                self.set_entity_id()
+                self.item["targets"] = [{"code": "u", "entityId": self.item["entityId"], "offer": variant}]
+                self.write()
+                value = offer.with_variant(self.render(), variant)
+                entity = self.entity(value)
+                entity["DetailsDocument"]["Description"]["ProductTitle"] = "Old title"
+                planned = offer.plan(value, entity)
+                self.plan_path.write_text(json.dumps(planned))
+                client = mock.Mock()
+                client.describe_entity.side_effect = [entity, self.entity(value)]
+                client.start_change_set.return_value = {"ChangeSetId": "cs-u"}
+                client.describe_change_set.return_value = {"Status": "SUCCEEDED"}
+                with mock.patch.object(offer, "aws_client", return_value=client):
+                    result = self.runner.invoke(cli, self.args("apply") + [
+                        "--plan", str(self.plan_path), "--wait-seconds", "1",
+                    ])
+                self.assertEqual(result.exit_code, 0, result.output)
+                self.assertIn('"readBackVerified": true', result.output)
+
+    def test_bad_offer_choice_fails_before_aws_inventory(self):
+        with mock.patch.object(offer_resolve, "list_aws_products") as fetch:
+            result = self.runner.invoke(cli, self.args("resolve") + [
+                "--cloud", "aws", "--code", "u", "--offer", "Multisite",
+            ])
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("not declared", result.output)
+        fetch.assert_not_called()
+
+    def test_resolve_build_plan_apply_round_trip_with_two_os_offers(self):
+        identities = self.directory / "products.json"
+        identities.write_text(json.dumps([
+            {"key": "odoo", "trademark": "Odoo"},
+            {"key": "drupal", "trademark": "Drupal"},
+        ]))
+        products = [
+            offer_resolve.Product("u", "prod-u", "Odoo on Ubuntu"),
+            offer_resolve.Product("d", "prod-d", "Odoo on Debian"),
+            offer_resolve.Product("other", "prod-other", "Drupal", "Integrates with Odoo"),
+        ]
+        with mock.patch.object(offer_resolve, "list_aws_products", return_value=products):
+            resolved = self.runner.invoke(cli, self.args("resolve") + [
+                "--cloud", "aws", "--product-catalog", str(identities),
+            ])
+        self.assertEqual(resolved.exit_code, 0, resolved.output)
+        built = self.runner.invoke(cli, self.args("build") + ["--cloud", "aws", "--output", "-"])
+        self.assertEqual(built.exit_code, 0, built.output)
+        previews = json.loads(built.stdout)["targets"]
+        self.assertEqual({p["code"] for p in previews}, {"u", "d"})
+        self.item = json.loads(self.catalog_path.read_text())["items"][0]
+        value = self.render()
+        old, new = {}, {}
+        for target in self.item["targets"]:
+            desired = offer.with_variant({**value, "entityId": target["entityId"]}, target["offer"])
+            entity = {
+                "EntityIdentifier": target["entityId"] + "@1", "EntityType": "AmiProduct@1.0",
+                "DetailsDocument": aws_marketplace.to_read_document(desired["content"]),
+            }
+            new[target["entityId"]] = entity
+            old[target["entityId"]] = copy.deepcopy(entity)
+            old[target["entityId"]]["DetailsDocument"]["Description"]["ProductTitle"] = "Old title"
+        client = mock.Mock()
+        client.describe_entity.side_effect = lambda **kw: old[kw["EntityId"]]
+        with mock.patch.object(offer, "aws_client", return_value=client):
+            planned = self.runner.invoke(cli, self.args("plan") + ["--all-codes", "--output", str(self.plan_path)])
+        self.assertEqual(planned.exit_code, 0, planned.output)
+        def submit(**kwargs):
+            entity_id = kwargs["ChangeSet"][0]["Entity"]["Identifier"].split("@")[0]
+            old[entity_id] = new[entity_id]
+            return {"ChangeSetId": "cs-" + entity_id}
+        client.start_change_set.side_effect = submit
+        client.describe_change_set.return_value = {"Status": "SUCCEEDED"}
+        with mock.patch.object(offer, "aws_client", return_value=client):
+            applied = self.runner.invoke(cli, self.args("apply") + [
+                "--plan", str(self.plan_path), "--wait-seconds", "1",
+            ])
+        self.assertEqual(applied.exit_code, 0, applied.output)
+        self.assertEqual(applied.output.count('"readBackVerified": true'), 2)
+        self.assertEqual(client.start_change_set.call_count, 2)
+
     def test_titles_command_lists_applications_over_the_limit(self):
         self.item["trademark"] = "Test Application Name"
         self.item["offerCodes"] = {"aws": ["code-a"]}
@@ -686,6 +889,54 @@ class OfferTests(unittest.TestCase):
                 "Odoo on Ubuntu 26.04 - Preconfigured, Hardened, Ready in Minutes",
                 "Odoo on Debian 13 - Preconfigured, Hardened, Ready in Minutes",
             ],
+        )
+
+    def test_build_rejects_unlisted_codes_without_the_flag(self):
+        result = self.runner.invoke(
+            cli,
+            self.args("build") + ["--cloud", "aws", "--offer-codes", "other-code", "--output", "-"],
+        )
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("not recorded for 'odoo' on aws", result.output)
+
+    def test_build_previews_unlisted_codes_when_forced(self):
+        self.item["offerCodes"] = {"aws": []}
+        self.write()
+        with mock.patch.object(offer_commands, "labels_for", return_value={}):
+            result = CliRunner(mix_stderr=False).invoke(
+                cli,
+                self.args("build") + [
+                    "--cloud", "aws", "--offer-codes", "other-code",
+                    "--allow-unlisted-codes", "--output", "-",
+                ],
+            )
+        self.assertEqual(result.exit_code, 0, result.stderr)
+        document = json.loads(result.stdout)
+        self.assertEqual(document["targets"][0]["code"], "other-code")
+        self.assertEqual(document["targets"][0]["label"], "")
+        self.assertEqual(
+            document["targets"][0]["preview"]["content"]["ProductTitle"],
+            self.render()["preview"]["content"]["ProductTitle"],
+        )
+
+    def test_build_previews_only_the_explicit_codes(self):
+        self.item["offerCodes"] = {"aws": ["code-a", "code-b"]}
+        self.write()
+        with mock.patch.object(
+            offer_commands, "labels_for", return_value={"code-b": "Debian 13"}
+        ):
+            result = CliRunner(mix_stderr=False).invoke(
+                cli,
+                self.args("build") + [
+                    "--cloud", "aws", "--offer-codes", "code-b", "--output", "-",
+                ],
+            )
+        self.assertEqual(result.exit_code, 0, result.stderr)
+        document = json.loads(result.stdout)
+        self.assertEqual([item["code"] for item in document["targets"]], ["code-b"])
+        self.assertEqual(
+            document["targets"][0]["preview"]["content"]["ProductTitle"],
+            "Odoo on Debian 13 - Preconfigured, Hardened, Ready in Minutes",
         )
 
     def test_short_description_does_not_use_hasenterprise_wording(self):
@@ -819,11 +1070,61 @@ class OfferTests(unittest.TestCase):
             {"Text": "Install Websoft9 on AWS", "Url": "https://support.websoft9.com/en/docs/install-aws"},
         ])
 
-    def test_keyword_total_and_unknown_override_are_rejected(self):
+    def test_search_keywords_over_the_count_limit_keep_the_leading_entries(self):
+        self.item["keywords"] = [f"keyword-{index}" for index in range(18)]
+        self.write()
+        value = self.render()
+        self.assertEqual(value["content"]["SearchKeywords"], self.item["keywords"][:15])
+        truncation = value["preview"]["keywordTruncation"]
+        self.assertEqual(truncation["original"], 18)
+        self.assertEqual(truncation["kept"], 15)
+        self.assertEqual(truncation["dropped"], self.item["keywords"][15:])
+
+    def test_search_keywords_over_the_combined_limit_keep_the_leading_entries(self):
         self.item["keywords"] = [str(index) + "x" * 49 for index in range(6)]
         self.write()
-        with self.assertRaisesRegex(ValueError, "250"):
+        value = self.render()
+        self.assertEqual(value["content"]["SearchKeywords"], self.item["keywords"][:5])
+        truncation = value["preview"]["keywordTruncation"]
+        self.assertEqual(truncation["originalCharacters"], 300)
+        self.assertEqual(truncation["combinedCharacters"], 250)
+
+    def test_search_keywords_within_the_limits_are_not_truncated(self):
+        self.item["keywords"] = ["erp", "crm"]
+        self.write()
+        value = self.render()
+        self.assertEqual(value["content"]["SearchKeywords"], ["erp", "crm"])
+        self.assertNotIn("keywordTruncation", value["preview"])
+
+    def test_single_over_limit_keyword_still_fails_validation(self):
+        self.item["keywords"] = ["x" * 51]
+        self.write()
+        with self.assertRaisesRegex(ValueError, "SearchKeywords"):
             self.render()
+
+    def test_search_keywords_from_content_overrides_are_truncated(self):
+        self.item["contentOverrides"] = {
+            "SearchKeywords": [f"override-{index}" for index in range(17)]
+        }
+        self.write()
+        value = self.render()
+        self.assertEqual(len(value["content"]["SearchKeywords"]), 15)
+
+    def test_plan_uses_truncated_search_keywords(self):
+        self.set_entity_id()
+        self.item["keywords"] = [f"keyword-{index}" for index in range(18)]
+        self.write()
+        value = self.render()
+        entity = self.entity(value)
+        entity["DetailsDocument"]["Description"]["SearchKeywords"] = self.item["keywords"]
+        planned = offer.plan(value, entity)
+        self.assertEqual(len(planned["diff"]["SearchKeywords"]["after"]), 15)
+        self.assertEqual(
+            planned["request"]["ChangeSet"][0]["DetailsDocument"]["SearchKeywords"],
+            self.item["keywords"][:15],
+        )
+
+    def test_unknown_content_override_is_rejected(self):
         self.item["keywords"] = ["ERP"]
         self.item["contentOverrides"]["RefundPolicy"] = "foo"
         self.write()
@@ -1048,8 +1349,10 @@ class PreflightAndMultiTargetTests(unittest.TestCase):
             ]),
             encoding="utf-8",
         )
-        catalog = offer.read_json(offer.DATA.parent / ".work" / "catalog.json")
-        self.item = copy.deepcopy(next(item for item in catalog["items"] if item["id"] == "odoo"))
+        self.item = odoo_item()
+        labels_patch = mock.patch.object(offer_commands, "labels_for", return_value={})
+        labels_patch.start()
+        self.addCleanup(labels_patch.stop)
         self.item.update({
             "hasenterprise": False,
             "offerCodes": {"aws": ["code-a", "code-b"]},
@@ -1136,6 +1439,33 @@ class PreflightAndMultiTargetTests(unittest.TestCase):
             offer.preflight("wordpress", "aws", catalog_source=str(self.app_catalog),
                             offer_source=str(self.offer_source))
 
+    def test_preflight_allows_unlisted_codes_when_forced(self):
+        value = offer.preflight(
+            "odoo", "aws", ["code-a", "other-code"],
+            str(self.app_catalog), str(self.offer_source), allow_unlisted=True,
+        )
+        self.assertEqual(value["codes"], ["code-a", "other-code"])
+        self.assertEqual(value["codeSource"], "explicit")
+        self.assertEqual(value["unlistedCodes"], ["other-code"])
+        listed = offer.preflight(
+            "odoo", "aws", ["code-a"], str(self.app_catalog), str(self.offer_source),
+            allow_unlisted=True,
+        )
+        self.assertNotIn("unlistedCodes", listed)
+
+    def test_preflight_allows_unlisted_codes_from_the_cli(self):
+        output = self.directory / "forced.json"
+        result = self.runner.invoke(cli, [
+            "offer", "preflight", "--app", "odoo", "--cloud", "aws",
+            "--catalog-source", str(self.app_catalog), "--offer-source", str(self.offer_source),
+            "--offer-codes", "other-code", "--allow-unlisted-codes",
+            "--output", str(output),
+        ])
+        self.assertEqual(result.exit_code, 0, result.output)
+        value = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(value["codes"], ["other-code"])
+        self.assertEqual(value["unlistedCodes"], ["other-code"])
+
     def test_preflight_command_fails_early_and_writes_targets(self):
         output = self.directory / "preflight.json"
         result = self.runner.invoke(cli, [
@@ -1199,6 +1529,29 @@ class PreflightAndMultiTargetTests(unittest.TestCase):
         self.assertNotEqual(result.exit_code, 0)
         self.assertIn("do not belong to 'odoo'", result.output)
         resolve.assert_not_called()
+
+    def test_targets_records_unlisted_codes_when_forced(self):
+        matches = {"other-code": [{"entityId": "prod-other"}]}
+        with mock.patch("cli.commands.offer._resolve_aws_entities", return_value=matches):
+            result = self.runner.invoke(
+                cli,
+                self.targets_args() + ["--offer-codes", "other-code", "--allow-unlisted-codes"],
+            )
+        self.assertEqual(result.exit_code, 0, result.output)
+        document = json.loads(result.output)
+        self.assertEqual(document["targets"], [{"code": "other-code", "entityId": "prod-other"}])
+        self.assertEqual(document["unlistedCodes"], ["other-code"])
+        catalog = json.loads(self.catalog_path.read_text(encoding="utf-8"))
+        self.assertEqual(catalog["items"][0]["targets"], document["targets"])
+
+    def test_targets_still_requires_forced_codes_to_resolve(self):
+        with mock.patch("cli.commands.offer._resolve_aws_entities", return_value={}):
+            result = self.runner.invoke(
+                cli,
+                self.targets_args() + ["--offer-codes", "other-code", "--allow-unlisted-codes"],
+            )
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("no Catalog entity found for: other-code", result.output)
 
     def test_targets_rejects_ambiguous_codes_and_leaves_the_catalog_unchanged(self):
         self.item["entityId"] = "prod-initial"

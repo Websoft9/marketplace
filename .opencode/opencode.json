@@ -1,5 +1,26 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "context7": {
+        "type": "remote",
+        "url": "https://mcp.context7.com/mcp",
+        "oauth": false
+      },
+      "playwright": {
+        "type": "local",
+        "command": ["npx", "-y", "@playwright/mcp@latest", "--no-sandbox"]
+      },
+      "github": {
+        "type": "remote",
+        "url": "https://api.githubcopilot.com/mcp/",
+        "oauth": false,
+        "headers": {
+          "Authorization": "Bearer {file:~/.config/opencode/github.token}"
+        }
+      }
+    }
+  },
   "permissions": [
     { "action": "external_directory", "resource": "/tmp/*", "effect": "allow" },
     { "action": "read", "resource": "/tmp/*", "effect": "allow" },

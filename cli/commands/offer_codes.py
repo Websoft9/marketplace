@@ -2,19 +2,99 @@ from __future__ import annotations
 
 import difflib
 import json
+import time
 import urllib.error
 from functools import wraps
 from pathlib import Path
 
 import click
 
-from .. import offer_codes, offer_listing
-from ..marketplace import CATALOG_URL, OFFER_SOURCE
+from .. import offer_codes, offer_listing, offer_generate, offer_resolve, offer
+from ..marketplace import CATALOG_URL, OFFER_SOURCE, REPO_ROOT
 
 
 @click.group("offer-codes")
 def offer_codes_command() -> None:
     """Read, validate, audit and maintain local marketplace offer codes."""
+
+
+def _generation_report(report, *, as_json=False, err=False):
+    if as_json:
+        click.echo(json.dumps(report, indent=2, ensure_ascii=False))
+        return
+    click.echo(
+        f"{report['platform']} ({report['visibility']}): checked {report['checked']}, "
+        f"matched {report['matched']}, unresolved {len(report['unresolved'])}", err=err,
+    )
+    outcome = "Written" if report["written"] else "Not written"
+    click.echo(f"{outcome}: {report['output']}", err=err)
+    if report["unresolved"]:
+        click.echo("Unresolved products (excluded from this generation):", err=err)
+        click.echo("| Product code | Title | Reason |", err=err)
+        click.echo("| --- | --- | --- |", err=err)
+        for item in report["unresolved"]:
+            cells = [str(item[key] or "(missing)").replace("|", "\\|")
+                     .replace("\r", " ").replace("\n", " ")
+                     for key in ("code", "title", "reason")]
+            click.echo("| " + " | ".join(cells) + " |", err=err)
+
+
+@offer_codes_command.command("gen")
+@click.option("--platform", required=True, help="Cloud to regenerate (currently aws).")
+@click.option("--code", "codes", multiple=True, help="Regenerate one code only; repeat for several codes.")
+@click.option("--product-catalog", default=CATALOG_URL, metavar="SOURCE")
+@click.option("--profile", default=None, help="AWS read-only seller profile.")
+@click.option("--output", type=click.Path(dir_okay=False, path_type=Path),
+              default=REPO_ROOT / "data/offer-codes/matrix.json", show_default=True)
+@click.option("--dry-run", is_flag=True, help="Show the proposed diff without writing.")
+@click.option("--json", "as_json", is_flag=True,
+              help="Print only the structured result to stdout; progress goes to stderr.")
+def gen_command(platform, codes, product_catalog, profile, output, dry_run, as_json):
+    """Generate matrix.json from live inventory, never from matrix-history.json.
+
+    Without --code, replace this cloud's mappings after a complete enumeration.
+    With --code, change only those mappings and preserve everything else.
+    """
+    if platform != "aws":
+        raise click.ClickException(f"generation is not supported for {platform!r}; implemented: aws")
+    if any(not code.strip() or any(c in code for c in ",，") for code in codes):
+        raise click.BadParameter("each --code must contain one non-empty code")
+    codes = list(dict.fromkeys(code.strip() for code in codes))
+    try:
+        before = output.read_bytes() if output.exists() else None
+        previous = json.loads(before) if before is not None else []
+        if not isinstance(previous, list):
+            raise ValueError("matrix root must be a JSON array")
+        offer_codes.require_structure([(str(output), previous)])
+        identities = offer_resolve.load_identities(product_catalog, offer.load_special_cases())
+        started = time.monotonic()
+        products = offer_resolve.list_aws_products(
+            profile, public_only=True, progress=lambda message: click.echo(message, err=True),
+        )
+        matrix, report = offer_generate.generate(products, identities, previous, codes=codes)
+        report["visibility"] = "Public"
+        report["elapsedSeconds"] = round(time.monotonic() - started, 2)
+        report["output"] = str(output)
+        report["written"] = False
+        if matrix is None:
+            _generation_report(report, as_json=as_json)
+            raise click.ClickException("no resolved listings; nothing written. See unresolved listings above.")
+        if dry_run:
+            diff = "".join(difflib.unified_diff(
+                (before.decode("utf-8") if before else "").splitlines(keepends=True),
+                offer_codes.serialize_document(matrix).splitlines(keepends=True),
+                fromfile=str(output), tofile=str(output),
+            ))
+            if as_json:
+                report["diff"] = diff
+            else:
+                click.echo(diff, nl=False)
+        else:
+            offer_generate.write_matrix(output, matrix, before)
+            report["written"] = True
+        _generation_report(report, as_json=as_json, err=dry_run)
+    except (OSError, ValueError, urllib.error.URLError) as error:
+        raise click.ClickException(str(error)) from None
 
 
 def _load_local(offer_source: str, *, validate: bool = False) -> list[tuple[str, object]]:

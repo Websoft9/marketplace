@@ -6,6 +6,81 @@ malformed entry silently changes those outputs.
 
 This page covers maintenance only. How consumers use the labels is out of scope.
 
+## Generate the matrix from cloud inventory
+
+`data/samples/matrix-history.json` is a historical format example, not a source
+for generation. `mk offer-codes gen` writes the same top-level array and entry
+shape to `data/offer-codes/matrix.json`; it does not add evidence fields or
+`variants` to generated entries. Mechanical validation uses the existing
+`offer_codes.verify` contract, not a separate schema.
+
+```sh
+# Complete AWS inventory: replace AWS mappings, preserve other clouds.
+mk offer-codes gen --platform aws --profile marketplace-seller --dry-run
+mk offer-codes gen --platform aws --profile marketplace-seller
+
+# Incremental: regenerate only these codes, moving ownership when necessary.
+mk offer-codes gen --platform aws --code CODE --profile marketplace-seller
+
+# Workflow: a single JSON result on stdout, progress/errors on stderr.
+mk offer-codes gen --platform aws --json > /tmp/offer-generation.json
+```
+
+- Currently only AWS generation is implemented; other platforms fail before
+  any network call or write. Credentials use the normal AWS provider chain.
+- AWS codes come exclusively from `Description.ProductCode` (the public
+  marketplace code, typically 24–25 lowercase letters/digits), never `Sku`.
+  `Sku` is only a seller-defined alias retained for explicit code lookup and
+  removal of old alias mappings; it is not a fallback when ProductCode is absent.
+- Generation requests only `Public` AMI products using the server-side
+  `AmiProductFilters.Visibility` filter. Restricted, Limited, Draft and unknown
+  visibility products are ignored, including products that become non-public
+  between listing and reading their details. This is product visibility, not
+  the separate AWS `Offer` entity or its targeting.
+- All list pages are collected first. Details are then fetched with
+  `BatchDescribeEntities` in batches of at most 20 rather than one serial
+  `DescribeEntity` per product. Matching and matrix assembly are local; progress
+  goes to stderr. Default output includes a summary and an unresolved-products
+  table with product code, full title and reason. `--json` emits a single JSON
+  object to stdout with `checked`, `matched`, `unresolved`, `visibility`,
+  `elapsedSeconds`, `output` and `written`. Each unresolved row contains `code`,
+  `title`, `entityId`, `candidates` and `reason`; workflows should consume these
+  fields rather than repeat application matching logic. With `--json --dry-run`,
+  the diff is included in the JSON `diff` field; normal dry-run keeps the diff on
+  stdout and sends the human-readable report to stderr.
+  Batch-level errors or omitted details block writing an incomplete inventory.
+- `--product-catalog` supplies the full `product_en.json` catalog (URL or local
+  file). Title trademarks take priority; only when the title has no catalog
+  match is the short description before its first `,` or `，` considered.
+  Reviewed `titleTrademark` exceptions are also recognized.
+- Full runs enumerate every page before replacing this platform's mappings.
+  `--code` is repeatable and accepts one code per occurrence. Targeted runs
+  change only those codes, preserving all other mappings.
+- Products with missing codes, ambiguous/unmatched titles, duplicate cloud codes
+  (including repeated codes for the same application), or ambiguous selected
+  aliases are skipped. The final report lists unresolved products with
+  entity IDs, titles, candidates and reasons; independently resolved products
+  are still written. A successful command can therefore produce a partial matrix.
+- Full runs exclude unresolved codes, including any old mappings for those codes.
+  Targeted runs change only successfully resolved codes and their aliases,
+  preserving unresolved and unselected old mappings. No old mapping is used to
+  guess a new owner. Missing selected codes are reported, not fatal when other
+  selected codes resolve successfully.
+- API errors, incomplete pagination, an empty inventory, or no successfully
+  resolved products still block the entire write to avoid destructive replacement.
+  Partial success exits 0 and exposes unresolved rows in the result. If no
+  products resolve, the command emits the report with `written: false` and exits
+  non-zero. Failures before matching (such as API errors) report to stderr and
+  exit non-zero without a result object; workflows must check the exit code.
+- Existing `applications` and `type` values are preserved. New entries use
+  `type: "app"`, `applications: [id]` and all existing platform array keys.
+  Legacy `variants` are removed from the generated matrix; offer differences
+  belong in `data/listing/app-special-cases.json` (`multiOffers`).
+- The candidate is verified before writing. Commits use the offer-source
+  directory lock, a stale-snapshot check and atomic replacement. Backups have
+  a hidden `.bak` filename so directory readers never load them as data.
+- Generation writes local data only. It never publishes or updates listings.
+
 ## Entry shape
 
 ```json

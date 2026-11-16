@@ -89,6 +89,8 @@ def catalog_command() -> None:
               help="product_en.json URL or local path; only these application ids are returned.")
 @click.option("--offer", "offer_source", default=OFFER_SOURCE, show_default=True, metavar="SOURCE",
               help="Offer-codes directory or JSON file used to add marketplace offer codes.")
+@click.option("--skip-offer-codes", is_flag=True,
+              help="Pull without marketplace offer codes; use when live resolution supplies targets.")
 @click.option("--apps", "app_list", metavar="IDS",
               help="Comma-separated application ids to export, for example wordpress,odoo. Default: all catalog applications.")
 @click.option("--api-url", envvar="CONTENTFUL_API_URL", default=contentful.DEFAULT_API_URL, show_default=True,
@@ -128,6 +130,7 @@ def pull_command(
     progress: bool,
     raw: bool,
     allow_missing: bool,
+    skip_offer_codes: bool,
 ) -> None:
     """Pull English Contentful fields for every application in product_en.json.
 
@@ -169,13 +172,16 @@ def pull_command(
     except contentful.ContentfulError as error:
         raise click.ClickException(str(error)) from None
 
-    try:
-        codes = marketplace.offer_codes_by_app(offer_source, timeout)
-    except (OSError, ValueError, urllib.error.URLError) as error:
-        raise click.ClickException(f"failed to read offer source: {error}") from None
+    if skip_offer_codes:
+        codes = {}
+    else:
+        try:
+            codes = marketplace.offer_codes_by_app(offer_source, timeout)
+        except (OSError, ValueError, urllib.error.URLError) as error:
+            raise click.ClickException(f"failed to read offer source: {error}") from None
     for item in dataset["items"]:
         item["offerCodes"] = codes.get(item["id"], {})
-    dataset.setdefault("source", {})["offer"] = offer_source
+    dataset.setdefault("source", {})["offer"] = None if skip_offer_codes else offer_source
 
     if str(output) == "-":
         if merge:

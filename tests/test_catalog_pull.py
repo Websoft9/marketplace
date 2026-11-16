@@ -317,6 +317,18 @@ class CatalogPullTests(unittest.TestCase):
             self.assertEqual(contentful._get_json("https://example.test", "token", 5), {"total": 0, "items": []})
         sleep.assert_called_once()
 
+    def test_skip_offer_codes_pulls_without_the_offer_source(self) -> None:
+        self.offer = self.directory / "missing-offer.json"
+        with mock.patch.object(contentful, "_get_json", side_effect=self.fake_get_json):
+            result = self.invoke(
+                "--page-size", "2", "--skip-offer-codes", "--no-progress"
+            )
+
+        self.assertEqual(result.exit_code, 0, result.stderr)
+        dataset = json.loads(result.stdout)
+        self.assertEqual(dataset["items"][0]["offerCodes"], {})
+        self.assertIsNone(dataset["source"]["offer"])
+
     def test_cfpat_token_pulls_through_management_api(self) -> None:
         schema = {
             "key": {"type": "Symbol", "localized": False},

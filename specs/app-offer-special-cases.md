@@ -30,7 +30,9 @@ application id:
     "odoo": { "multiVersion": true },
     "mongodb": { "multiVersion": true, "editionLabel": "Community Server", "titleTrademark": "Document DB" },
     "redis": { "multiVersion": true, "editionLabel": "Open Source" },
-    "graylog": { "editionLabel": "Open" }
+    "graylog": { "editionLabel": "Open" },
+    "haproxy": { "multiOffers": ["Ubuntu", "Debian"] },
+    "wordpress": { "multiOffers": ["", "Multisite"] }
   }
 }
 ```
@@ -43,6 +45,13 @@ Supported slots (all optional):
 | `pricingLead` | string | First sentence of the "What you pay for" section | `<trademark> <editionLabel>` when a label exists, otherwise `No separate license fee is charged for the application.` |
 | `titleTrademark` | string | Brand name used in `ProductTitle` when the AWS title cannot use `catalog.trademark`; other fields keep the catalog value | `catalog.trademark` |
 | `multiVersion` | boolean | Advertise version selection when the versions source has two or more values | `false` |
+| `multiOffers` | string[] | Offer variants published for this application. Each entry is an OS family (`Ubuntu`, `Debian`), a non-OS label (`Multisite`), a combination (`Ubuntu; Multisite`), or the empty string for the base offer with no extra label. Use `[""]` for a base-only application and `["", "Multisite"]` when both a base and a labeled offer exist. | no declared variant set; the resolver may still discover variants from the listing |
+
+Only applications with `multiOffers` support an explicit `--offer` selection,
+including `base`. This restriction also applies when `--code` requests a forced
+override. Without an explicit selection the resolver can discover OS variants
+from live listings; non-OS labels require a declared label in the title, not a
+summary statement that the application supports the feature.
 
 Do not add per-application slots that duplicate catalog facts. Add a slot only
 when the shared template or version source cannot express the difference.
@@ -83,6 +92,7 @@ editing its label or pricing sentence makes an existing reviewed plan stale.
 
 - the file has an unknown `schemaVersion`, a non-object entry or a wrong slot type;
 - an entry uses an unsupported slot;
+- a `multiOffers` entry has an empty `;` part, names more than one OS, or uses an OS family with a version;
 - a text override is empty or has surrounding whitespace;
 - the rendered offer still contains an unresolved placeholder or two consecutive
   spaces.

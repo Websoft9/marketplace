@@ -7,8 +7,10 @@ from pathlib import Path
 
 import click
 
-from .. import catalog_data
+from .. import catalog_data, catalog_file
 from .. import offer as service
+from .. import offer_report
+from .. import offer_resolve
 from ..marketplace import CATALOG_URL, CONFIGURED_PLATFORMS, OFFER_SOURCE, VERSIONS_URL, catalog_default_path
 
 
@@ -17,9 +19,17 @@ def offer_command() -> None:
     """Generate, compare and publish AWS AMI listing metadata."""
 
 
+def single_app(_ctx, _param, value):
+    value = (value or "").strip()
+    if not value or any(char.isspace() or char in ",，" for char in value):
+        raise click.BadParameter("exactly one application id is required; lists are not supported")
+    return value
+
+
 def inputs(function):
     for option in (
-        click.option("--app", required=True, help="Application id from data/.work/catalog.json."),
+        click.option("--app", required=True, callback=single_app,
+                     help="One application id from data/.work/catalog.json; lists are not supported."),
         click.option("--catalog", "catalog_source", default=None, metavar="SOURCE",
                      help="Temporary Contentful catalog JSON. Default: data/.work/catalog.json."),
         click.option("--versions", default=VERSIONS_URL, metavar="SOURCE",
@@ -145,44 +155,56 @@ def _selected_targets(value, all_codes, offer_codes):
 
 
 @offer_command.command("preflight")
-@click.option("--app", required=True, help="Application id from product_en.json, for example odoo.")
+@click.option("--app", required=True, callback=single_app, help="One application id from product_en.json, for example odoo.")
 @click.option("--cloud", required=True, type=click.Choice(CONFIGURED_PLATFORMS),
               help="Target cloud platform from config/marketplace.json.")
 @click.option("--offer-codes", "offer_codes", default=None, metavar="CODES",
               help="Comma-separated offer codes; default: every code recorded for the application.")
+@click.option("--allow-unlisted-codes", is_flag=True,
+              help="Accept explicit codes that the offer-codes matrix records under another application, "
+                   "for example to reassign an existing offer.")
 @click.option("--product-catalog", "--catalog-source", "catalog_source", default=CATALOG_URL,
               show_default=True, metavar="SOURCE",
               help="product_en.json URL or local path; the source of valid application ids.")
 @click.option("--offer", "--offer-source", "offer_source", default=OFFER_SOURCE, show_default=True, metavar="SOURCE",
               help="Offer-codes directory or JSON file used to validate codes.")
 @click.option("--timeout", type=float, default=30, show_default=True)
+@click.option("--skip-code-check", is_flag=True,
+              help="Validate only the application id; do not require offer codes from the local matrix.")
 @click.option("--output", "output_path", type=click.Path(dir_okay=False, path_type=Path), metavar="PATH",
               help="Write the resolved target list here instead of stdout.")
-def preflight_command(app, cloud, offer_codes, catalog_source, offer_source, timeout, output_path):
+def preflight_command(app, cloud, offer_codes, allow_unlisted_codes, catalog_source, offer_source, timeout, skip_code_check, output_path):
     """Validate an application id and its offer codes before any cloud call."""
     requested = [code.strip() for code in (offer_codes or "").split(",") if code.strip()]
     try:
-        value = service.preflight(app, cloud, requested, catalog_source, offer_source, timeout)
+        value = service.preflight(
+            app, cloud, requested, catalog_source, offer_source, timeout,
+            allow_unlisted=allow_unlisted_codes,
+            skip_code_check=skip_code_check,
+        )
     except (OSError, ValueError) as error:
         raise click.ClickException(str(error)) from error
     write_output(value, output_path)
 
 
 @offer_command.command("targets")
-@click.option("--app", required=True, help="Application id from the pulled catalog.")
+@click.option("--app", required=True, callback=single_app, help="Application id from the pulled catalog.")
 @click.option("--cloud", required=True, type=click.Choice(CONFIGURED_PLATFORMS),
               help="Target cloud platform from config/marketplace.json.")
 @click.option("--catalog", "catalog_source", default=None, metavar="SOURCE",
               help="Temporary Contentful catalog JSON. Default: data/.work/catalog.json.")
 @click.option("--offer-codes", "offer_codes", default=None, metavar="CODES",
               help="Comma-separated offer codes; default: every code recorded for the application.")
+@click.option("--allow-unlisted-codes", is_flag=True,
+              help="Accept explicit codes that the catalog does not record for this application, "
+                   "for example to reassign an existing offer. Each code must still resolve to one entity.")
 @click.option("--profile", default=None)
 @click.option("--max-results", type=click.IntRange(1, 100), default=50, show_default=True)
 @click.option("--entity-map", type=click.Path(dir_okay=False, path_type=Path), metavar="PATH",
               help="Optional code-to-EntityId cache; known codes skip the catalog scan.")
 @click.option("--output", "output_path", type=click.Path(dir_okay=False, path_type=Path), metavar="PATH",
               help="Write the resolved targets here instead of stdout.")
-def targets_command(app, cloud, catalog_source, offer_codes, profile, max_results, entity_map, output_path):
+def targets_command(app, cloud, catalog_source, offer_codes, allow_unlisted_codes, profile, max_results, entity_map, output_path):
     """Resolve offer codes to Catalog EntityIds and record them in the catalog."""
     catalog_path = Path(catalog_source or catalog_default_path())
     try:
@@ -209,11 +231,12 @@ def targets_command(app, cloud, catalog_source, offer_codes, profile, max_result
     requested = list(dict.fromkeys(
         code.strip() for code in (offer_codes or "").split(",") if code.strip()
     ))
+    unlisted: list[str] = []
     if requested:
-        unknown = [code for code in requested if code not in recorded]
-        if unknown:
+        unlisted = [code for code in requested if code not in recorded]
+        if unlisted and not allow_unlisted_codes:
             raise click.ClickException(
-                f"offer code(s) {', '.join(unknown)} do not belong to {app!r} on {cloud}"
+                f"offer code(s) {', '.join(unlisted)} do not belong to {app!r} on {cloud}"
             )
         codes = requested
     else:
@@ -279,19 +302,156 @@ def targets_command(app, cloud, catalog_source, offer_codes, profile, max_result
     document = {"schemaVersion": 1, "app": app, "cloud": cloud, "targets": targets}
     if duplicates:
         document["duplicates"] = duplicates
+    if unlisted:
+        document["unlistedCodes"] = unlisted
     write_output(document, output_path)
+
+
+@offer_command.command("resolve")
+@inputs
+@click.option("--cloud", required=True, type=click.Choice(CONFIGURED_PLATFORMS),
+              help="Target cloud platform from config/marketplace.json.")
+@click.option("--code", default=None, metavar="CODE",
+              help="Target one offer code/SKU directly. A code that belongs to another "
+                   "application is treated as a deliberate override.")
+@click.option("--offer", default=None, metavar="OFFER",
+              help="Offer variant from the application's multiOffers, for example Ubuntu, "
+                   "Multisite, 'Ubuntu; Multisite', or base for the no-label offer.")
+@click.option("--profile", default=None)
+@click.option("--product-catalog", default=CATALOG_URL, metavar="SOURCE",
+              help="Full product_en.json catalog for detecting other applications and ambiguous titles.")
+@click.option("--output", "output_path", type=click.Path(dir_okay=False, path_type=Path), metavar="PATH",
+              help="Write the resolved targets here instead of stdout.")
+def resolve_command(app, catalog_source, versions, vendor, template, cloud, code, offer, profile, product_catalog, output_path):
+    """Resolve live AWS listings to offer targets by application.
+
+    Matches the application by trademark in the live listing title/summary,
+    detects OS and label variants, and records one code per variant in the
+    temporary catalog for build, plan and apply.
+    """
+    if cloud not in service.APPLY_CLOUDS:
+        raise click.ClickException(
+            f"cloud {cloud!r} has no live resolver; implemented: "
+            + ", ".join(service.APPLY_CLOUDS)
+        )
+    if code is not None and (not code.strip() or any(c in code for c in ",，")):
+        raise click.BadParameter("provide exactly one non-empty code", param_hint="--code")
+    code = code.strip() if code is not None else None
+    if offer and offer.casefold() == "none":
+        offer = None
+    catalog_path = Path(catalog_source or catalog_default_path())
+    expected = catalog_file.read_bytes(catalog_path)
+    value = bundle(app, catalog_source, versions, vendor, template)
+    try:
+        offer_resolve.validate_offer_choice(value, offer)
+        identities = offer_resolve.load_identities(product_catalog, service.load_special_cases())
+        products = offer_resolve.list_aws_products(profile)
+        document = offer_resolve.resolve(
+            value, products, code=code, offer=offer, identities=identities
+        )
+    except (OSError, ValueError, KeyError) as error:
+        raise click.ClickException(str(error)) from error
+
+    try:
+        catalog = json.loads(expected)
+    except (OSError, ValueError) as error:
+        raise click.ClickException(f"failed to read catalog {catalog_path}: {error}") from None
+    item = next(
+        (
+            entry
+            for entry in (catalog.get("items") or [])
+            if isinstance(entry, dict) and entry.get("id") == app
+        ),
+        None,
+    )
+    if item is None:
+        raise click.ClickException(f"application {app!r} is absent from {catalog_path}")
+    item["targets"] = [
+        {
+            "code": target.get("code") or None,
+            "entityId": target["entityId"],
+            "offer": target.get("offer", ""),
+        }
+        for target in document["targets"]
+    ]
+    item["entityId"] = document["targets"][0]["entityId"]
+    try:
+        catalog_file.replace(
+            catalog_path, json.dumps(catalog, ensure_ascii=False, indent=2) + "\n",
+            expected=expected,
+        )
+    except (OSError, ValueError) as error:
+        raise click.ClickException(str(error)) from None
+    write_output(document, output_path)
+
+
+@offer_command.command("versions")
+@click.option("--source", default=VERSIONS_URL, show_default=True, metavar="SOURCE",
+              help="Application version source URL or local JSON.")
+@click.option("--output", "output_path", required=True,
+              type=click.Path(dir_okay=False, path_type=Path), metavar="PATH",
+              help="Write the version snapshot here.")
+def versions_command(source, output_path):
+    """Snapshot the application version source used by build, plan and apply."""
+    try:
+        value = service.versions_snapshot(source)
+    except ValueError as error:
+        raise click.ClickException(str(error)) from error
+    write_output(value, output_path)
+
+
+@offer_command.command("doctor")
+@click.option("--cloud", required=True, type=click.Choice(CONFIGURED_PLATFORMS),
+              help="Target cloud platform from config/marketplace.json.")
+@click.option("--plan-role-arn", default=None, metavar="ARN",
+              help="Validate the read-only planning role; an empty value fails.")
+@click.option("--apply-role-arn", default=None, metavar="ARN",
+              help="Validate the write apply role; an empty value fails.")
+def doctor_command(cloud, plan_role_arn, apply_role_arn):
+    """Check cloud support and role configuration before plan or apply."""
+    try:
+        if cloud not in service.APPLY_CLOUDS:
+            raise ValueError(
+                f"cloud {cloud!r} has no offer plan/apply implementation; "
+                f"implemented: {', '.join(service.APPLY_CLOUDS)}"
+            )
+        checked = []
+        if plan_role_arn is not None:
+            service.require_role_arn(cloud, "plan", plan_role_arn)
+            checked.append("plan")
+        if apply_role_arn is not None:
+            service.require_role_arn(cloud, "apply", apply_role_arn)
+            checked.append("apply")
+    except ValueError as error:
+        raise click.ClickException(str(error)) from error
+    write_output(
+        {
+            "schemaVersion": 1,
+            "cloud": cloud,
+            "implemented": True,
+            "checkedRoles": checked,
+        },
+        None,
+    )
 
 
 @offer_command.command("build")
 @inputs
 @click.option("--cloud", required=True, type=click.Choice(CONFIGURED_PLATFORMS),
               help="Target cloud platform from config/marketplace.json. Must match the template target.")
+@click.option("--offer-codes", "offer_codes", default=None, metavar="CODES",
+              help="Comma-separated offer codes to preview; default: every code recorded in the catalog for the cloud.")
+@click.option("--allow-unlisted-codes", is_flag=True,
+              help="Preview explicit codes that the catalog does not record for this application, "
+                   "for example to reassign an existing offer.")
 @click.option("--output", "output_path", type=click.Path(dir_okay=False, path_type=Path), metavar="PATH",
               help="Default: data/.work/<cloud>/<key>.json; use - for stdout.")
 @click.option("--publish-ready", is_flag=True,
               help="Fail without writing when required version or Catalog identity is missing.")
-def build_command(app, catalog_source, versions, vendor, template, cloud, output_path, publish_ready):
+def build_command(app, catalog_source, versions, vendor, template, cloud, offer_codes, allow_unlisted_codes, output_path, publish_ready):
     """Build a human-review preview matching the authoring template."""
+    if allow_unlisted_codes and offer_codes is None:
+        raise click.ClickException("--allow-unlisted-codes requires explicit --offer-codes")
     value = bundle(app, catalog_source, versions, vendor, template)
     preview = value["preview"]
     target_platform = (preview.get("target") or {}).get("platform")
@@ -299,19 +459,62 @@ def build_command(app, catalog_source, versions, vendor, template, cloud, output
         raise click.ClickException(
             f"template target platform {target_platform!r} does not match --cloud {cloud!r}"
         )
+    truncation = preview.get("keywordTruncation")
+    if truncation:
+        click.echo(
+            f"WARNING {app}: SearchKeywords truncated {truncation['original']} -> "
+            f"{truncation['kept']} entries (combined {truncation['originalCharacters']} -> "
+            f"{truncation['combinedCharacters']} characters)",
+            err=True,
+        )
     if publish_ready and value["publishBlockers"]:
         raise click.ClickException(
             "offer is valid as a draft but not ready to publish: "
             + "; ".join(value["publishBlockers"])
         )
-    labels = labels_for(app, cloud)
-    codes = [
-        code
-        for code in (value.get("offerCodes") or {}).get(cloud) or []
-        if isinstance(code, str) and code.strip()
-    ]
+    resolved = value.get("targets") or []
+    if resolved:
+        if allow_unlisted_codes:
+            raise click.ClickException("--allow-unlisted-codes cannot be combined with resolved targets; run resolve again")
+        requested = list(dict.fromkeys(
+            code.strip() for code in (offer_codes or "").split(",") if code.strip()
+        ))
+        if offer_codes is not None and not requested:
+            raise click.ClickException("--offer-codes must not be empty")
+        known = {target.get("code") for target in resolved}
+        unknown = set(requested) - known
+        if unknown:
+            raise click.ClickException("code(s) not in resolved targets: " + ", ".join(sorted(unknown)))
+        selected = [t for t in resolved if not requested or t.get("code") in requested]
+        codes = [target["code"] for target in selected if target.get("code")]
+        if any("offer" in target for target in selected):
+            labels = {t["code"]: t.get("offer", "") for t in selected if t.get("code")}
+        else:
+            labels = labels_for(app, cloud)
+    else:
+        labels = labels_for(app, cloud)
+        recorded = [
+            code
+            for code in (value.get("offerCodes") or {}).get(cloud) or []
+            if isinstance(code, str) and code.strip()
+        ]
+        requested = list(dict.fromkeys(
+            code.strip() for code in (offer_codes or "").split(",") if code.strip()
+        ))
+        if requested:
+            unlisted = [code for code in requested if code not in recorded]
+            if unlisted and not allow_unlisted_codes:
+                raise click.ClickException(
+                    f"offer code(s) {', '.join(unlisted)} are not recorded for {app!r} on {cloud}; "
+                    "use --allow-unlisted-codes to preview a forced reassignment"
+                )
+            codes = requested
+        else:
+            codes = recorded
+        if offer_codes is not None and not requested:
+            raise click.ClickException("--offer-codes must not be empty")
     warnings = []
-    if len(codes) > 1:
+    if requested or len(codes) > 1:
         targets = []
         for code in codes:
             label = labels.get(code, "")
@@ -336,6 +539,8 @@ def build_command(app, catalog_source, versions, vendor, template, cloud, output
             {"code": code, **warning} for warning in variant.get("titleWarnings") or []
         ]
         document = variant["preview"]
+        if code:
+            document["offerCode"] = code
     if value["publishBlockers"]:
         document["publishBlockers"] = value["publishBlockers"]
         click.echo(
@@ -562,8 +767,10 @@ def _resolve_aws_entities(codes, profile, max_results=50, known=None):
 def resolve_entity_command(cloud, codes, profile):
     """Resolve marketplace offer codes to seller Catalog EntityIds."""
     try:
-        if cloud != "aws":
-            raise click.ClickException(f"unsupported cloud: {cloud}")
+        if cloud not in service.APPLY_CLOUDS:
+            raise click.ClickException(
+                f"unsupported cloud: {cloud}; implemented: {', '.join(service.APPLY_CLOUDS)}"
+            )
         unique_codes = list(dict.fromkeys(codes))
         matches = _resolve_aws_entities(unique_codes, profile)
         results = []
@@ -610,7 +817,16 @@ def plan_command(app, catalog_source, versions, vendor, template, current, profi
     """Produce a revision-bound UpdateInformation diff without submitting it."""
     value = bundle(app, catalog_source, versions, vendor, template)
     targets = _selected_targets(value, all_codes, offer_codes)
-    labels = labels_for(app, (value["preview"].get("target") or {}).get("platform") or "aws")
+    if any("offer" in target for target in targets):
+        labels = {
+            target.get("code"): target.get("offer", "")
+            for target in targets
+            if target.get("code")
+        }
+    else:
+        labels = labels_for(
+            app, (value["preview"].get("target") or {}).get("platform") or "aws"
+        )
     try:
         if len(targets) == 1 and not all_codes:
             entity = service.read_json(current) if current else service.aws_call(
@@ -665,7 +881,17 @@ def apply_command(app, catalog_source, versions, vendor, template, plan_path, pr
     value = bundle(app, catalog_source, versions, vendor, template)
     if value["publishBlockers"]:
         raise click.ClickException("publication blocked: " + "; ".join(value["publishBlockers"]))
-    labels = labels_for(app, (value["preview"].get("target") or {}).get("platform") or "aws")
+    resolved = value.get("targets") or []
+    if any("offer" in target for target in resolved):
+        labels = {
+            target.get("code"): target.get("offer", "")
+            for target in resolved
+            if target.get("code")
+        }
+    else:
+        labels = labels_for(
+            app, (value["preview"].get("target") or {}).get("platform") or "aws"
+        )
     try:
         reviewed = service.read_json(plan_path)
         client = service.aws_client(profile)
@@ -720,7 +946,10 @@ def apply_command(app, catalog_source, versions, vendor, template, plan_path, pr
                 for result in submitted:
                     poll(
                         client, result["changeSetId"], wait_seconds,
-                        {**value, "entityId": result["entityId"]},
+                        service.with_variant(
+                            {**value, "entityId": result["entityId"]},
+                            labels.get(result.get("code"), ""),
+                        ),
                         emit=_status_to_stderr,
                     )
             return
@@ -752,7 +981,7 @@ def apply_command(app, catalog_source, versions, vendor, template, plan_path, pr
         change_id = response["ChangeSetId"]
         output({"changeSetId": change_id, "status": "SUBMITTED", "planHash": expected["planHash"]})
         if wait_seconds:
-            poll(client, change_id, wait_seconds, {**value, "entityId": single}, emit=_status_to_stderr)
+            poll(client, change_id, wait_seconds, bundle_value, emit=_status_to_stderr)
     except (ValueError, KeyError, OSError) as error:
         raise click.ClickException(str(error)) from error
 
@@ -794,3 +1023,35 @@ def status_command(change_set_id, profile, wait_seconds):
         poll(service.aws_client(profile), change_set_id, wait_seconds)
     except ValueError as error:
         raise click.ClickException(str(error)) from error
+
+
+@offer_command.command("report")
+@click.argument("kind", type=click.Choice(["preflight", "plan", "apply"]))
+@click.option("--input", "input_path", required=True,
+              type=click.Path(exists=True, dir_okay=False, path_type=Path), metavar="PATH",
+              help="Preflight, plan or apply JSON document.")
+@click.option("--cloud", default=None,
+              help="Cloud label; enables the entity ARN for aws plans.")
+@click.option("--app-name", "app_name", default=None,
+              help="Display name used in the plan title.")
+@click.option("--account-id", "account_id", default=None,
+              help="AWS account id used to render entity ARNs.")
+@click.option("--output", "output_path", type=click.Path(dir_okay=False, path_type=Path), metavar="PATH",
+              help="Write Markdown here instead of stdout.")
+def report_command(kind, input_path, cloud, app_name, account_id, output_path):
+    """Render a preflight, plan or apply document as Markdown."""
+    try:
+        value = service.read_json(input_path)
+    except (OSError, ValueError) as error:
+        raise click.ClickException(f"failed to read {input_path}: {error}") from None
+    if not isinstance(value, dict):
+        raise click.ClickException(f"{input_path} must contain a JSON object")
+    if kind == "preflight":
+        text = offer_report.preflight(value)
+    elif kind == "plan":
+        text = offer_report.plan(
+            value, cloud=cloud, app_name=app_name, account_id=account_id
+        )
+    else:
+        text = offer_report.apply(value, cloud=cloud)
+    write_text_output(text, output_path)

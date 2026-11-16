@@ -83,6 +83,7 @@ includes drafts; linked fields may remain as link objects in that mode.
 | `--fields` | `trademark,overview,keywords,usecases,relatedApps,summary,hasenterprise` | Requested field ids |
 | `--catalog` | configured `product_en.json` URL | Target application list (URL or local file) |
 | `--offer` | configured `data/offer-codes/` | Offer-codes directory or JSON file used to add per-platform `offerCodes` |
+| `--skip-offer-codes` | off | Do not read the offer-codes matrix; the apply workflow resolves codes live |
 | `--apps` | all catalog applications | Comma-separated application ids to export; must exist in the target catalog |
 | `--output` | `data/.work/catalog.json` | JSON destination; `-` means stdout; `MK_CATALOG_DIR` overrides the directory |
 | `--merge` | off | Merge pulled items into an existing output file, preserving other items and their order |

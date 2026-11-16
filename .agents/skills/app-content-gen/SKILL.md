@@ -48,9 +48,10 @@ scope rather than the broader scenario. For example, "更新 summary" does not
 also authorize an overview rewrite. Resolve explicitly named products to
 unambiguous catalog ids; never assume `apps=all` because no app was specified.
 
-Do not use this skill to push reviewed content (use `app-content-push`), draft
-full platform-specific listings (use `marketplace-product-content`), or inspect
-marketplace listing status and versions (use `marketplace-operations-check`).
+Do not use this skill to push reviewed content (use `app-content-push`), publish
+AWS listings (use the `offer-apply.yml` workflow described in
+`specs/marketplace-product-content.md`), or inspect marketplace listing status
+and versions (use `offer-listing-check`).
 An explicit read-only review or evidence-only request must not trigger a local
 refresh or generation write; report findings without changing the catalog.
 
@@ -104,7 +105,7 @@ loading this skill does not automatically load supporting files.
 
 | Task / selected fields | Required reading |
 | --- | --- |
-| Any generation | [field-rules.md](references/field-rules.md): common formatting and selected field sections |
+| Any generation | [field-rules.md](references/field-rules.md): hard constraints, editorial guidance and the selected field sections |
 | `relatedApps` | [related-apps.md](references/related-apps.md): complete stack rules and store-catalog candidates |
 | Framework/runtime with `usecases` or `hasenterprise` | [Frameworks and language runtimes](references/related-apps.md#frameworks-and-language-runtimes) |
 | Workflow/automation app with `summary` or `overview` | [Workflow tools with AI capability](references/related-apps.md#workflow-tools-with-ai-capability), checking whether native AI applies |

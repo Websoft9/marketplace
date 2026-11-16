@@ -9,6 +9,8 @@ build/
 dist/
 
 data/.work/
+# Local cloud/Contentful credential files (never commit)
+.secrets/
 # CLI pull/apply backups, wherever the output file lives
 catalog.json.before-*.json
 

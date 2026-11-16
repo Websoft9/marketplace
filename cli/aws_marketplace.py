@@ -10,11 +10,23 @@ This module owns the boundary between the authoring model and AWS:
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 CATALOG = "AWSMarketplace"
 ENTITY_TYPE = "AmiProduct@1.0"
 CHANGE_TYPE = "UpdateInformation"
+ROLE_ARN_PATTERN = re.compile(r"^arn:aws:iam::[0-9]{12}:role/.+$")
+
+
+def validate_role_arn(value: str, label: str = "role ARN") -> str:
+    """Return a validated IAM role ARN or raise ``ValueError``."""
+    value = (value or "").strip()
+    if not value:
+        raise ValueError(f"{label} is empty")
+    if not ROLE_ARN_PATTERN.match(value):
+        raise ValueError(f"{label} must be an IAM role ARN")
+    return value
 
 FIELD_SPECS: dict[str, dict[str, Any]] = {
     "ProductTitle": {
@@ -208,7 +220,9 @@ def aws_client(profile: str | None = None):
 def aws_call(client, operation: str, **kwargs) -> dict[str, Any]:
     """Expose error codes only; never log raw signed requests or sensitive SDK responses."""
     try:
-        return getattr(client, operation)(Catalog=CATALOG, **kwargs)
+        if operation != "batch_describe_entities":
+            kwargs = {"Catalog": CATALOG, **kwargs}
+        return getattr(client, operation)(**kwargs)
     except Exception as error:
         code = getattr(error, "response", {}).get("Error", {}).get("Code", type(error).__name__)
         raise ValueError(f"AWS {operation} failed ({code})") from None

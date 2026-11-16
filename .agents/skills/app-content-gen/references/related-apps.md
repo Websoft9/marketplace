@@ -4,8 +4,10 @@ Read this file for `relatedApps`. Read its framework/runtime section when those
 roles have selected `usecases` or `hasenterprise`, and its native-AI workflow
 section when those roles have selected `summary` or `overview`. If the role is
 uncertain, read the applicable category sections before generation. These rules
-never authorize changes to unselected fields. Shared field formatting and
-evidence rules live in [field-rules.md](field-rules.md).
+never authorize changes to unselected fields. Everything here is editorial
+stack guidance; the mechanical `relatedApps` limits (count, exact catalog
+Trademarks, generic runtime, self-reference) are hard constraints in
+[field-rules.md](field-rules.md), together with the shared field rules.
 
 ### `relatedApps`
 

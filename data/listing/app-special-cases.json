@@ -33,6 +33,12 @@
     },
     "graylog": {
       "editionLabel": "Open"
+    },
+    "haproxy": {
+      "multiOffers": ["Ubuntu", "Debian"]
+    },
+    "wordpress": {
+      "multiOffers": ["", "Multisite"]
     }
   }
 }
