@@ -67,9 +67,9 @@ def select_applications(source: str, selection: str | None = None) -> list[dict[
     applications = []
     for key in ids:
         trademark = catalog[key].get("trademark")
-        if not isinstance(trademark, str) or not trademark.strip():
-            raise ScreenshotError("Selected catalog applications must have a trademark for exact result matching.")
-        applications.append({"id": key, "trademark": trademark.strip()})
+        # A display name is optional, not an identity requirement. The browser
+        # verifies the actual app ID in the detail view before taking a screenshot.
+        applications.append({"id": key, "trademark": trademark.strip() if isinstance(trademark, str) else ""})
     return applications
 
 

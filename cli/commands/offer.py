@@ -357,10 +357,17 @@ def resolve_command(app, catalog_source, versions, vendor, template, cloud, code
         )
         products = store.inventory_products(inventory, cloud)
         identities = offer_resolve.load_identities(product_catalog, service.load_special_cases())
+        warnings = offer_resolve.catalog_warnings(identities)
+        for warning in warnings:
+            click.echo(f"WARNING identity catalog [{warning['appId']}]: {warning['message']}", err=True)
         document = offer_resolve.resolve(
             value, products, code=code, offer=offer, identities=identities
         )
         document["inventory"] = store.inventory_provenance(inventory, inventory_path)
+        document["matching"] = {
+            "rulesVersion": offer_resolve.IDENTITY_RULES_VERSION, "complete": True,
+            "degraded": bool(warnings), "warnings": warnings,
+        }
     except (OSError, ValueError, KeyError) as error:
         raise click.ClickException(str(error)) from error
 

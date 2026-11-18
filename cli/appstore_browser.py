@@ -7,6 +7,8 @@ from urllib.parse import urlsplit
 from .app_screenshots import Credentials, ScreenshotError, VIEWPORT
 
 SEARCH_PLACEHOLDER = "Enter an app name to search, such as WordPress, MySQL, GitLab ..."
+LOADING_PLACEHOLDER = "Loading App Store data..."
+EMPTY_RESULTS_PLACEHOLDER = "No apps match the current filters"
 GITHUB_APP_BASE = "https://github.com/Websoft9/docker-library/tree/main/apps/"
 
 
@@ -101,13 +103,24 @@ class AppStoreBrowser:
             search.press("Enter")
             phase = "missing_or_ambiguous_result"
             # MUI's stable component class, not its generated css-* classes.
-            card = page.locator(".MuiCard-root").filter(has=page.get_by_text(app["trademark"], exact=True))
+            trademark = app.get("trademark", "")
+            card = (page.locator(".MuiCard-root")
+                    .filter(has_not_text=LOADING_PLACEHOLDER)
+                    .filter(has_not_text=EMPTY_RESULTS_PLACEHOLDER))
+            if trademark:
+                card = card.filter(has=page.get_by_text(trademark, exact=True))
             self.expect(card).to_have_count(1, timeout=self.timeout_ms)
-            card.get_by_text(app["trademark"], exact=True).click()
+            if trademark:
+                card.get_by_text(trademark, exact=True).click()
+            else:
+                # With no catalog display name, accept only one search result;
+                # never guess a title or select the first of several candidates.
+                card.click()
             phase = "detail_identity_failed"
             dialog = page.get_by_role("dialog")
             self.expect(dialog).to_have_count(1, timeout=self.timeout_ms)
-            self.expect(dialog.get_by_role("heading").get_by_text(app["trademark"], exact=True)).to_be_visible()
+            heading = dialog.get_by_role("heading")
+            self.expect(heading.get_by_text(trademark, exact=True) if trademark else heading).to_be_visible()
             # Verify the application ID independently of its display trademark.
             self.expect(dialog.get_by_role("link", name="GitHub", exact=True)).to_have_attribute(
                 "href", GITHUB_APP_BASE + app["id"], timeout=self.timeout_ms,

@@ -33,11 +33,20 @@ STORE = """<!doctype html><html lang="en"><body>
 <input placeholder="SEARCH_PLACEHOLDER" oninput="search(this.value)">
 <div id="results"></div><div id="details"></div>
 <script>
-const titles={n8n:'n8n',mysql:'MySQL',wrong:'Wrong',duplicate:'Duplicate',broken:'Broken'};
+const titles={n8n:'n8n',mysql:'MySQL',ffmpeg:'FFmpeg',wrong:'Wrong',duplicate:'Duplicate',broken:'Broken'};
 function search(id) {
   document.querySelector('#details').innerHTML='';
   const title=titles[id];
+  if(!title) {
+    document.querySelector('#results').innerHTML='<div class="MuiCard-root">No apps match the current filters</div>';
+    return;
+  }
   const card=title ? `<div class="MuiCard-root"><p onclick="detail('${id}')">${title}</p></div>` : '';
+  if(id==='ffmpeg') {
+    document.querySelector('#results').innerHTML='<div class="MuiCard-root">Loading App Store data...</div>';
+    setTimeout(()=>{ document.querySelector('#results').innerHTML=card; },150);
+    return;
+  }
   document.querySelector('#results').innerHTML=card+(id==='duplicate' ? card : '');
 }
 function detail(id) {
@@ -116,6 +125,18 @@ class BrowserFixtureTests(unittest.TestCase):
         with AppStoreBrowser(credentials, timeout=1) as browser:
             validate_png(browser.capture({"id": "mysql", "trademark": "MySQL"}))
         self.assertEqual(self.server.login_posts - before, 1)
+
+    def test_missing_trademark_uses_unique_result_and_checks_detail_appid(self):
+        with AppStoreBrowser(self.credentials, timeout=1) as browser:
+            validate_png(browser.capture({"id": "ffmpeg", "trademark": ""}))
+            for appid, error in (("missing", "missing_or_ambiguous_result"),
+                                 ("duplicate", "missing_or_ambiguous_result"),
+                                 ("wrong", "detail_identity_failed")):
+                with self.subTest(appid=appid), self.assertRaises(ScreenshotError) as raised:
+                    browser.capture({"id": appid, "trademark": ""})
+                self.assertEqual(str(raised.exception), error)
+                self.assertEqual(browser.context.pages, [])
+            validate_png(browser.capture({"id": "mysql", "trademark": "MySQL"}))
 
     def test_authentication_errors_are_distinguished_and_never_retried(self):
         for path, error in (("rejected", "login_rejected"), ("rate-limited", "login_rate_limited"),

@@ -54,11 +54,36 @@ class ScreenshotTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(screenshots.ScreenshotError):
                 screenshots.select_applications(str(self.catalog), value)
 
-    def test_rejects_empty_unsafe_or_incomplete_catalog(self):
-        for value in ([], [{"key": "../bad", "trademark": "bad"}], [{"key": "n8n"}]):
+    def test_rejects_empty_or_unsafe_catalog(self):
+        for value in ([], [{"key": "../bad", "trademark": "bad"}]):
             self.catalog.write_text(json.dumps(value))
             with self.subTest(value=value), self.assertRaises(screenshots.ScreenshotError):
                 screenshots.select_applications(str(self.catalog))
+
+    def test_missing_blank_or_invalid_trademark_does_not_abort_selection(self):
+        for value in ({}, {"trademark": None}, {"trademark": ""}, {"trademark": "  "}, {"trademark": 123}):
+            self.catalog.write_text(json.dumps([
+                {"key": "n8n", "trademark": "n8n"}, {"key": "ffmpeg", **value},
+                {"key": "mysql", "trademark": "MySQL"},
+            ]))
+            with self.subTest(value=value):
+                apps = screenshots.select_applications(str(self.catalog))
+                self.assertEqual([app["id"] for app in apps], ["n8n", "ffmpeg", "mysql"])
+                self.assertEqual(apps[1], {"id": "ffmpeg", "trademark": ""})
+
+    def test_full_batch_with_missing_trademark_runs_and_writes_report(self):
+        self.catalog.write_text(json.dumps([
+            {"key": "n8n", "trademark": "n8n"}, {"key": "ffmpeg", "trademark": None},
+            {"key": "mysql", "trademark": "MySQL"},
+        ]))
+        self.apps = screenshots.select_applications(str(self.catalog))
+        browser = mock.MagicMock()
+        browser.capture.return_value = png()
+        report = self.run_batch(browser, upload=False)
+        self.assertEqual((report["succeeded"], report["failed"]), (3, 0))
+        self.assertEqual(browser.capture.call_args_list[1].args[0], {"id": "ffmpeg", "trademark": ""})
+        self.assertTrue((self.directory / "output/ffmpeg-installation.png").is_file())
+        self.assertEqual(json.loads((self.directory / "output/report.json").read_text()), report)
 
     def test_catalog_errors_do_not_expose_source(self):
         with mock.patch.object(screenshots, "load_catalog", side_effect=ValueError("sensitive-url")):
@@ -176,6 +201,33 @@ class ScreenshotTests(unittest.TestCase):
 
 
 class ScreenshotCommandTests(unittest.TestCase):
+    def test_default_batch_reports_missing_ffmpeg_and_continues_to_wordpress(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            catalog = root / "catalog.json"
+            catalog.write_text(json.dumps([
+                {"key": "ffmpeg", "trademark": None}, {"key": "wordpress", "trademark": "WordPress"},
+            ]))
+            with mock.patch("cli.app_screenshots.Credentials.from_environment"), \
+                 mock.patch("cli.appstore_browser.AppStoreBrowser") as factory, \
+                 mock.patch.object(screenshots, "create_s3_client") as aws:
+                browser = factory.return_value.__enter__.return_value
+                browser.capture.side_effect = [screenshots.ScreenshotError("missing_or_ambiguous_result"), png()]
+                result = CliRunner().invoke(cli, [
+                    "asset", "screenshots", "--catalog", str(catalog), "--no-upload",
+                    "--output-dir", str(root / "output"), "--summary", str(root / "summary.md"),
+                ])
+            self.assertEqual(result.exit_code, 1, result.output)
+            self.assertIn("1 succeeded, 1 failed", result.output)
+            self.assertNotIn("must have a trademark", result.output)
+            self.assertEqual(browser.capture.call_count, 2)
+            factory.return_value.__enter__.assert_called_once()
+            aws.assert_not_called()
+            report = json.loads((root / "output/report.json").read_text())
+            self.assertEqual(report["results"][0]["error"], "missing_or_ambiguous_result")
+            self.assertEqual(report["results"][1]["status"], "success")
+            self.assertIn("missing_or_ambiguous_result", (root / "summary.md").read_text())
+
     def test_command_groups_have_separate_responsibilities(self):
         runner = CliRunner()
         root = runner.invoke(cli, ["--help"])

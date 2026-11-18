@@ -22,6 +22,18 @@ BASE = "base"
 IDENTITY_RULES_VERSION = "deterministic-first-appearance-v2"
 
 
+class IdentityCatalogError(ValueError):
+    """Catalog validation failure with an explicitly safe diagnostic message."""
+
+
+class IdentityCatalog(dict[str, list[str]]):
+    """Effective identity names plus record-level degradation diagnostics."""
+
+    def __init__(self):
+        super().__init__()
+        self.warnings: list[dict[str, str]] = []
+
+
 def normalize(value: str) -> str:
     return " ".join(str(value or "").casefold().split())
 
@@ -41,28 +53,53 @@ def summary_lead(summary: str) -> str:
     return re.split(r"[,，]", summary, maxsplit=1)[0]
 
 
-def load_identities(source: str, special_cases: dict | None = None) -> dict[str, list[str]]:
-    """Load the full store catalog, including reviewed title-brand exceptions."""
-    data = load_json(source)
+def load_identities(source: str, special_cases: dict | None = None) -> IdentityCatalog:
+    """Degrade missing names to reviewed branding or safe IDs, never drop records."""
+    try:
+        data = load_json(source)
+    except (OSError, ValueError) as error:
+        raise IdentityCatalogError(f"cannot read application identity catalog ({type(error).__name__})") from None
     if not isinstance(data, list):
-        raise ValueError("product catalog must be an array")
-    result = {}
-    for row in data:
+        raise IdentityCatalogError("product catalog must be an array")
+    result = IdentityCatalog()
+    for index, row in enumerate(data):
         if not isinstance(row, dict):
-            raise ValueError("invalid product catalog item")
+            raise IdentityCatalogError(f"invalid product catalog item at record {index}")
         app, trademark = row.get("key"), row.get("trademark")
-        if not isinstance(app, str) or not app.strip() or app in result:
-            raise ValueError("product catalog requires unique non-empty application keys")
-        if not isinstance(trademark, str) or not trademark.strip():
-            raise ValueError(f"product catalog {app!r} has no trademark")
-        names = [trademark]
+        if not isinstance(app, str) or not re.fullmatch(r"[a-z0-9][a-z0-9._-]*", app):
+            raise IdentityCatalogError(f"product catalog requires valid lowercase application keys (record {index})")
+        if app in result:
+            raise IdentityCatalogError(f"duplicate application key {app!r} in product catalog (record {index})")
+        if trademark is not None and not isinstance(trademark, str):
+            raise IdentityCatalogError(f"product catalog {app!r} has an invalid trademark type")
+        usable_trademark = isinstance(trademark, str) and bool(normalize_identity(trademark))
+        names = [trademark] if usable_trademark else []
         branding = ((special_cases or {}).get(app) or {}).get("titleTrademark")
+        if branding is not None and (not isinstance(branding, str) or not normalize_identity(branding)):
+            raise IdentityCatalogError(f"invalid reviewed titleTrademark for application {app!r}")
         if branding and branding not in names:
             names.append(branding)
+        if not usable_trademark:
+            if not names and not _safe_id_name(normalize_identity(app)):
+                raise IdentityCatalogError(
+                    f"product catalog {app!r} has no usable trademark or reviewed name, "
+                    "and its ID is unsafe for automatic fallback; nothing written"
+                )
+            result.warnings.append({
+                "code": "missing-trademark", "appId": app,
+                "fallback": "title-trademark" if names else "app-id",
+                "message": ("Missing/empty trademark; using reviewed titleTrademark."
+                            if names else "Missing/empty trademark; using safe application ID fallback."),
+            })
         result[app] = names
     if not result:
-        raise ValueError("product catalog is empty")
+        raise IdentityCatalogError("product catalog is empty")
     return result
+
+
+def catalog_warnings(identities):
+    """Also accept plain dictionaries used by existing callers and test fixtures."""
+    return list(getattr(identities, "warnings", []))
 
 
 def identify(title: str, summary: str, identities: dict[str, list[str]]) -> set[str]:
@@ -290,6 +327,8 @@ def resolve(
     identities = identities or {app: [trademark]}
     if app not in identities:
         raise ValueError(f"application {app!r} is absent from the product catalog")
+    if not any(normalize_identity(name) for name in identities[app]) and not _safe_id_name(normalize_identity(app)):
+        raise ValueError(f"application {app!r} has no usable identity; restore its trademark before resolving targets")
 
     if code:
         matches = [

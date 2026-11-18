@@ -8,6 +8,28 @@ matching, not keyword extraction, fuzzy matching or an LLM. No manually maintain
 application alias table is required. Existing reviewed `titleTrademark` rendering
 exceptions remain valid alternate full names.
 
+## Catalog record degradation
+
+Missing, null, blank or display-mark-only `trademark` values do not automatically
+invalidate the whole catalog. Keep the application ID in the effective identity
+map and use an existing reviewed `titleTrademark`, or the existing safe ID
+fallback (`ffmpeg`, for example). Do not manufacture an official trademark or
+silently remove the application from competing matches.
+
+`load_identities` returns a dict-compatible `IdentityCatalog` with structured
+warnings (`code`, `appId`, `fallback`, `message`). Both CLI consumers print them
+to stderr and record `matching.degraded`/`matching.warnings` in their JSON.
+The Apply resolve summary also displays them. `matching.complete: true` means
+all records remain usable under the rules, not that all source metadata is present.
+
+Bad catalog structure, invalid/duplicate application keys, non-string non-null
+trademarks, invalid reviewed names and an empty catalog remain fatal. A missing
+trademark with neither a reviewed name nor a safe ID also blocks processing:
+ignoring such a competitor could misassign a product. Explicit codes do not
+bypass absent/unusable target identities. Contentful/rendering required-field
+checks, true identity ties, public scope, duplicate-code and revision/write
+protections are unchanged.
+
 ## Normalization and boundaries
 
 Only matching copies of names/text are normalized; cloud facts and catalog display

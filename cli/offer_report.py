@@ -42,6 +42,9 @@ def resolve_targets(value: dict[str, Any]) -> str:
             f"- Scope: `{_cell(scope.get('visibility'))}` `{_cell(scope.get('productType'))}`; complete: `{str(inventory.get('complete')).lower()}`",
             "",
         ])
+    for warning in (value.get("matching") or {}).get("warnings") or []:
+        lines.extend([f"- :warning: Identity catalog `{_cell(warning.get('appId'))}`: "
+                      f"{_cell(warning.get('message'))}", ""])
     targets = value.get("targets") or []
     if targets:
         lines.extend(

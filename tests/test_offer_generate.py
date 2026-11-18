@@ -559,6 +559,40 @@ class GenerateCliTests(unittest.TestCase):
         second = json.loads(self.invoke("--inventory", str(path), "--json", "--dry-run").stdout)
         self.assertNotEqual(first["matching"]["catalogIdentitySha256"], second["matching"]["catalogIdentitySha256"])
 
+    def test_missing_ffmpeg_trademark_is_retained_and_warned_in_generation(self):
+        self.catalog.write_text(json.dumps([
+            {"key": "odoo", "trademark": "Odoo"}, {"key": "ffmpeg", "trademark": None},
+        ]))
+        path, _ = self.snapshot([
+            offer_resolve.Product("odoo-code", "prod-odoo", "Odoo"),
+            offer_resolve.Product("ffmpeg-code", "prod-ffmpeg", "FFmpeg for Odoo"),
+        ])
+        result = self.invoke("--inventory", str(path), "--dry-run", "--json")
+        self.assertEqual(result.exit_code, 0, result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["matched"], 2)
+        self.assertEqual(report["products"][1]["appMatch"]["appId"], "ffmpeg")
+        self.assertEqual(report["products"][1]["appMatch"]["method"], "title-app-id")
+        self.assertTrue(report["matching"]["complete"])
+        self.assertTrue(report["matching"]["degraded"])
+        self.assertEqual(report["matching"]["warnings"][0]["appId"], "ffmpeg")
+        self.assertIn("WARNING identity catalog [ffmpeg]", result.stderr)
+        self.assertFalse(self.path.exists())
+
+    def test_unsafe_id_fallback_still_prevents_matrix_write_and_explains_why(self):
+        self.catalog.write_text(json.dumps([
+            {"key": "odoo", "trademark": "Odoo"}, {"key": "php", "trademark": None},
+        ]))
+        path, _ = self.snapshot()
+        self.path.write_text("[]\n")
+        result = self.invoke("--inventory", str(path), "--json")
+        self.assertNotEqual(result.exit_code, 0)
+        report = json.loads(result.stdout)
+        self.assertFalse(report["written"])
+        self.assertEqual(report["products"][0]["appMatch"]["status"], "unverified")
+        self.assertIn("unsafe for automatic fallback", report["matching"]["errors"][0]["message"])
+        self.assertEqual(self.path.read_text(), "[]\n")
+
     def test_snapshot_rejects_profile_and_invalid_json_before_cloud_calls(self):
         path, _ = self.snapshot()
         result = self.invoke("--inventory", str(path), "--profile", "seller")

@@ -83,6 +83,13 @@ RESOLVE = {
 
 
 class ReportTests(unittest.TestCase):
+    def test_resolve_report_surfaces_identity_catalog_degradation(self):
+        text = offer_report.resolve_targets({**RESOLVE, "matching": {"degraded": True, "warnings": [
+            {"appId": "ffmpeg", "message": "Missing/empty trademark; using safe application ID fallback."},
+        ]}})
+        self.assertIn(":warning: Identity catalog `ffmpeg`", text)
+        self.assertIn("safe application ID fallback", text)
+
     def test_resolve_report_includes_store_fact_scope_source_and_time(self):
         text = offer_report.resolve_targets({**RESOLVE, "inventory": {
             "source": "snapshot", "queriedAt": "2026-11-17T00:00:00+00:00", "complete": True,

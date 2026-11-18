@@ -742,6 +742,40 @@ class OfferTests(unittest.TestCase):
         self.assertEqual(document["targets"][0]["appMatch"]["appId"], "odoo")
         self.assertEqual(snapshot.read_bytes(), original_facts)
 
+    def test_resolve_warns_about_ffmpeg_null_metadata_and_still_resolves_the_target(self):
+        identities = self.directory / "products.json"
+        identities.write_text(json.dumps([
+            {"key": "odoo", "trademark": "Odoo"}, {"key": "ffmpeg", "trademark": None},
+        ]))
+        facts = self.store_inventory([offer_resolve.Product("code", "prod", "Odoo", visibility="Public")])
+        snapshot = self.directory / "inventory.json"
+        snapshot.write_text(json.dumps(facts))
+        result = separated_runner().invoke(cli, self.args("resolve") + [
+            "--cloud", "aws", "--inventory", str(snapshot), "--product-catalog", str(identities), "--output", "-",
+        ])
+        self.assertEqual(result.exit_code, 0, result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["targets"][0]["code"], "code")
+        self.assertTrue(report["matching"]["degraded"])
+        self.assertEqual(report["matching"]["warnings"][0]["appId"], "ffmpeg")
+        self.assertIn("WARNING identity catalog [ffmpeg]", result.stderr)
+
+    def test_resolve_unsafe_missing_identity_preserves_temporary_catalog(self):
+        identities = self.directory / "products.json"
+        identities.write_text(json.dumps([
+            {"key": "odoo", "trademark": "Odoo"}, {"key": "php", "trademark": None},
+        ]))
+        facts = self.store_inventory([offer_resolve.Product("code", "prod", "Odoo", visibility="Public")])
+        snapshot = self.directory / "inventory.json"
+        snapshot.write_text(json.dumps(facts))
+        before = self.catalog_path.read_bytes()
+        result = separated_runner().invoke(cli, self.args("resolve") + [
+            "--cloud", "aws", "--inventory", str(snapshot), "--product-catalog", str(identities), "--code", "code",
+        ])
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("unsafe for automatic fallback", result.stderr)
+        self.assertEqual(self.catalog_path.read_bytes(), before)
+
     def test_resolve_public_query_ignores_restricted_duplicate_offer_and_code_cannot_expand_scope(self):
         runner = separated_runner()
         client = mock.Mock()

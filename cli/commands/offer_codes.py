@@ -105,7 +105,7 @@ def gen_command(platform, codes, product_catalog, profile, inventory_path, outpu
         matching = {
             "catalog": _catalog_provenance(product_catalog), "rulesVersion": offer_resolve.IDENTITY_RULES_VERSION,
             "matchedAt": None, "catalogIdentitySha256": None,
-            "complete": False, "errors": [],
+            "complete": False, "errors": [], "degraded": False, "warnings": [],
         }
         context = {
             "schemaVersion": 1, "platform": platform, "mode": "codes" if codes else "platform",
@@ -126,6 +126,10 @@ def gen_command(platform, codes, product_catalog, profile, inventory_path, outpu
         matching["matchedAt"] = datetime.now(timezone.utc).isoformat()
         try:
             identities = offer_resolve.load_identities(product_catalog, offer.load_special_cases())
+            matching["warnings"] = offer_resolve.catalog_warnings(identities)
+            matching["degraded"] = bool(matching["warnings"])
+            for warning in matching["warnings"]:
+                click.echo(f"WARNING identity catalog [{warning['appId']}]: {warning['message']}", err=True)
             matching["catalogIdentitySha256"] = hashlib.sha256(json.dumps(
                 identities, sort_keys=True, ensure_ascii=False, separators=(",", ":"),
             ).encode("utf-8")).hexdigest()
@@ -133,7 +137,8 @@ def gen_command(platform, codes, product_catalog, profile, inventory_path, outpu
         except (OSError, ValueError, RuntimeError) as error:
             identities = None
             matching["errors"] = [{"code": type(error).__name__,
-                                   "message": "application catalog unavailable or invalid; nothing written"}]
+                                   "message": (str(error) if isinstance(error, offer_resolve.IdentityCatalogError)
+                                               else "application catalog unavailable or invalid; nothing written")}]
         matrix, report = offer_generate.generate(
             products, identities, previous, platform=platform, codes=codes,
         )

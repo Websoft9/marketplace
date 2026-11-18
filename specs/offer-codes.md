@@ -158,6 +158,7 @@ The generation JSON keeps existing counters and `unresolved` rows, adding:
 | `matching.catalogIdentitySha256` | SHA-256 of effective application identity names, including reviewed branding exceptions; not a hash of the raw catalog file |
 | `matching.matchedAt` | UTC matching-stage start time, or null if facts could not be accepted |
 | `matching.complete`, `matching.errors` | Whether identity evaluation was possible; complete does **not** mean all products matched |
+| `matching.degraded`, `matching.warnings` | Record-level missing trademark diagnostics and reviewed-name/safe-ID fallback; warnings are also printed to stderr |
 | `products` | Each selected actual product's known store facts, plus `appMatch` and `matrixDecision` |
 | `errors` | Pre-matching fact validation/empty-inventory failures when a report can be emitted |
 
@@ -181,6 +182,11 @@ The generation JSON keeps existing counters and `unresolved` rows, adding:
 - `status`: `matched` (one selected owner), `ambiguous` (exact tied owners), `unmatched` (none), or
   `unverified` (catalog/rules could not be loaded). No ownership is guessed from
   old matrix assignments, seller SKUs or URLs.
+- Missing catalog trademarks can degrade to reviewed branding or an eligible
+  application ID, with explicit warnings and without dropping the record.
+  Missing names without a safe fallback, malformed data or duplicate IDs still
+  block matrix writes; diagnostic errors identify this separately from a normal
+  product `unmatched` decision.
 - `appId`: the unique matched ID, otherwise null. `candidates` lists IDs only
   for ambiguity, avoiding duplication of a confirmed `appId`.
 - `method`: `title-` or `summary-lead-` plus `trademark`, `apache-short-name` or

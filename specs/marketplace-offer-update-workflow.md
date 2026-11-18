@@ -76,6 +76,12 @@ Live resolution:
   with no hit permits summary fallback before its first English/Chinese comma.
   Target artifacts include `appMatch` evidence and `identityRulesVersion`.
   It does not require the local offer-code matrix.
+- An unrelated missing catalog trademark (for example `ffmpeg: null`) no longer
+  blocks the target if that record can use reviewed branding or the safe ID
+  fallback. Records are retained; warnings appear in stderr, `matching.warnings`
+  and the resolve summary. Invalid IDs/records or missing names with no safe
+  fallback remain fatal. Target membership/usability and explicit override
+  protections are not relaxed, and no display trademark is invented for publication.
 - With `--code`, that code is authoritative. A code whose title does not match
   the application is reported as an override and is still targeted, provided
   it exists within the accepted public facts. This does not bypass visibility.
