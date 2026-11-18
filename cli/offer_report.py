@@ -24,6 +24,54 @@ def _table_row(cells: list[str]) -> str:
     return "| " + " | ".join(cells) + " |"
 
 
+def _cell(value: Any, fallback: str = "-") -> str:
+    text = fallback if value is None or value == "" else str(value)
+    return text.replace("|", "\\|").replace("\n", " ")
+
+
+def resolve_targets(value: dict[str, Any]) -> str:
+    """Render fact provenance, resolved targets and unresolved declared offers."""
+    lines = ["## Resolved offer targets", ""]
+    inventory = value.get("inventory")
+    if isinstance(inventory, dict):
+        owner = inventory.get("store") or {}
+        scope = inventory.get("scope") or {}
+        lines.extend([
+            f"- Store: {_cell(owner.get('provider'))} (`{_cell(owner.get('id'))}`)",
+            f"- Inventory source: `{_cell(inventory.get('source'))}`; queried at `{_cell(inventory.get('queriedAt'))}`",
+            f"- Scope: `{_cell(scope.get('visibility'))}` `{_cell(scope.get('productType'))}`; complete: `{str(inventory.get('complete')).lower()}`",
+            "",
+        ])
+    targets = value.get("targets") or []
+    if targets:
+        lines.extend(
+            [
+                "| Code | Offer | Match | Visibility | Title |",
+                "| --- | --- | --- | --- | --- |",
+            ]
+        )
+        for target in targets:
+            lines.append(
+                _table_row(
+                    [
+                        f"`{_cell(target.get('code'))}`",
+                        _cell(target.get("offer"), "base"),
+                        _cell(target.get("match")),
+                        _cell(target.get("visibility")),
+                        _cell(target.get("title")),
+                    ]
+                )
+            )
+    else:
+        lines.append("No live offer target was resolved.")
+    unresolved = value.get("unresolved") or []
+    for item in unresolved:
+        lines.extend(
+            ["", f"- Unresolved offer `{_cell(item.get('offer'))}`: {_cell(item.get('reason'))}"]
+        )
+    return "\n".join(lines) + "\n"
+
+
 def preflight(value: dict[str, Any]) -> str:
     """Render the preflight summary, including forced codes."""
     codes = value.get("codes") or []

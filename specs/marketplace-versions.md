@@ -13,9 +13,9 @@ pip install '.[aliyun]'
 Configure credentials in the environment. For STS credentials, set all three variables:
 
 ```sh
-export ALIBABA_CLOUD_ACCESS_KEY_ID='...'
-export ALIBABA_CLOUD_ACCESS_KEY_SECRET='...'
-export ALIBABA_CLOUD_SECURITY_TOKEN='...' # only for STS
+export ALIYUN_ACCESS_KEY_ID='...'
+export ALIYUN_ACCESS_KEY_SECRET='...'
+export ALIYUN_SECURITY_TOKEN='...' # only for STS
 ```
 
 Run:

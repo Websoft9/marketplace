@@ -29,36 +29,56 @@ EntityId and an explicitly reviewed plan.
 ## Manual GitHub Actions apply workflow
 
 `.github/workflows/offer-apply.yml` runs manually for one
-application and one cloud. Inputs are the catalog application id, an optional
-display name used for the run label, a cloud selector (only platforms
-implemented by the workflow are listed), an optional `code`, and an optional
-`offer` variant. The variant is a value from the application's `multiOffers` in
-`data/listing/app-special-cases.json`; `base` means the offer with no extra
-label. It does not publish files committed under `data/.work/<cloud>/`; that
-directory is git-ignored.
+application and one cloud. The form has only `appid`, `cloud`, `product_code`
+and `label`; there is no display-name override. Run labels and artifacts use
+`appid`. `label` defaults to **Auto**, which passes no forced `--offer` and keeps
+automatic label detection. **Remove label** forces `--offer=base` for the specified
+`product_code`, regenerating copy without a label; it does not change the image OS.
+Other choices force their named label. Any non-Auto choice requires a product code
+and must be declared in the application's `multiOffers` (empty string for base).
+The form no longer exposes the internal `none`/`base` names. It does not publish
+files committed under `data/.work/<cloud>/`; that directory is git-ignored.
 
-`app` accepts exactly one id. Comma-separated or whitespace-separated lists
+`appid` accepts exactly one id. Comma-separated or whitespace-separated lists
 are rejected by preflight and the offer commands before catalog/API access.
+Dispatch API/`gh workflow run` callers must use the new input keys, not the former
+`app`, `code`, `offer` or removed `app_name`. CLI options remain `--app`, `--code`
+and `--offer`; the workflow maps its compact form to those existing options.
 
 The workflow pulls the application from Contentful with
-`--skip-offer-codes`, snapshots versions with `mk offer versions`, resolves live
-AWS listings with `mk offer resolve`, builds
+`--skip-offer-codes`, snapshots versions with `mk offer versions`, collects public
+AWS store facts with `mk store products --visibility public --json`, resolves
+targets from that snapshot with `mk offer resolve --inventory`, builds
 the preview, generates one live revision-bound plan per target, uploads the
 plans and source snapshots as artifacts, then waits for approval on the
 `<cloud>-marketplace-production` environment before running `mk offer apply`.
-Step summaries are rendered by `mk offer report preflight|plan|apply` plus the
-resolve table.
+Step summaries are rendered by
+`mk offer report preflight|resolve|plan|apply` from the JSON artifacts, so the
+same Markdown is available locally.
 
 Live resolution:
 
+- The Action saves `/tmp/opencode/offer-run/inventory.json`, then passes it to
+  `offer resolve --inventory ... --visibility public`. Both live CLI resolution
+  and snapshot resolution use the same store query/input service as matrix
+  generation. The snapshot is uploaded with the plan artifacts; its source,
+  query time, ownership and public image scope appear in the resolve report.
+- Public is the only supported resolution visibility, including with `--code`.
+  Restricted, Limited, Draft and unknown states are not implicitly considered.
+  Bad/incomplete/nonpublic facts fail before the temporary catalog is modified.
+  `--profile` cannot be combined with `--inventory`; no credential-based inventory
+  re-query is performed in snapshot mode. Catalog/variant validation still applies.
 - `mk offer resolve` loads the full product catalog (`--product-catalog`) to
-  identify all trademarks in a live title. Title matches win, including titles
-  belonging to other applications. Only if the title has no known trademark
-  may the short description before its first English/Chinese comma be used.
-  Multiple application matches are ambiguous; without an explicit code the
-  run stops. It does not require the local offer-code matrix.
+  use the [same deterministic identity engine as matrix generation](application-matching.md).
+  It tries normalized full trademarks, Apache-prefix fallback and eligible app
+  IDs. The first app occurrence in the title wins; an exact positional/strength/
+  length tie remains ambiguous and stops automatic resolution. Only a title
+  with no hit permits summary fallback before its first English/Chinese comma.
+  Target artifacts include `appMatch` evidence and `identityRulesVersion`.
+  It does not require the local offer-code matrix.
 - With `--code`, that code is authoritative. A code whose title does not match
-  the application is reported as an override and is still targeted.
+  the application is reported as an override and is still targeted, provided
+  it exists within the accepted public facts. This does not bypass visibility.
 - Without `--code`, every matching product is grouped by its detected offer
   variant. Each variant must map to exactly one code; two codes for the same
   variant stop the run as ambiguous.
@@ -70,6 +90,8 @@ Live resolution:
   Multisite" is not evidence that the listing is the Multisite variant.
 - Resolved targets are written into the temporary catalog, so build, plan and
   apply share the same code/EntityId/offer mapping.
+- Existing revision-bound live reads in plan/apply and production approval are
+  unchanged. A stored inventory timestamp is not proof of current cloud state.
 
 Validation runs before any Contentful or AWS call:
 

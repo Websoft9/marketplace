@@ -3,13 +3,14 @@
 ## Generate a local configuration template
 
 Use the Make target to generate a ready-to-load environment file for a cloud
-platform key from `config/marketplace.json`, or for the non-cloud services
-`contentful` and `wecom`:
+platform key from `config/marketplace.json`, or for the non-cloud targets
+`contentful`, `wecom` and `websoft9`:
 
 ```sh
 make cloud-configure cloud=aws
 make cloud-configure cloud=contentful
 make cloud-configure cloud=wecom
+make cloud-configure cloud=websoft9
 # generate one file for every target (existing files are skipped)
 make cloud-configure cloud=all
 # or, using this repository's ARGS convention:
@@ -24,6 +25,13 @@ Fill only the blanks.
 - `contentful` writes `CONTENTFUL_SPACE_ID`, `CONTENTFUL_TOKEN`,
   `CONTENTFUL_ENVIRONMENT` and optional API endpoint overrides.
 - `wecom` writes `WECOM_WEBHOOK` for best-effort notifications.
+- `websoft9` writes `WEBSOFT9_URL` (default
+  `http://t.inner.websoft9.cn:9000/`), `WEBSOFT9_USER` and
+  `WEBSOFT9_PASSWORD`.
+- `aliyun` writes `ALIYUN_ACCESS_KEY_ID`, `ALIYUN_ACCESS_KEY_SECRET` and
+  `ALIYUN_SECURITY_TOKEN`.
+- `alibabacloud` writes `ALIBABA_CLOUD_*` and is a separate Alibaba Cloud
+  account from Aliyun China; never reuse one site's key for the other.
 - Cloud files contain only that cloud's credentials; services are never mixed
   into a cloud file.
 

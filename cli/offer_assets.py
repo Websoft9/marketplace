@@ -1,0 +1,231 @@
+"""Render the separate AWS AMI asset template: logo and promotional media."""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+from typing import Any
+
+from .offer import DATA, digest, format_template, read_json, validate_promotional_media
+
+ASSETS_TEMPLATE = DATA / "templates" / "aws-ami-assets.json"
+ASSETS_TEMPLATE_ID = "aws-ami-assets-v1"
+MAX_MEDIA_ITEMS = 5
+ASSET_FIELDS = {"LogoUrl", "PromotionalMedia"}
+
+
+def validate_assets_template(template: dict[str, Any]) -> None:
+    if template.get("schemaVersion") != 1 or template.get("templateId") != ASSETS_TEMPLATE_ID:
+        raise ValueError("unsupported or mismatched asset template")
+    namespaces = template.get("namespaces")
+    if not isinstance(namespaces, list) or not namespaces or any(
+        not isinstance(namespace, str) or not namespace for namespace in namespaces
+    ):
+        raise ValueError("asset template.namespaces must contain at least one namespace")
+    if "catalog" not in namespaces:
+        raise ValueError("asset template requires the catalog namespace")
+    target = template.get("target") or {}
+    if target.get("platform") not in (None, "aws"):
+        raise ValueError("asset template target.platform must be aws")
+    if target.get("entityType") not in (None, "AmiProduct@1.0"):
+        raise ValueError("asset template target.entityType must be AmiProduct@1.0")
+    if target.get("changeType") not in (None, "UpdateInformation"):
+        raise ValueError("asset template target.changeType must be UpdateInformation")
+    assets = template.get("assets")
+    if not isinstance(assets, dict) or not assets:
+        raise ValueError("asset template.assets must be a non-empty object")
+    unknown = set(assets) - ASSET_FIELDS
+    if unknown:
+        raise ValueError(
+            f"asset template.assets has unsupported key(s): {', '.join(sorted(unknown))}"
+        )
+    logo = assets.get("LogoUrl")
+    if logo is not None:
+        if not isinstance(logo, dict) or not isinstance(logo.get("source"), str):
+            raise ValueError("asset template.assets.LogoUrl.source must be text")
+        if set(logo) - {"source", "optional"}:
+            raise ValueError("asset template.assets.LogoUrl has unsupported key(s)")
+    media = assets.get("PromotionalMedia")
+    if not isinstance(media, dict):
+        raise ValueError("asset template.assets.PromotionalMedia must be an object")
+    unknown = set(media) - {"source", "maxItems", "type", "title", "description"}
+    if unknown:
+        raise ValueError(
+            "asset template.assets.PromotionalMedia has unsupported key(s): "
+            + ", ".join(sorted(unknown))
+        )
+    if not isinstance(media.get("source"), str):
+        raise ValueError("PromotionalMedia.source must be text")
+    max_items = media.get("maxItems")
+    if not isinstance(max_items, int) or isinstance(max_items, bool) or not 1 <= max_items <= MAX_MEDIA_ITEMS:
+        raise ValueError(f"PromotionalMedia.maxItems must be 1–{MAX_MEDIA_ITEMS}")
+    if media.get("type") != "Image":
+        raise ValueError("PromotionalMedia.type must be Image for this template")
+    if not isinstance(media.get("title"), str) or not media["title"].strip():
+        raise ValueError("PromotionalMedia.title must be non-empty text")
+    description = media.get("description")
+    if description is not None and not isinstance(description, str):
+        raise ValueError("PromotionalMedia.description must be text")
+
+
+def _asset_url(value: Any) -> str | None:
+    if isinstance(value, dict):
+        value = value.get("imageurl") or value.get("url")
+    if isinstance(value, str) and value.startswith("https://"):
+        return value
+    return None
+
+
+def _screenshot_url(value: Any) -> str | None:
+    if isinstance(value, dict):
+        value = value.get("value") or value.get("url")
+    if isinstance(value, str) and value.startswith("https://"):
+        return value
+    return None
+
+
+def _is_s3_url(value: str) -> bool:
+    host = value.split("/", 3)[2].split(":", 1)[0].lower() if "://" in value else ""
+    return (
+        host == "s3.amazonaws.com"
+        or host.startswith("s3.")
+        or host.endswith(".s3.amazonaws.com")
+        or ".s3." in host
+    )
+
+
+def _validate_text(value: str, path: str) -> None:
+    if re.search(r"[\x00-\x08\x0b-\x1f]", value):
+        raise ValueError(f"{path} contains unsupported control characters: {value[:120]!r}")
+    if "  " in value:
+        raise ValueError(f"{path} contains consecutive spaces: {value[:120]!r}")
+    if re.search(r"\{[A-Za-z][A-Za-z0-9_]*\}", value):
+        raise ValueError(f"{path} contains unresolved template placeholders: {value[:120]!r}")
+
+
+def validate_assets_content(content: dict[str, Any]) -> None:
+    """Validate only the asset fields, not the required copy fields."""
+    unknown = set(content) - ASSET_FIELDS
+    if unknown:
+        raise ValueError(
+            "unsupported asset field(s): " + ", ".join(sorted(unknown))
+        )
+    logo = content.get("LogoUrl")
+    if logo is not None:
+        if not isinstance(logo, str) or not re.fullmatch(r"https://[^\s?#]+", logo):
+            raise ValueError("LogoUrl requires an unsigned HTTPS URL")
+        _validate_text(logo, "LogoUrl")
+    if "PromotionalMedia" in content:
+        media = content["PromotionalMedia"]
+        validate_promotional_media(media)
+        for index, item in enumerate(media):
+            _validate_text(item["Title"], f"PromotionalMedia[{index}].Title")
+            if item.get("Description"):
+                _validate_text(
+                    item["Description"], f"PromotionalMedia[{index}].Description"
+                )
+
+
+def render_assets(
+    catalog_item: dict[str, Any],
+    template_path: Path = ASSETS_TEMPLATE,
+) -> dict[str, Any]:
+    """Build LogoUrl and up to five PromotionalMedia image entries.
+
+    The asset template is intentionally separate from the copy template so it can
+    later be planned and applied as its own change set without changing copy.
+    """
+    template = read_json(template_path)
+    validate_assets_template(template)
+    roots = {"catalog": catalog_item}
+    content: dict[str, Any] = {}
+    warnings: list[str] = []
+
+    logo_spec = template["assets"].get("LogoUrl") or {}
+    logo_source = logo_spec.get("source")
+    if logo_source:
+        try:
+            logo_value = format_template(logo_source, roots)
+        except ValueError:
+            logo_value = None
+        logo_url = _asset_url(logo_value)
+        if logo_url:
+            content["LogoUrl"] = logo_url
+        else:
+            warnings.append("no logo image URL in the catalog item")
+    if "LogoUrl" not in content and not logo_spec.get("optional"):
+        warnings.append("LogoUrl is required by AWS but was not rendered")
+
+    media_spec = template["assets"]["PromotionalMedia"]
+    try:
+        source = format_template(media_spec["source"], roots)
+    except ValueError:
+        source = []
+    if source is None:
+        source = []
+    if not isinstance(source, list):
+        raise ValueError("PromotionalMedia.source must resolve to an array")
+    max_items = media_spec["maxItems"]
+    media: list[dict[str, Any]] = []
+    seen_urls: set[str] = set()
+    for index, raw in enumerate(source, 1):
+        if len(media) >= max_items:
+            break
+        url = _screenshot_url(raw)
+        if not url or url in seen_urls:
+            continue
+        seen_urls.add(url)
+        item_roots = {
+            **roots,
+            "index": index,
+            "key": raw.get("key", "") if isinstance(raw, dict) else "",
+        }
+        item: dict[str, Any] = {
+            "Type": media_spec["type"],
+            "Url": url,
+            "Title": format_template(media_spec["title"], item_roots),
+        }
+        description_template = media_spec.get("description")
+        if description_template:
+            description = format_template(description_template, item_roots)
+            if description.strip():
+                item["Description"] = description
+        media.append(item)
+    if media:
+        content["PromotionalMedia"] = media
+    else:
+        warnings.append("no screenshots in the catalog item; PromotionalMedia was not rendered")
+
+    if len(source) > max_items:
+        warnings.append(
+            f"catalog has {len(source)} screenshots; only the first {max_items} were rendered"
+        )
+    non_s3 = [url for url in ([content.get("LogoUrl")] + [
+        item["Url"] for item in content.get("PromotionalMedia", [])
+    ]) if url and not _is_s3_url(url)]
+    if non_s3:
+        warnings.append(
+            f"{len(non_s3)} asset URL(s) are not S3-hosted; stage them before apply"
+        )
+    if content:
+        validate_assets_content(content)
+
+    return {
+        "schemaVersion": 1,
+        "key": catalog_item.get("id"),
+        "entityId": catalog_item.get("entityId"),
+        "entityType": catalog_item.get("entityType") or "AmiProduct@1.0",
+        "templateId": template["templateId"],
+        "content": content,
+        "preview": {
+            "templateId": template["templateId"],
+            "target": template.get("target", {}),
+            "content": content,
+            "assetSummary": {
+                "logo": bool(content.get("LogoUrl")),
+                "media": len(content.get("PromotionalMedia") or []),
+            },
+        },
+        "warnings": warnings,
+        "sourceHash": digest({"catalog": catalog_item, "template": template}),
+    }

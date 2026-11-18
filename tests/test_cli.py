@@ -86,7 +86,8 @@ class ListCommandTests(unittest.TestCase):
         result = self.invoke("--update-readme", str(readme))
 
         self.assertEqual(result.exit_code, 2, result.output)
-        self.assertIn("No such option: --update-readme", result.output)
+        self.assertIn("No such option", result.output)
+        self.assertIn("--update-readme", result.output)
         self.assertEqual(readme.read_text(encoding="utf-8"), original)
 
     def test_help_lists_the_command(self) -> None:
@@ -103,6 +104,14 @@ class ListCommandTests(unittest.TestCase):
 
         self.assertEqual(outputs[0], outputs[1])
         self.assertEqual(outputs[0], outputs[2])
+
+    def test_group_help_is_nested_and_points_to_command_details(self) -> None:
+        root_help = self.runner.invoke(cli, ["help"]).output
+        store_help = self.runner.invoke(cli, ["store", "--help"]).output
+
+        self.assertIn("mk <command> --help", root_help)
+        self.assertNotRegex(root_help, r"(?m)^\s+products\s+")
+        self.assertIn("products", store_help)
 
 
 class VersionsCommandTests(unittest.TestCase):

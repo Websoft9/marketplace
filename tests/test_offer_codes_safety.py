@@ -378,7 +378,7 @@ class ListingSafetyTests(unittest.TestCase):
             "aliyunsdkmarket.request.v20151101.DescribeProductRequest": SimpleNamespace(DescribeProductRequest=mock.Mock()),
         }
         with mock.patch.dict(sys.modules, modules), mock.patch.dict(os.environ, {
-            "ALIBABA_CLOUD_ACCESS_KEY_ID": "test", "ALIBABA_CLOUD_ACCESS_KEY_SECRET": "test",
+            "ALIYUN_ACCESS_KEY_ID": "test", "ALIYUN_ACCESS_KEY_SECRET": "test",
         }):
             return offer_listing.AliyunAdapter().check(["code"])["code"]
 

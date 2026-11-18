@@ -12,14 +12,18 @@ from pathlib import Path
 from . import offer_codes, offer_resolve
 
 
+PLATFORMS = {"aws": "AWS", "aliyun": "Aliyun", "alibabacloud": "Alibaba Cloud"}
+
+
 def generate(products, identities, previous, *, platform="aws", codes=None):
     """Full runs replace one cloud; targeted runs replace only selected codes.
 
     No old matrix is used to infer ownership. Uncertain listings are excluded
     and reported without blocking independently resolved listings.
     """
-    if platform != "aws":
-        raise ValueError(f"generation is not supported for {platform!r}; implemented: aws")
+    if platform not in PLATFORMS:
+        raise ValueError(f"generation is not supported for {platform!r}; implemented: {', '.join(PLATFORMS)}")
+    cloud = PLATFORMS[platform]
     products = list(products)
     selected = list(products)
     unresolved = []
@@ -31,7 +35,7 @@ def generate(products, identities, previous, *, platform="aws", codes=None):
                 unresolved.append({
                     "code": code, "title": "", "entityId": "", "candidates": [],
                     "reason": "selected code not found" if not matches else
-                              "selected code matches multiple AWS products",
+                              f"selected code matches multiple {cloud} products",
                 })
                 # Include every match so duplicate aliases cannot hide conflicts.
                 for product in matches:
@@ -41,24 +45,38 @@ def generate(products, identities, previous, *, platform="aws", codes=None):
             if matches[0] not in selected:
                 selected.append(matches[0])
     if not products:
-        raise ValueError("empty AWS inventory; refusing to clear existing mappings")
+        raise ValueError(f"empty {cloud} inventory; refusing to clear existing mappings")
 
     assignments = {}
+    product_reports = []
     code_counts = Counter(product.code for product in products if product.code)
     ambiguous_aliases = {
         code for code in codes or []
         if sum(code in {p.code, p.alternate_code, p.entity_id} for p in products) > 1
     }
     for product in selected:
-        owners = offer_resolve.identify(product.title, product.summary, identities)
+        app_match = (offer_resolve.identify_details(product.title, product.summary, identities)
+                     if identities is not None else {
+                         "status": "unverified", "appId": None, "candidates": [], "method": None,
+                         "evidence": [], "selection": "first-appearance",
+                     })
+        owners = ({app_match["appId"]} if app_match["appId"] else set(app_match["candidates"]))
+        missing_code = ("missing product code (SKU aliases are not codes)" if platform == "aws"
+                        else "missing product code")
         reason = (
-            "missing product code (SKU aliases are not codes)" if not product.code else
+            "application catalog unavailable or invalid" if identities is None else
+            missing_code if not product.code else
             "duplicate cloud code" if code_counts[product.code] > 1 else
-            "selected code matches multiple AWS products" if ambiguous_aliases &
+            f"selected code matches multiple {cloud} products" if ambiguous_aliases &
                 {product.code, product.alternate_code, product.entity_id} else
             "ambiguous application" if len(owners) > 1 else
             "no application match" if not owners else ""
         )
+        product_reports.append({
+            "code": product.code, "title": product.title, "entityId": product.entity_id,
+            "appMatch": app_match,
+            "matrixDecision": {"included": not bool(reason), "reason": reason or None},
+        })
         if reason:
             unresolved.append({
                 "code": product.code, "title": product.title,
@@ -71,6 +89,7 @@ def generate(products, identities, previous, *, platform="aws", codes=None):
     report = {
         "platform": platform, "mode": "codes" if codes else "platform",
         "checked": len(selected), "matched": len(assignments), "unresolved": unresolved,
+        "products": product_reports,
     }
     if not assignments:
         return None, report

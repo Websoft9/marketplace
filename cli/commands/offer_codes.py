@@ -1,21 +1,31 @@
 from __future__ import annotations
 
 import difflib
+import hashlib
 import json
 import time
 import urllib.error
+import urllib.parse
+from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
 
 import click
 
-from .. import offer_codes, offer_listing, offer_generate, offer_resolve, offer
+from .. import store, offer_codes, offer_listing, offer_generate, offer_resolve, offer
 from ..marketplace import CATALOG_URL, OFFER_SOURCE, REPO_ROOT
 
 
 @click.group("offer-codes")
 def offer_codes_command() -> None:
     """Read, validate, audit and maintain local marketplace offer codes."""
+
+
+def _catalog_provenance(source):
+    if source.startswith(("https://", "http://")):
+        parts = urllib.parse.urlsplit(source)
+        return urllib.parse.urlunsplit((parts.scheme, parts.netloc.rsplit("@", 1)[-1], parts.path, "", ""))
+    return source
 
 
 def _generation_report(report, *, as_json=False, err=False):
@@ -28,6 +38,17 @@ def _generation_report(report, *, as_json=False, err=False):
     )
     outcome = "Written" if report["written"] else "Not written"
     click.echo(f"{outcome}: {report['output']}", err=err)
+    if report.get("products"):
+        click.echo("Product matches:", err=err)
+        click.echo("| Product code | Title | Match status | Application | Included |", err=err)
+        click.echo("| --- | --- | --- | --- | --- |", err=err)
+        for item in report["products"]:
+            match = item["appMatch"]
+            app = match["appId"] or ", ".join(match["candidates"]) or "-"
+            cells = [str(value or "(missing)").replace("|", "\\|").replace("\r", " ").replace("\n", " ")
+                     for value in (item["code"], item["title"], match["status"], app,
+                                   "yes" if item["matrixDecision"]["included"] else "no")]
+            click.echo("| " + " | ".join(cells) + " |", err=err)
     if report["unresolved"]:
         click.echo("Unresolved products (excluded from this generation):", err=err)
         click.echo("| Product code | Title | Reason |", err=err)
@@ -40,23 +61,32 @@ def _generation_report(report, *, as_json=False, err=False):
 
 
 @offer_codes_command.command("gen")
-@click.option("--platform", required=True, help="Cloud to regenerate (currently aws).")
+@click.option("--platform", required=True,
+              help=f"Cloud to regenerate ({', '.join(offer_generate.PLATFORMS)}).")
 @click.option("--code", "codes", multiple=True, help="Regenerate one code only; repeat for several codes.")
 @click.option("--product-catalog", default=CATALOG_URL, metavar="SOURCE")
 @click.option("--profile", default=None, help="AWS read-only seller profile.")
+@click.option("--inventory", "inventory_path", type=click.Path(exists=True, dir_okay=False, path_type=Path),
+              help="Read a local mk store products --json snapshot instead of querying cloud APIs.")
 @click.option("--output", type=click.Path(dir_okay=False, path_type=Path),
               default=REPO_ROOT / "data/offer-codes/matrix.json", show_default=True)
 @click.option("--dry-run", is_flag=True, help="Show the proposed diff without writing.")
 @click.option("--json", "as_json", is_flag=True,
               help="Print only the structured result to stdout; progress goes to stderr.")
-def gen_command(platform, codes, product_catalog, profile, output, dry_run, as_json):
+def gen_command(platform, codes, product_catalog, profile, inventory_path, output, dry_run, as_json):
     """Generate matrix.json from live inventory, never from matrix-history.json.
 
     Without --code, replace this cloud's mappings after a complete enumeration.
     With --code, change only those mappings and preserve everything else.
     """
-    if platform != "aws":
-        raise click.ClickException(f"generation is not supported for {platform!r}; implemented: aws")
+    if platform not in offer_generate.PLATFORMS:
+        raise click.ClickException(
+            f"generation is not supported for {platform!r}; implemented: {', '.join(offer_generate.PLATFORMS)}"
+        )
+    if platform != "aws" and profile is not None:
+        raise click.BadParameter("--profile is only supported for AWS")
+    if inventory_path is not None and profile is not None:
+        raise click.BadParameter("--profile cannot be combined with --inventory; snapshots are not re-queried")
     if any(not code.strip() or any(c in code for c in ",，") for code in codes):
         raise click.BadParameter("each --code must contain one non-empty code")
     codes = list(dict.fromkeys(code.strip() for code in codes))
@@ -66,16 +96,52 @@ def gen_command(platform, codes, product_catalog, profile, output, dry_run, as_j
         if not isinstance(previous, list):
             raise ValueError("matrix root must be a JSON array")
         offer_codes.require_structure([(str(output), previous)])
-        identities = offer_resolve.load_identities(product_catalog, offer.load_special_cases())
         started = time.monotonic()
-        products = offer_resolve.list_aws_products(
-            profile, public_only=True, progress=lambda message: click.echo(message, err=True),
+        progress = lambda message: click.echo(message, err=True)
+        inventory = store.get_inventory(
+            platform, inventory_path=inventory_path, profile=profile, visibility="public", progress=progress,
         )
-        matrix, report = offer_generate.generate(products, identities, previous, codes=codes)
-        report["visibility"] = "Public"
+        inventory_info = store.inventory_provenance(inventory, inventory_path)
+        matching = {
+            "catalog": _catalog_provenance(product_catalog), "rulesVersion": offer_resolve.IDENTITY_RULES_VERSION,
+            "matchedAt": None, "catalogIdentitySha256": None,
+            "complete": False, "errors": [],
+        }
+        context = {
+            "schemaVersion": 1, "platform": platform, "mode": "codes" if codes else "platform",
+            "checked": 0, "matched": 0, "unresolved": [], "products": [],
+            "errors": [],
+            "visibility": "Public" if platform == "aws" else "StoreVisible",
+            "output": str(output), "written": False, "inventory": inventory_info, "matching": matching,
+        }
+        try:
+            products = store.inventory_products(inventory, platform)
+            if not products:
+                raise ValueError(f"empty {offer_generate.PLATFORMS[platform]} inventory; refusing to clear existing mappings")
+        except ValueError as error:
+            context["errors"] = [{"code": type(error).__name__, "message": str(error)}]
+            context["elapsedSeconds"] = round(time.monotonic() - started, 2)
+            _generation_report(context, as_json=as_json)
+            raise click.ClickException(str(error)) from None
+        matching["matchedAt"] = datetime.now(timezone.utc).isoformat()
+        try:
+            identities = offer_resolve.load_identities(product_catalog, offer.load_special_cases())
+            matching["catalogIdentitySha256"] = hashlib.sha256(json.dumps(
+                identities, sort_keys=True, ensure_ascii=False, separators=(",", ":"),
+            ).encode("utf-8")).hexdigest()
+            matching["complete"] = True
+        except (OSError, ValueError, RuntimeError) as error:
+            identities = None
+            matching["errors"] = [{"code": type(error).__name__,
+                                   "message": "application catalog unavailable or invalid; nothing written"}]
+        matrix, report = offer_generate.generate(
+            products, identities, previous, platform=platform, codes=codes,
+        )
+        facts = {(p["code"], p["entityId"]): {k: p[k] for k in store.PRODUCT_FACT_FIELDS if k in p}
+                 for p in inventory["products"]}
+        report["products"] = [{**facts[(p["code"], p["entityId"])], **p} for p in report["products"]]
+        report = {**context, **report}
         report["elapsedSeconds"] = round(time.monotonic() - started, 2)
-        report["output"] = str(output)
-        report["written"] = False
         if matrix is None:
             _generation_report(report, as_json=as_json)
             raise click.ClickException("no resolved listings; nothing written. See unresolved listings above.")
@@ -93,7 +159,7 @@ def gen_command(platform, codes, product_catalog, profile, output, dry_run, as_j
             offer_generate.write_matrix(output, matrix, before)
             report["written"] = True
         _generation_report(report, as_json=as_json, err=dry_run)
-    except (OSError, ValueError, urllib.error.URLError) as error:
+    except (OSError, ValueError, RuntimeError, urllib.error.URLError) as error:
         raise click.ClickException(str(error)) from None
 
 

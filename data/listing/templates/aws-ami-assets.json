@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 2,
+  "templateId": "aws-ami-assets-v2",
+  "namespaces": [
+    "catalog"
+  ],
+  "target": {
+    "platform": "aws",
+    "service": "marketplace-catalog",
+    "entityType": "AmiProduct@1.0",
+    "changeType": "UpdateInformation"
+  },
+  "assets": {
+    "LogoUrl": "https://libs.websoft9.com/marketplace/aws/common-for-aws.png",
+    "PromotionalMedia": [
+      {
+        "Type": "Image",
+        "Url": "https://libs.websoft9.com/marketplace/aws/{catalog.id}-installation.png",
+        "Title": "Application Install Automation",
+        "Description": "Application Install Automation"
+      },
+      {
+        "Type": "Image",
+        "Url": "https://libs.websoft9.com/marketplace/aws/websoft9-console.png",
+        "Title": "Server Host Dashboard",
+        "Description": "Server Host Dashboard"
+      },
+      {
+        "Type": "Image",
+        "Url": "https://libs.websoft9.com/marketplace/aws/compose-editor.png",
+        "Title": "Docker Compose file Editor",
+        "Description": "Docker Compose file Editor"
+      },
+      {
+        "Type": "Image",
+        "Url": "https://libs.websoft9.com/marketplace/aws/domain-https.png",
+        "Title": "CA Request and Configure HTTPS for You Application",
+        "Description": "CA Request and Configure for You Application"
+      },
+      {
+        "Type": "Image",
+        "Url": "https://libs.websoft9.com/marketplace/aws/websoft9-appstore.png",
+        "Title": "Application Templates Store",
+        "Description": "Application Templates Store"
+      }
+    ]
+  }
+}

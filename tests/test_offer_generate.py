@@ -4,13 +4,15 @@ import copy
 import json
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
 from click.testing import CliRunner
 
-from cli import offer_codes, offer_generate, offer_resolve
+from cli import alibabacloud_market, aliyun_market, aws_inventory, offer_codes, offer_generate, offer_resolve, store
 from cli.cli import cli
+from tests.click_support import separated_runner
 
 
 def entry(app, aws=(), azure=()):
@@ -20,6 +22,16 @@ def entry(app, aws=(), azure=()):
     }
     result["productID"].update(aws=list(aws), azure=list(azure))
     return result
+
+
+def public_products(products, visibility="Public"):
+    return [replace(p, visibility=visibility) for p in products]
+
+
+ALIBABA_PLATFORMS = (
+    ("aliyun", aliyun_market, "list_aliyun_products", "cmjj"),
+    ("alibabacloud", alibabacloud_market, "list_products", "sgcmjj"),
+)
 
 
 class GenerateTests(unittest.TestCase):
@@ -50,12 +62,13 @@ class GenerateTests(unittest.TestCase):
         self.assertNotIn("drupal", by_id)
 
     def test_ambiguous_and_unknown_listings_are_skipped(self):
-        for title in ("Odoo and Drupal", "Unidentified product"):
+        identities = {**self.identities, "odoo": ["Shared application"], "drupal": ["Shared application"]}
+        for title in ("Shared application", "Unidentified product"):
             with self.subTest(title=title):
                 result, report = offer_generate.generate([
                     offer_resolve.Product("code", "prod", title),
                     offer_resolve.Product("good", "prod-good", "WordPress"),
-                ], self.identities, [])
+                ], identities, [])
                 self.assertEqual(result[0]["productID"]["aws"], ["good"])
                 self.assertEqual(len(report["unresolved"]), 1)
                 self.assertEqual(report["unresolved"][0]["entityId"], "prod")
@@ -139,6 +152,91 @@ class GenerateTests(unittest.TestCase):
         self.assertEqual(by_id["odoo"]["productID"]["aws"], ["keep"])
         self.assertEqual(by_id["wordpress"]["productID"]["aws"], ["product-code"])
 
+    def test_aliyun_full_generation_preserves_other_clouds_and_metadata(self):
+        old = entry("odoo", ["aws-keep"], ["pub.odoo"])
+        old["productID"]["aliyun"] = ["old"]
+        old["applications"] = ["odoo", "custom-alias"]
+        old["type"] = "custom"
+        before = copy.deepcopy(old)
+        result, report = offer_generate.generate([
+            offer_resolve.Product("cmjj001", "cmjj001", "Odoo 企业 ERP"),
+            offer_resolve.Product("cmjj002", "cmjj002", "WordPress 建站平台"),
+            offer_resolve.Product("cmjj003", "cmjj003", "Unidentified"),
+        ], self.identities, [old], platform="aliyun")
+        self.assertEqual(old, before)
+        self.assertEqual(result[0]["productID"]["aliyun"], ["cmjj001"])
+        self.assertEqual(result[0]["productID"]["aws"], ["aws-keep"])
+        self.assertEqual(result[0]["productID"]["azure"], ["pub.odoo"])
+        self.assertEqual(result[0]["applications"], ["odoo", "custom-alias"])
+        self.assertEqual(result[0]["type"], "custom")
+        self.assertEqual(result[1]["productID"]["aliyun"], ["cmjj002"])
+        self.assertEqual(report["platform"], "aliyun")
+        self.assertEqual(report["matched"], 2)
+        self.assertEqual(report["unresolved"][0]["code"], "cmjj003")
+
+    def test_aliyun_targeted_generation_moves_only_selected_code(self):
+        old = entry("odoo", ["aws-keep"])
+        old["productID"]["aliyun"] = ["cmjj001", "cmjj002"]
+        result, _ = offer_generate.generate([
+            offer_resolve.Product("cmjj001", "cmjj001", "WordPress"),
+            offer_resolve.Product("cmjj002", "cmjj002", "Drupal"),
+        ], self.identities, [old], platform="aliyun", codes=["cmjj001"])
+        self.assertEqual(result[0]["productID"]["aliyun"], ["cmjj002"])
+        self.assertEqual(result[0]["productID"]["aws"], ["aws-keep"])
+        self.assertEqual(result[1]["productID"]["aliyun"], ["cmjj001"])
+
+    def test_empty_aliyun_inventory_does_not_clear_existing_mappings(self):
+        with self.assertRaisesRegex(ValueError, "empty Aliyun inventory"):
+            offer_generate.generate([], self.identities, [], platform="aliyun")
+
+    def test_every_selected_product_has_identity_evidence_and_matrix_decision(self):
+        products = [
+            offer_resolve.Product("a", "prod-a", "Odoo", "Drupal integration"),
+            offer_resolve.Product("b", "prod-b", "Business suite", "Drupal Community, integrates with Odoo"),
+            offer_resolve.Product("c", "prod-c", "Odoo and Drupal", "Odoo"),
+            offer_resolve.Product("d", "prod-d", "Unknown", "Generic platform, integrates with Odoo"),
+        ]
+        _, report = offer_generate.generate(products, self.identities, [])
+        rows = report["products"]
+        self.assertEqual(len(rows), report["checked"])
+        core = lambda row: {k: row["appMatch"][k] for k in ("status", "appId", "candidates", "method")}
+        self.assertEqual(core(rows[0]), {
+            "status": "matched", "appId": "odoo", "candidates": [], "method": "title-trademark",
+        })
+        self.assertEqual(rows[1]["appMatch"]["appId"], "drupal")
+        self.assertEqual(rows[1]["appMatch"]["method"], "summary-lead-trademark")
+        self.assertEqual(core(rows[2]), {
+            "status": "matched", "appId": "odoo", "candidates": [],
+            "method": "title-trademark",
+        })
+        self.assertEqual(core(rows[3]), {
+            "status": "unmatched", "appId": None, "candidates": [], "method": None,
+        })
+        self.assertEqual([r["matrixDecision"]["included"] for r in rows], [True, True, True, False])
+        self.assertEqual([e["appId"] for e in rows[2]["appMatch"]["evidence"]], ["odoo", "drupal"])
+
+    def test_identity_match_does_not_mean_duplicate_or_missing_code_is_included(self):
+        _, report = offer_generate.generate([
+            offer_resolve.Product("same", "prod-a", "Odoo"),
+            offer_resolve.Product("same", "prod-b", "Odoo"),
+            offer_resolve.Product("", "prod-c", "Odoo"),
+            offer_resolve.Product("valid", "prod-d", "Drupal"),
+        ], self.identities, [])
+        self.assertTrue(all(r["appMatch"]["status"] == "matched" for r in report["products"]))
+        self.assertEqual([r["matrixDecision"]["included"] for r in report["products"]],
+                         [False, False, False, True])
+        self.assertEqual(report["products"][0]["matrixDecision"]["reason"], "duplicate cloud code")
+        self.assertEqual(report["matched"], 1)
+
+    def test_catalog_failure_marks_products_unverified_without_guessing_from_old_matrix(self):
+        result, report = offer_generate.generate([
+            offer_resolve.Product("old", "prod-a", "Odoo"),
+        ], None, [entry("odoo", ["old"])])
+        self.assertIsNone(result)
+        self.assertEqual(report["products"][0]["appMatch"]["status"], "unverified")
+        self.assertIsNone(report["products"][0]["appMatch"]["appId"])
+        self.assertFalse(report["products"][0]["matrixDecision"]["included"])
+
 
 class GenerateCliTests(unittest.TestCase):
     def setUp(self):
@@ -152,16 +250,27 @@ class GenerateCliTests(unittest.TestCase):
             {"key": "drupal", "trademark": "Drupal"},
         ]))
         self.products = [offer_resolve.Product("new", "prod", "Odoo")]
-        patcher = mock.patch.object(offer_resolve, "list_aws_products", side_effect=lambda *a, **kw: self.products)
+        patcher = mock.patch.object(aws_inventory, "list_aws_products",
+                                    side_effect=lambda *a, **kw: public_products(self.products))
         self.fetch = patcher.start()
         self.addCleanup(patcher.stop)
-        self.runner = CliRunner(mix_stderr=False)
+        self.runner = separated_runner()
 
     def invoke(self, *args):
         return self.runner.invoke(cli, [
             "offer-codes", "gen", "--platform", "aws", "--output", str(self.path),
             "--product-catalog", str(self.catalog), *args,
         ])
+
+    def snapshot(self, products=None, platform="aws"):
+        with mock.patch.object(store, "collect_products", return_value=public_products(
+            self.products if products is None else products,
+            "Public" if platform == "aws" else "StoreVisible",
+        )):
+            document = store.query_products([platform])
+        path = self.root / "inventory.json"
+        path.write_text(json.dumps(document))
+        return path, document
 
     def test_first_generation_and_loader_compatibility(self):
         result = self.invoke()
@@ -170,6 +279,7 @@ class GenerateCliTests(unittest.TestCase):
         self.assertEqual(docs[0][1][0]["productID"]["aws"], ["new"])
         self.assertEqual(offer_codes.verify(docs)["errors"], 0)
         self.assertTrue(self.fetch.call_args.kwargs["public_only"])
+        self.assertIn("| new | Odoo | matched | odoo | yes |", result.stdout)
 
     def test_regeneration_backups_are_not_loaded_as_json(self):
         self.assertEqual(self.invoke().exit_code, 0)
@@ -188,7 +298,11 @@ class GenerateCliTests(unittest.TestCase):
     def test_ambiguous_inventory_leaves_original_bytes(self):
         self.assertEqual(self.invoke().exit_code, 0)
         before = self.path.read_bytes()
-        self.products = [offer_resolve.Product("new", "prod", "Odoo and Drupal")]
+        self.catalog.write_text(json.dumps([
+            {"key": "odoo", "trademark": "Shared application"},
+            {"key": "drupal", "trademark": "Shared application"},
+        ]))
+        self.products = [offer_resolve.Product("new", "prod", "Shared application")]
         result = self.invoke()
         self.assertNotEqual(result.exit_code, 0)
         self.assertIn("ambiguous application", result.stdout)
@@ -202,9 +316,9 @@ class GenerateCliTests(unittest.TestCase):
         ]
         result = self.invoke()
         self.assertEqual(result.exit_code, 0, result.output)
-        self.assertEqual(json.loads(self.path.read_text()), [entry("odoo", ["new"])])
+        self.assertEqual(json.loads(self.path.read_text()), [entry("odoo", ["bad", "new"])])
         self.assertIn("| Product code | Title | Reason |", result.stdout)
-        self.assertIn("| bad | Odoo and Drupal | ambiguous application |", result.stdout)
+        self.assertIn("| bad | Odoo and Drupal | matched | odoo | yes |", result.stdout)
         self.assertIn("| duplicate | Odoo | duplicate cloud code |", result.stdout)
 
     def test_json_result_is_parseable_with_progress_on_stderr(self):
@@ -212,7 +326,7 @@ class GenerateCliTests(unittest.TestCase):
 
         def fetch(*args, **kwargs):
             kwargs["progress"]("AWS inventory listed: 2 Public AMI products")
-            return self.products
+            return public_products(self.products)
 
         self.fetch.side_effect = fetch
         result = self.invoke("--json")
@@ -279,6 +393,310 @@ class GenerateCliTests(unittest.TestCase):
         result = self.invoke()
         self.assertNotEqual(result.exit_code, 0)
         self.assertFalse(self.path.exists())
+
+    def test_aliyun_cli_writes_only_aliyun_and_reports_unresolved(self):
+        old = entry("odoo", ["aws-keep"])
+        old["productID"]["aliyun"] = ["old"]
+        self.path.write_text(json.dumps([old]))
+        products = [
+            offer_resolve.Product("cmjj001", "cmjj001", "Odoo 企业 ERP"),
+            offer_resolve.Product("cmjj002", "cmjj002", "Unknown"),
+        ]
+        with mock.patch.object(aliyun_market, "list_aliyun_products",
+                               return_value=public_products(products, "StoreVisible")):
+            result = self.invoke("--platform", "aliyun", "--json")
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.fetch.assert_not_called()
+        data = json.loads(self.path.read_text())
+        self.assertEqual(data[0]["productID"]["aws"], ["aws-keep"])
+        self.assertEqual(data[0]["productID"]["aliyun"], ["cmjj001"])
+        report = json.loads(result.stdout)
+        self.assertEqual(report["platform"], "aliyun")
+        self.assertEqual(report["visibility"], "StoreVisible")
+        self.assertEqual(report["unresolved"][0]["code"], "cmjj002")
+        self.assertEqual(report["unresolved"][0]["title"], "Unknown")
+
+    def test_aliyun_cli_dry_run_does_not_write_and_outputs_json(self):
+        with mock.patch.object(aliyun_market, "list_aliyun_products",
+                               return_value=public_products(self.products, "StoreVisible")):
+            result = self.invoke("--platform", "aliyun", "--json", "--dry-run")
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("productID", json.loads(result.stdout)["diff"])
+        self.assertFalse(self.path.exists())
+
+    def test_aliyun_api_or_credential_failure_does_not_change_matrix(self):
+        self.path.write_text("[]\n")
+        for error in (ValueError("API inventory incomplete"), RuntimeError("credentials missing")):
+            with mock.patch.object(aliyun_market, "list_aliyun_products", side_effect=error):
+                result = self.invoke("--platform", "aliyun", "--json")
+            self.assertNotEqual(result.exit_code, 0)
+            report = json.loads(result.stdout)
+            self.assertFalse(report["inventory"]["complete"])
+            self.assertFalse(report["matching"]["complete"])
+            self.assertFalse(report["written"])
+            self.assertEqual(self.path.read_text(), "[]\n")
+
+    def test_aliyun_rejects_aws_profile_before_network(self):
+        with mock.patch.object(aliyun_market, "list_aliyun_products") as fetch:
+            result = self.invoke("--platform", "aliyun", "--profile", "aws-profile")
+        self.assertNotEqual(result.exit_code, 0)
+        fetch.assert_not_called()
+
+    def test_snapshot_reuses_exact_store_facts_without_cloud_calls(self):
+        path, document = self.snapshot([
+            offer_resolve.Product("new", "prod", "Odoo", "Product summary"),
+            offer_resolve.Product("unknown", "prod-other", "Unknown", "Another summary"),
+        ])
+        original = path.read_bytes()
+        with mock.patch.object(store, "query_platform", side_effect=AssertionError("no cloud calls")):
+            result = self.invoke("--inventory", str(path), "--json", "--dry-run")
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.fetch.assert_not_called()
+        report = json.loads(result.stdout)
+        self.assertEqual(report["inventory"]["source"], "snapshot")
+        self.assertEqual(report["inventory"]["queriedAt"], document["results"][0]["queriedAt"])
+        self.assertEqual(report["inventory"]["sourcePath"], str(path))
+        self.assertTrue(report["matching"]["complete"])
+        self.assertEqual(len(report["matching"]["catalogIdentitySha256"]), 64)
+        self.assertEqual(report["matching"]["rulesVersion"], "deterministic-first-appearance-v2")
+        self.assertEqual(report["matching"]["catalog"], str(self.catalog))
+        self.assertEqual([r["appMatch"]["status"] for r in report["products"]], ["matched", "unmatched"])
+        for facts, row in zip(document["results"][0]["products"], report["products"]):
+            for key, value in facts.items():
+                self.assertEqual(row[key], value)
+        self.assertEqual(path.read_bytes(), original)
+        self.assertFalse(self.path.exists())
+
+    def test_live_query_uses_the_same_normalized_fact_result_as_store_command(self):
+        path, document = self.snapshot()
+        facts = document["results"][0]
+        with mock.patch.object(store, "query_platform", return_value=facts) as query:
+            result = self.invoke("--json", "--dry-run")
+        self.assertEqual(result.exit_code, 0, result.output)
+        query.assert_called_once()
+        self.fetch.assert_not_called()
+        report = json.loads(result.stdout)
+        self.assertEqual(report["products"][0]["code"], facts["products"][0]["code"])
+        self.assertEqual(report["inventory"]["source"], "live")
+        self.assertIsNone(report["inventory"]["sourcePath"])
+        self.assertEqual(report["inventory"]["count"], 1)
+
+    def test_snapshot_preserves_sku_lookup_but_only_writes_real_product_code(self):
+        path, _ = self.snapshot([
+            offer_resolve.Product("real-code", "prod", "Drupal", alternate_code="odoo_ubuntu"),
+        ])
+        self.path.write_text(json.dumps([entry("odoo", ["odoo_ubuntu", "keep"])]))
+        result = self.invoke("--inventory", str(path), "--code", "odoo_ubuntu", "--json")
+        self.assertEqual(result.exit_code, 0, result.output)
+        data = {r["id"]: r for r in json.loads(self.path.read_text())}
+        self.assertEqual(data["odoo"]["productID"]["aws"], ["keep"])
+        self.assertEqual(data["drupal"]["productID"]["aws"], ["real-code"])
+        row = json.loads(result.stdout)["products"][0]
+        self.assertEqual(row["sellerSku"], "odoo_ubuntu")
+        self.assertEqual(row["code"], "real-code")
+
+    def test_selected_complete_platform_can_be_used_if_another_snapshot_platform_failed(self):
+        path, document = self.snapshot()
+        document["complete"] = False
+        document["results"].append({"platform": "aliyun", "complete": False, "errors": [{}]})
+        path.write_text(json.dumps(document))
+        result = self.invoke("--inventory", str(path), "--json", "--dry-run")
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertTrue(json.loads(result.stdout)["inventory"]["complete"])
+
+    def test_bad_inventory_snapshots_never_change_matrix_or_query_cloud(self):
+        path, document = self.snapshot()
+        cases = []
+        for mutate in (
+            lambda d: d.update(schemaVersion=2),
+            lambda d: d.update(schemaVersion=True),
+            lambda d: d.update(results=[]),
+            lambda d: d["results"].append(copy.deepcopy(d["results"][0])),
+            lambda d: d["results"][0].update(complete=False),
+            lambda d: d["results"][0].update(errors=[{"code": "Error"}]),
+            lambda d: d["results"][0].update(count=3),
+            lambda d: d["results"][0].update(queriedAt="2026-11-17"),
+            lambda d: d["results"][0].update(scope={"productType": "image", "visibility": "some"}),
+            lambda d: d["results"][0]["store"].update(id="wrong-store"),
+            lambda d: d["results"][0]["products"][0].update(public=False),
+            lambda d: d["results"][0]["products"][0].update(visibility="Restricted"),
+            lambda d: d["results"][0]["products"][0].update(platform="aliyun"),
+            lambda d: d["results"][0]["products"][0].update(sellerSku=False),
+            lambda d: d["results"][0]["products"][0].update(title=None),
+        ):
+            bad = copy.deepcopy(document)
+            mutate(bad)
+            cases.append(bad)
+        self.path.write_text("[]\n")
+        for bad in cases:
+            with self.subTest(bad=bad):
+                path.write_text(json.dumps(bad))
+                result = self.invoke("--inventory", str(path), "--json")
+                self.assertNotEqual(result.exit_code, 0)
+                self.assertEqual(self.path.read_text(), "[]\n")
+        self.fetch.assert_not_called()
+
+    def test_catalog_failure_reports_unverified_products_and_preserves_original_matrix(self):
+        path, _ = self.snapshot()
+        self.path.write_text("[]\n")
+        with mock.patch.object(offer_resolve, "load_identities", side_effect=RuntimeError("SECRET signed request")):
+            result = self.invoke("--inventory", str(path), "--json")
+        self.assertNotEqual(result.exit_code, 0)
+        report = json.loads(result.stdout)
+        self.assertTrue(report["inventory"]["complete"])
+        self.assertFalse(report["matching"]["complete"])
+        self.assertEqual(report["products"][0]["appMatch"]["status"], "unverified")
+        self.assertFalse(report["written"])
+        self.assertNotIn("SECRET", result.stdout + result.stderr)
+        self.assertEqual(self.path.read_text(), "[]\n")
+
+    def test_matching_hash_changes_with_effective_catalog_rules(self):
+        path, _ = self.snapshot()
+        first = json.loads(self.invoke("--inventory", str(path), "--json", "--dry-run").stdout)
+        self.catalog.write_text(json.dumps([
+            {"key": "odoo", "trademark": "Odoo"}, {"key": "drupal", "trademark": "Drupal CMS"},
+        ]))
+        second = json.loads(self.invoke("--inventory", str(path), "--json", "--dry-run").stdout)
+        self.assertNotEqual(first["matching"]["catalogIdentitySha256"], second["matching"]["catalogIdentitySha256"])
+
+    def test_snapshot_rejects_profile_and_invalid_json_before_cloud_calls(self):
+        path, _ = self.snapshot()
+        result = self.invoke("--inventory", str(path), "--profile", "seller")
+        self.assertEqual(result.exit_code, 2)
+        path.write_text("not JSON")
+        result = self.invoke("--inventory", str(path), "--json")
+        self.assertNotEqual(result.exit_code, 0)
+        self.fetch.assert_not_called()
+
+    def test_catalog_provenance_does_not_expose_signed_query_or_url_credentials(self):
+        path, _ = self.snapshot()
+        source = "https://user:password@example.com/catalog.json?token=SECRET#fragment"
+        with mock.patch.object(offer_resolve, "load_identities", return_value={"odoo": ["Odoo"]}):
+            result = self.invoke("--inventory", str(path), "--product-catalog", source, "--dry-run", "--json")
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(json.loads(result.stdout)["matching"]["catalog"], "https://example.com/catalog.json")
+        self.assertNotIn("SECRET", result.stdout)
+        self.assertNotIn("password", result.stdout)
+
+    def test_both_alibaba_platforms_share_live_matching_report_and_isolated_write(self):
+        for platform, adapter, method, prefix in ALIBABA_PLATFORMS:
+            with self.subTest(platform=platform):
+                old = entry("odoo", ["aws-keep"], ["pub.odoo"])
+                old["productID"].update(aliyun=["cmjj999"], alibabacloud=["sgcmjj999"])
+                old["applications"] = ["odoo", "custom-alias"]
+                self.path.write_text(json.dumps([old]))
+                products = public_products([
+                    offer_resolve.Product(prefix + "001", prefix + "001", "Odoo", "API summary"),
+                    offer_resolve.Product(prefix + "002", prefix + "002", "Unidentified runtime"),
+                    offer_resolve.Product(prefix + "003", prefix + "003", "Odoo and Drupal"),
+                ], "StoreVisible")
+                with mock.patch.object(adapter, method, return_value=products) as fetch, \
+                        mock.patch.object(store, "query_platform", wraps=store.query_platform) as query:
+                    result = self.invoke("--platform", platform, "--json")
+                self.assertEqual(result.exit_code, 0, result.output)
+                fetch.assert_called_once()
+                query.assert_called_once()
+                self.assertEqual(query.call_args.args[0], platform)
+                data = json.loads(self.path.read_text())
+                expected = copy.deepcopy(old)
+                expected["productID"][platform] = [prefix + "001", prefix + "003"]
+                self.assertEqual(data, [expected])
+                report = json.loads(result.stdout)
+                self.assertEqual(report["platform"], platform)
+                self.assertEqual(report["inventory"]["source"], "live")
+                self.assertEqual(report["inventory"]["store"]["id"],
+                                 "228399" if platform == "aliyun" else "2116499")
+                self.assertTrue(report["matching"]["complete"])
+                self.assertEqual([p["appMatch"]["status"] for p in report["products"]],
+                                 ["matched", "unmatched", "matched"])
+                self.assertEqual(report["products"][0]["shortDescription"], "API summary")
+                self.assertEqual(report["products"][2]["appMatch"]["appId"], "odoo")
+                self.assertEqual([e["appId"] for e in report["products"][2]["appMatch"]["evidence"]],
+                                 ["odoo", "drupal"])
+                self.assertEqual(report["matched"], 2)
+                self.assertEqual(len(report["unresolved"]), 1)
+                self.assertTrue(report["written"])
+        self.fetch.assert_not_called()
+
+    def test_both_alibaba_platforms_consume_store_snapshots_without_requerying(self):
+        for platform, _, _, prefix in ALIBABA_PLATFORMS:
+            with self.subTest(platform=platform):
+                path, document = self.snapshot([
+                    offer_resolve.Product(prefix + "001", prefix + "001", "Odoo", "Original summary"),
+                ], platform=platform)
+                snapshot_bytes = path.read_bytes()
+                self.path.write_text("[]\n")
+                with mock.patch.object(store, "query_platform", side_effect=AssertionError("no cloud calls")):
+                    result = self.invoke("--platform", platform, "--inventory", str(path), "--dry-run", "--json")
+                self.assertEqual(result.exit_code, 0, result.output)
+                report = json.loads(result.stdout)
+                self.assertEqual(report["inventory"]["source"], "snapshot")
+                self.assertEqual(report["inventory"]["queriedAt"], document["results"][0]["queriedAt"])
+                for key, value in document["results"][0]["products"][0].items():
+                    self.assertEqual(report["products"][0][key], value)
+                self.assertEqual(report["products"][0]["appMatch"]["appId"], "odoo")
+                self.assertFalse(report["written"])
+                self.assertIn(f'"{platform}"', report["diff"])
+                self.assertEqual(self.path.read_text(), "[]\n")
+                self.assertEqual(path.read_bytes(), snapshot_bytes)
+
+    def test_both_alibaba_platforms_target_only_requested_codes(self):
+        for platform, _, _, prefix in ALIBABA_PLATFORMS:
+            with self.subTest(platform=platform):
+                path, _ = self.snapshot([
+                    offer_resolve.Product(prefix + "001", prefix + "001", "Drupal"),
+                    offer_resolve.Product(prefix + "002", prefix + "002", "Odoo"),
+                ], platform=platform)
+                old = entry("odoo", ["aws-keep"])
+                old["productID"].update(aliyun=["cmjj001", "cmjj002"], alibabacloud=["sgcmjj001", "sgcmjj002"])
+                self.path.write_text(json.dumps([old]))
+                result = self.invoke("--platform", platform, "--inventory", str(path),
+                                     "--code", prefix + "001", "--json")
+                self.assertEqual(result.exit_code, 0, result.output)
+                data = {e["id"]: e for e in json.loads(self.path.read_text())}
+                self.assertEqual(data["odoo"]["productID"][platform], [prefix + "002"])
+                self.assertEqual(data["drupal"]["productID"][platform], [prefix + "001"])
+                for other in offer_codes.REQUIRED_PLATFORMS:
+                    if other != platform:
+                        self.assertEqual(data["odoo"]["productID"][other], old["productID"][other])
+                self.assertEqual(json.loads(result.stdout)["checked"], 1)
+
+    def test_both_alibaba_platforms_preserve_matrix_on_empty_failed_or_unverified_inventory(self):
+        for platform, adapter, method, prefix in ALIBABA_PLATFORMS:
+            with self.subTest(platform=platform):
+                self.path.write_text("[]\n")
+                with mock.patch.object(adapter, method, return_value=[]):
+                    result = self.invoke("--platform", platform, "--json")
+                self.assertNotEqual(result.exit_code, 0)
+                report = json.loads(result.stdout)
+                self.assertIn(f"empty {offer_generate.PLATFORMS[platform]} inventory", report["errors"][0]["message"])
+                with mock.patch.object(adapter, method, side_effect=RuntimeError("SECRET signed request")):
+                    result = self.invoke("--platform", platform, "--json")
+                self.assertNotEqual(result.exit_code, 0)
+                self.assertFalse(json.loads(result.stdout)["inventory"]["complete"])
+                self.assertNotIn("SECRET", result.stdout + result.stderr)
+                path, _ = self.snapshot([
+                    offer_resolve.Product(prefix + "001", prefix + "001", "Odoo"),
+                ], platform=platform)
+                with mock.patch.object(offer_resolve, "load_identities", side_effect=ValueError("bad catalog")):
+                    result = self.invoke("--platform", platform, "--inventory", str(path), "--json")
+                self.assertNotEqual(result.exit_code, 0)
+                self.assertEqual(json.loads(result.stdout)["products"][0]["appMatch"]["status"], "unverified")
+                self.assertEqual(self.path.read_text(), "[]\n")
+
+    def test_alibaba_platforms_do_not_relabel_each_others_snapshots_or_accept_aws_profile(self):
+        for platform, adapter, method, _ in ALIBABA_PLATFORMS:
+            with self.subTest(platform=platform):
+                other = "alibabacloud" if platform == "aliyun" else "aliyun"
+                path, _ = self.snapshot(platform=other)
+                self.path.write_text("[]\n")
+                with mock.patch.object(adapter, method) as fetch:
+                    result = self.invoke("--platform", platform, "--inventory", str(path), "--json")
+                    self.assertNotEqual(result.exit_code, 0)
+                    result = self.invoke("--platform", platform, "--profile", "aws-seller")
+                    self.assertEqual(result.exit_code, 2)
+                fetch.assert_not_called()
+                self.assertEqual(self.path.read_text(), "[]\n")
 
 
 if __name__ == "__main__":

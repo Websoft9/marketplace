@@ -527,15 +527,15 @@ class AliyunMarketplaceProvider:
                 "aliyun-python-sdk-market"
             ) from error
         if self._client is None:
-            access_key_id = os.environ.get("ALIBABA_CLOUD_ACCESS_KEY_ID", "").strip()
-            access_key_secret = os.environ.get("ALIBABA_CLOUD_ACCESS_KEY_SECRET", "").strip()
-            security_token = os.environ.get("ALIBABA_CLOUD_SECURITY_TOKEN", "").strip()
+            access_key_id = os.environ.get("ALIYUN_ACCESS_KEY_ID", "").strip()
+            access_key_secret = os.environ.get("ALIYUN_ACCESS_KEY_SECRET", "").strip()
+            security_token = os.environ.get("ALIYUN_SECURITY_TOKEN", "").strip()
             if not access_key_id or not access_key_secret:
                 raise MarketplaceError(
                     "Aliyun OIDC credentials are missing; configure the GitHub Actions OIDC "
-                    "step to provide ALIBABA_CLOUD_ACCESS_KEY_ID, "
-                    "ALIBABA_CLOUD_ACCESS_KEY_SECRET, and "
-                    "ALIBABA_CLOUD_SECURITY_TOKEN"
+                    "step to provide ALIYUN_ACCESS_KEY_ID, "
+                    "ALIYUN_ACCESS_KEY_SECRET, and "
+                    "ALIYUN_SECURITY_TOKEN"
                 )
             credential = None
             if security_token:

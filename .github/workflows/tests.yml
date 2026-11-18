@@ -1,0 +1,38 @@
+# Unit suites only: tests use synthetic fixtures and mock every cloud SDK.
+# Live marketplace checks remain in the offer-* and product-freshness workflows.
+name: Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install CLI
+        run: python -m pip install --disable-pip-version-check .
+
+      - name: Run unit tests
+        run: make test

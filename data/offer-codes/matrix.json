@@ -18,6 +18,23 @@
         ]
     },
     {
+        "id": "activepieces",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [
+                "sgcmjj00025928"
+            ],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": []
+        },
+        "type": "app",
+        "applications": [
+            "activepieces"
+        ]
+    },
+    {
         "id": "affine",
         "productID": {
             "aliyun": [],
@@ -56,7 +73,9 @@
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00035322"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -69,11 +88,49 @@
         ]
     },
     {
-        "id": "canvas",
+        "id": "anythingllm",
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00035325"
+            ],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": []
+        },
+        "type": "app",
+        "applications": [
+            "anythingllm"
+        ]
+    },
+    {
+        "id": "arangodb",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [
+                "sgcmjj00035327"
+            ],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": []
+        },
+        "type": "app",
+        "applications": [
+            "arangodb"
+        ]
+    },
+    {
+        "id": "canvas",
+        "productID": {
+            "aliyun": [
+                "cmjj00044447"
+            ],
+            "huaweiyun": [],
+            "alibabacloud": [
+                "sgcmjj00025935"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -105,9 +162,13 @@
     {
         "id": "chroma",
         "productID": {
-            "aliyun": [],
+            "aliyun": [
+                "cmjj00052319"
+            ],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025936"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -124,7 +185,9 @@
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00035309"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -171,9 +234,13 @@
     {
         "id": "django",
         "productID": {
-            "aliyun": [],
+            "aliyun": [
+                "cmjj013062"
+            ],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025926"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -186,11 +253,30 @@
         ]
     },
     {
+        "id": "dolibarr",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [
+                "sgcmjj00026556"
+            ],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": []
+        },
+        "type": "app",
+        "applications": [
+            "dolibarr"
+        ]
+    },
+    {
         "id": "drupal",
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00026410"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -203,11 +289,35 @@
         ]
     },
     {
+        "id": "dsh",
+        "productID": {
+            "aliyun": [
+                "cmjj011282"
+            ],
+            "huaweiyun": [],
+            "alibabacloud": [
+                "sgcmjj00025915"
+            ],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": []
+        },
+        "type": "app",
+        "applications": [
+            "dsh"
+        ]
+    },
+    {
         "id": "erpnext",
         "productID": {
-            "aliyun": [],
+            "aliyun": [
+                "cmjj00044761"
+            ],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025932",
+                "sgcmjj00025933"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -224,7 +334,9 @@
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025649"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -241,7 +353,9 @@
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025621"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -258,7 +372,9 @@
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025680"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": []
@@ -273,7 +389,9 @@
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00035307"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -288,9 +406,14 @@
     {
         "id": "gitlab",
         "productID": {
-            "aliyun": [],
+            "aliyun": [
+                "cmjj00036406",
+                "cmjj00042495"
+            ],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025659"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -300,6 +423,23 @@
         "type": "app",
         "applications": [
             "gitlab"
+        ]
+    },
+    {
+        "id": "gocd",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [
+                "sgcmjj00025924"
+            ],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": []
+        },
+        "type": "app",
+        "applications": [
+            "gocd"
         ]
     },
     {
@@ -324,7 +464,9 @@
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00035306"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -341,7 +483,9 @@
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025917"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -357,9 +501,13 @@
     {
         "id": "hermes",
         "productID": {
-            "aliyun": [],
+            "aliyun": [
+                "cmjj00038136"
+            ],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025695"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -374,9 +522,13 @@
     {
         "id": "influxdb",
         "productID": {
-            "aliyun": [],
+            "aliyun": [
+                "cmjj00048857"
+            ],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025694"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -406,9 +558,13 @@
     {
         "id": "jenkins",
         "productID": {
-            "aliyun": [],
+            "aliyun": [
+                "cmjj023081"
+            ],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025642"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -421,9 +577,45 @@
         ]
     },
     {
-        "id": "jupyterhub",
+        "id": "jfrog",
         "productID": {
             "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [
+                "sgcmjj00025908"
+            ],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": []
+        },
+        "type": "app",
+        "applications": [
+            "jfrog"
+        ]
+    },
+    {
+        "id": "jitsi",
+        "productID": {
+            "aliyun": [
+                "cmjj00042592"
+            ],
+            "huaweiyun": [],
+            "alibabacloud": [],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": []
+        },
+        "type": "app",
+        "applications": [
+            "jitsi"
+        ]
+    },
+    {
+        "id": "jupyterhub",
+        "productID": {
+            "aliyun": [
+                "cmjj00038106"
+            ],
             "huaweiyun": [],
             "alibabacloud": [],
             "huaweicloud": [],
@@ -440,9 +632,13 @@
     {
         "id": "kafka",
         "productID": {
-            "aliyun": [],
+            "aliyun": [
+                "cmjj00043548"
+            ],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00026490"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": []
@@ -472,7 +668,9 @@
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00027091"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -489,7 +687,9 @@
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025937"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -502,11 +702,30 @@
         ]
     },
     {
+        "id": "localai",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [
+                "sgcmjj00026147"
+            ],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": []
+        },
+        "type": "app",
+        "applications": [
+            "localai"
+        ]
+    },
+    {
         "id": "mariadb",
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00026497"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": []
@@ -521,7 +740,9 @@
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00035312"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -555,7 +776,9 @@
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025682"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -572,7 +795,9 @@
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025906"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -589,7 +814,9 @@
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00035302"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -623,7 +850,12 @@
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025602",
+                "sgcmjj00025603",
+                "sgcmjj00025604",
+                "sgcmjj00025605"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -638,9 +870,13 @@
     {
         "id": "n8n",
         "productID": {
-            "aliyun": [],
+            "aliyun": [
+                "cmjj010920"
+            ],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00035305"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -655,9 +891,13 @@
     {
         "id": "neo4j",
         "productID": {
-            "aliyun": [],
+            "aliyun": [
+                "cmjj00038131"
+            ],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025623"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -687,6 +927,25 @@
         ]
     },
     {
+        "id": "nextjs",
+        "productID": {
+            "aliyun": [
+                "cmjj00039214"
+            ],
+            "huaweiyun": [],
+            "alibabacloud": [
+                "sgcmjj00026486"
+            ],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": []
+        },
+        "type": "app",
+        "applications": [
+            "nextjs"
+        ]
+    },
+    {
         "id": "nifi",
         "productID": {
             "aliyun": [],
@@ -708,7 +967,9 @@
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025930"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -738,9 +999,15 @@
     {
         "id": "odoo",
         "productID": {
-            "aliyun": [],
+            "aliyun": [
+                "cmjj00041093",
+                "cmjj016916"
+            ],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025650",
+                "sgcmjj00025939"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -772,9 +1039,13 @@
     {
         "id": "onlyofficedocs",
         "productID": {
-            "aliyun": [],
+            "aliyun": [
+                "cmjj00044586"
+            ],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00035340"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -789,9 +1060,13 @@
     {
         "id": "openclaw",
         "productID": {
-            "aliyun": [],
+            "aliyun": [
+                "cmjj00038326"
+            ],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00035341"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -808,7 +1083,9 @@
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00026127"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -825,7 +1102,9 @@
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025916"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -870,11 +1149,35 @@
         ]
     },
     {
+        "id": "pgvector",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [
+                "sgcmjj00026041"
+            ],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": []
+        },
+        "type": "app",
+        "applications": [
+            "pgvector"
+        ]
+    },
+    {
         "id": "php",
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025589",
+                "sgcmjj00025590",
+                "sgcmjj00025591",
+                "sgcmjj00025592",
+                "sgcmjj00025593",
+                "sgcmjj00025594"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -906,7 +1209,9 @@
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025681"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -921,9 +1226,18 @@
     {
         "id": "postgresql",
         "productID": {
-            "aliyun": [],
+            "aliyun": [
+                "cmjj00059560"
+            ],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025608",
+                "sgcmjj00025609",
+                "sgcmjj00025610",
+                "sgcmjj00025611",
+                "sgcmjj00025612",
+                "sgcmjj00026423"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -938,9 +1252,13 @@
     {
         "id": "prestashop",
         "productID": {
-            "aliyun": [],
+            "aliyun": [
+                "cmjj00038197"
+            ],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025679"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -955,9 +1273,13 @@
     {
         "id": "prometheus",
         "productID": {
-            "aliyun": [],
+            "aliyun": [
+                "cmjj00038195"
+            ],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00026468"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": []
@@ -968,11 +1290,30 @@
         ]
     },
     {
+        "id": "qdrant",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [
+                "sgcmjj00026107"
+            ],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": []
+        },
+        "type": "app",
+        "applications": [
+            "qdrant"
+        ]
+    },
+    {
         "id": "qwenpaw",
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025923"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -987,9 +1328,13 @@
     {
         "id": "rabbitmq",
         "productID": {
-            "aliyun": [],
+            "aliyun": [
+                "cmjj011785"
+            ],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00035339"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -999,6 +1344,23 @@
         "type": "app",
         "applications": [
             "rabbitmq"
+        ]
+    },
+    {
+        "id": "rancher",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [
+                "sgcmjj00025929"
+            ],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": []
+        },
+        "type": "app",
+        "applications": [
+            "rancher"
         ]
     },
     {
@@ -1023,7 +1385,9 @@
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025688"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -1053,11 +1417,30 @@
         ]
     },
     {
+        "id": "rundeck",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [
+                "sgcmjj00025909"
+            ],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": []
+        },
+        "type": "app",
+        "applications": [
+            "rundeck"
+        ]
+    },
+    {
         "id": "seafile",
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025925"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": []
@@ -1065,6 +1448,23 @@
         "type": "app",
         "applications": [
             "seafile"
+        ]
+    },
+    {
+        "id": "selenium",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [
+                "sgcmjj00025651"
+            ],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": []
+        },
+        "type": "app",
+        "applications": [
+            "selenium"
         ]
     },
     {
@@ -1087,9 +1487,13 @@
     {
         "id": "sonarqube",
         "productID": {
-            "aliyun": [],
+            "aliyun": [
+                "cmjj00041094"
+            ],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00026014"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -1104,9 +1508,13 @@
     {
         "id": "springboot",
         "productID": {
-            "aliyun": [],
+            "aliyun": [
+                "cmjj013121"
+            ],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00027090"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -1119,11 +1527,32 @@
         ]
     },
     {
-        "id": "supabase",
+        "id": "strapi",
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025927"
+            ],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": []
+        },
+        "type": "app",
+        "applications": [
+            "strapi"
+        ]
+    },
+    {
+        "id": "supabase",
+        "productID": {
+            "aliyun": [
+                "cmjj00065682"
+            ],
+            "huaweiyun": [],
+            "alibabacloud": [
+                "sgcmjj00025697"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -1140,7 +1569,9 @@
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025684"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -1190,7 +1621,9 @@
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00035301"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": []
@@ -1203,9 +1636,13 @@
     {
         "id": "tensorflow",
         "productID": {
-            "aliyun": [],
+            "aliyun": [
+                "cmjj00038118"
+            ],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025683"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": []
@@ -1235,7 +1672,9 @@
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00026105"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": []
@@ -1250,7 +1689,9 @@
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00031178"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -1282,7 +1723,9 @@
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00031076"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -1299,7 +1742,9 @@
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025618"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -1316,7 +1761,9 @@
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025619"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": []
@@ -1327,11 +1774,66 @@
         ]
     },
     {
-        "id": "woocommerce",
+        "id": "vespa",
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025698"
+            ],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": []
+        },
+        "type": "app",
+        "applications": [
+            "vespa"
+        ]
+    },
+    {
+        "id": "wazuh",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [
+                "sgcmjj00035317"
+            ],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": []
+        },
+        "type": "app",
+        "applications": [
+            "wazuh"
+        ]
+    },
+    {
+        "id": "weaviate",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [
+                "sgcmjj00025620"
+            ],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": []
+        },
+        "type": "app",
+        "applications": [
+            "weaviate"
+        ]
+    },
+    {
+        "id": "woocommerce",
+        "productID": {
+            "aliyun": [
+                "cmjj011415"
+            ],
+            "huaweiyun": [],
+            "alibabacloud": [
+                "sgcmjj00035310"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -1346,9 +1848,17 @@
     {
         "id": "wordpress",
         "productID": {
-            "aliyun": [],
+            "aliyun": [
+                "cmjj00041704",
+                "cmjj010728",
+                "cmjj023845"
+            ],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025386",
+                "sgcmjj00025557",
+                "sgcmjj00035342"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": [
@@ -1377,11 +1887,30 @@
         ]
     },
     {
+        "id": "youtrack",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [
+                "sgcmjj00025931"
+            ],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": []
+        },
+        "type": "app",
+        "applications": [
+            "youtrack"
+        ]
+    },
+    {
         "id": "zammad",
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00026763"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": []
@@ -1396,7 +1925,9 @@
         "productID": {
             "aliyun": [],
             "huaweiyun": [],
-            "alibabacloud": [],
+            "alibabacloud": [
+                "sgcmjj00025690"
+            ],
             "huaweicloud": [],
             "azure": [],
             "aws": []
@@ -1404,6 +1935,23 @@
         "type": "app",
         "applications": [
             "zentao"
+        ]
+    },
+    {
+        "id": "zulip",
+        "productID": {
+            "aliyun": [],
+            "huaweiyun": [],
+            "alibabacloud": [
+                "sgcmjj00025918"
+            ],
+            "huaweicloud": [],
+            "azure": [],
+            "aws": []
+        },
+        "type": "app",
+        "applications": [
+            "zulip"
         ]
     }
 ]

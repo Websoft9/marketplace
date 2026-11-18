@@ -1,0 +1,90 @@
+name: AppStore Screenshots
+run-name: "AppStore screenshots (${{ inputs.apps || 'all applications' }})"
+
+on:
+  workflow_dispatch:
+    inputs:
+      apps:
+        description: "Application IDs, comma-separated; leave empty for all"
+        required: false
+        type: string
+      no_upload:
+        description: "Validate capture without uploading to S3"
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+# All runs write the same S3 keys, including overlapping application selections.
+concurrency:
+  group: appstore-screenshots
+  cancel-in-progress: false
+
+jobs:
+  screenshots:
+    if: github.repository == 'Websoft9/marketplace' && github.ref == 'refs/heads/main'
+    runs-on: ${{ vars.APPSTORE_SCREENSHOTS_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 60
+    env:
+      SCREENSHOTS_SUBDIR: appstore-screenshots-${{ github.run_id }}-${{ github.run_attempt }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install screenshot dependencies
+        run: |
+          python -m pip install --disable-pip-version-check '.[screenshots]'
+          python -m playwright install --with-deps chromium
+
+      - name: Configure AWS credentials
+        if: ${{ !inputs.no_upload }}
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+          role-duration-seconds: 3600
+          role-session-name: AppStoreScreenshots-${{ github.run_id }}
+
+      - name: Capture application details
+        env:
+          WEBSOFT9_URL: ${{ secrets.WEBSOFT9_URL }}
+          WEBSOFT9_USER: ${{ secrets.WEBSOFT9_USER }}
+          WEBSOFT9_PASSWORD: ${{ secrets.WEBSOFT9_PASSWORD }}
+          APPS: ${{ inputs.apps }}
+          NO_UPLOAD: ${{ inputs.no_upload }}
+        run: |
+          args=(--output-dir "$RUNNER_TEMP/$SCREENSHOTS_SUBDIR" --summary "$GITHUB_STEP_SUMMARY")
+          if [[ -n "$APPS" ]]; then args+=("--apps=$APPS"); fi
+          if [[ "$NO_UPLOAD" == "true" ]]; then args+=(--no-upload); fi
+          mk asset screenshots "${args[@]}"
+
+      # Only the sanitized report is retained, never login state, traces or raw pages.
+      - name: Upload result report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: appstore-screenshots-report
+          path: ${{ runner.temp }}/${{ env.SCREENSHOTS_SUBDIR }}/report.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Remove local screenshots
+        if: always()
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+          directory = Path(os.environ["RUNNER_TEMP"]) / os.environ["SCREENSHOTS_SUBDIR"]
+          for image in directory.glob("*-installation.png"):
+              image.unlink()

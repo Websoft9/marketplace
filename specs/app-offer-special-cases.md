@@ -13,6 +13,7 @@ Contentful.
 | `data/listing/templates/` | Offer structure and default copy |
 | `data/listing/vendor.json` | Shared vendor statements |
 | `data/listing/app-special-cases.json` | Per-application rendering flags and wording |
+| `config/os-catalog.json` | Shared OS family names, displays and recognized aliases; not per-application offer declarations |
 | `catalog.contentOverrides` | Last-resort literal override; reviewed per listing |
 
 `hasenterprise` stays a fact: "a separately licensed commercial edition
@@ -52,6 +53,10 @@ including `base`. This restriction also applies when `--code` requests a forced
 override. Without an explicit selection the resolver can discover OS variants
 from live listings; non-OS labels require a declared label in the title, not a
 summary statement that the application supports the feature.
+
+OS names/aliases are loaded from [the shared OS catalog](os-catalog.md), not a
+code-side table. Version examples in that file do not permit OS version suffixes
+in `multiOffers`; offer variants still use the family name only.
 
 Do not add per-application slots that duplicate catalog facts. Add a slot only
 when the shared template or version source cannot express the difference.

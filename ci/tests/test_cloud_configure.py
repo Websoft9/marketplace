@@ -34,6 +34,16 @@ class CloudConfigureTests(unittest.TestCase):
         self.assertIn("WECOM_WEBHOOK=", wecom)
         self.assertNotIn("CONTENTFUL_", wecom)
 
+    def test_websoft9_file_has_url_user_and_password(self):
+        websoft9 = cloud_configure.render("websoft9")
+        self.assertIn(
+            "WEBSOFT9_URL=http://t.inner.websoft9.cn:9000/", websoft9
+        )
+        self.assertIn("WEBSOFT9_USER=", websoft9)
+        self.assertIn("WEBSOFT9_PASSWORD=", websoft9)
+        self.assertNotIn("CONTENTFUL_", websoft9)
+        self.assertNotIn("WECOM_", websoft9)
+
     def test_platform_files_do_not_mix_credentials(self):
         aws = cloud_configure.render("aws")
         aliyun = cloud_configure.render("aliyun")
@@ -42,6 +52,26 @@ class CloudConfigureTests(unittest.TestCase):
         self.assertNotIn("WECOM_", aws)
         self.assertNotIn("AWS_ACCESS_KEY_ID", aliyun)
         self.assertNotIn("AZURE_", aliyun)
+
+    def test_aliyun_and_alibabacloud_use_distinct_credentials(self):
+        aliyun = cloud_configure.render("aliyun")
+        alibabacloud = cloud_configure.render("alibabacloud")
+        for key in (
+            "ALIYUN_ACCESS_KEY_ID=",
+            "ALIYUN_ACCESS_KEY_SECRET=",
+            "ALIYUN_SECURITY_TOKEN=",
+        ):
+            self.assertIn(key, aliyun)
+        # Legacy names are documented as comments, not active variables.
+        self.assertNotIn("\nALIBABA_CLOUD_ACCESS_KEY_ID=", aliyun)
+        for key in (
+            "ALIBABA_CLOUD_ACCESS_KEY_ID=",
+            "ALIBABA_CLOUD_ACCESS_KEY_SECRET=",
+            "ALIBABA_CLOUD_SECURITY_TOKEN=",
+        ):
+            self.assertIn(key, alibabacloud)
+        self.assertNotIn("\nALIYUN_ACCESS_KEY_ID=", alibabacloud)
+        self.assertIn("separate account", alibabacloud)
 
     def test_all_generates_every_configured_platform(self):
         with tempfile.TemporaryDirectory() as name:

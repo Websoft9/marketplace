@@ -74,11 +74,11 @@ jobs:
       - name: Verify Aliyun credentials
         if: matrix.platform == 'alibabacloud'
         env:
-          ALIBABA_CLOUD_ACCESS_KEY_ID: ${{ secrets.ALIBABA_CLOUD_ACCESS_KEY_ID }}
-          ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${{ secrets.ALIBABA_CLOUD_ACCESS_KEY_SECRET }}
+          ALIYUN_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+          ALIYUN_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
         run: |
-          if [[ -z "$ALIBABA_CLOUD_ACCESS_KEY_ID" || -z "$ALIBABA_CLOUD_ACCESS_KEY_SECRET" ]]; then
-            echo "::error::Configure ALIBABA_CLOUD_ACCESS_KEY_ID and ALIBABA_CLOUD_ACCESS_KEY_SECRET as Actions secrets."
+          if [[ -z "$ALIYUN_ACCESS_KEY_ID" || -z "$ALIYUN_ACCESS_KEY_SECRET" ]]; then
+            echo "::error::Configure ALIYUN_ACCESS_KEY_ID and ALIYUN_ACCESS_KEY_SECRET as Actions secrets."
             exit 1
           fi
 
@@ -96,9 +96,9 @@ jobs:
           COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_CLI_TOKEN || github.token }}
           PRODUCT_PLATFORM: ${{ matrix.platform }}
           PRODUCT_SKILL: ${{ matrix.skill }}
-          ALIBABA_CLOUD_ACCESS_KEY_ID: ${{ matrix.platform == 'alibabacloud' && secrets.ALIBABA_CLOUD_ACCESS_KEY_ID || '' }}
-          ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${{ matrix.platform == 'alibabacloud' && secrets.ALIBABA_CLOUD_ACCESS_KEY_SECRET || '' }}
-          ALIBABA_CLOUD_SECURITY_TOKEN: ${{ matrix.platform == 'alibabacloud' && secrets.ALIBABA_CLOUD_SECURITY_TOKEN || '' }}
+          ALIYUN_ACCESS_KEY_ID: ${{ matrix.platform == 'alibabacloud' && secrets.ALIYUN_ACCESS_KEY_ID || '' }}
+          ALIYUN_ACCESS_KEY_SECRET: ${{ matrix.platform == 'alibabacloud' && secrets.ALIYUN_ACCESS_KEY_SECRET || '' }}
+          ALIYUN_SECURITY_TOKEN: ${{ matrix.platform == 'alibabacloud' && secrets.ALIYUN_SECURITY_TOKEN || '' }}
         run: |
           set -euo pipefail
           copilot \
@@ -108,7 +108,7 @@ jobs:
             --allow-tool='shell(python3:*)' \
             --allow-tool='shell(pip:*)' \
             --allow-tool='shell(git:*)' \
-            --secret-env-vars="COPILOT_GITHUB_TOKEN,ALIBABA_CLOUD_ACCESS_KEY_ID,ALIBABA_CLOUD_ACCESS_KEY_SECRET,ALIBABA_CLOUD_SECURITY_TOKEN" \
+            --secret-env-vars="COPILOT_GITHUB_TOKEN,ALIYUN_ACCESS_KEY_ID,ALIYUN_ACCESS_KEY_SECRET,ALIYUN_SECURITY_TOKEN" \
             --no-ask-user \
             2>&1 | tee /tmp/product-freshness-report.md
           cat /tmp/product-freshness-report.md >> "$GITHUB_STEP_SUMMARY"

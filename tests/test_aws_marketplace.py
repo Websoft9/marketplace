@@ -26,6 +26,14 @@ class AwsMarketplaceAdapterTests(unittest.TestCase):
                 "PromotionalResources": {
                     "LogoUrl": "https://example.com/logo.png",
                     "Videos": [{"Url": "https://example.com/video.mp4"}],
+                    "PromotionalMedia": [
+                        {
+                            "Type": "Image",
+                            "Url": "https://example.com/screenshot.png",
+                            "Title": "Screenshot",
+                            "Description": "",
+                        }
+                    ],
                     "AdditionalResources": [
                         {"Type": "Link", "Text": "Guide", "Url": "https://example.com/guide"}
                     ],
@@ -41,6 +49,13 @@ class AwsMarketplaceAdapterTests(unittest.TestCase):
         self.assertEqual(current["AdditionalResources"],
                          [{"Text": "Guide", "Url": "https://example.com/guide"}])
         self.assertNotIn("Type", current["AdditionalResources"][0])
+        self.assertEqual(current["PromotionalMedia"], [
+            {
+                "Type": "Image",
+                "Url": "https://example.com/screenshot.png",
+                "Title": "Screenshot",
+            }
+        ])
 
     def test_read_and_update_documents_use_distinct_aws_shapes(self) -> None:
         content = {
@@ -52,6 +67,13 @@ class AwsMarketplaceAdapterTests(unittest.TestCase):
             "Categories": ["CRM"],
             "LogoUrl": "https://example.com/logo.png",
             "VideoUrls": ["https://example.com/video.mp4"],
+            "PromotionalMedia": [
+                {
+                    "Type": "Image",
+                    "Url": "https://example.com/screenshot.png",
+                    "Title": "Screenshot",
+                }
+            ],
             "AdditionalResources": [{"Text": "Guide", "Url": "https://example.com/guide"}],
             "SupportDescription": "Support details",
         }
@@ -62,12 +84,46 @@ class AwsMarketplaceAdapterTests(unittest.TestCase):
         self.assertEqual(desired["PromotionalResources"]["Videos"], ["https://example.com/video.mp4"])
         self.assertEqual(desired["PromotionalResources"]["AdditionalResources"],
                          [{"Type": "Link", "Text": "Guide", "Url": "https://example.com/guide"}])
+        self.assertEqual(desired["PromotionalResources"]["PromotionalMedia"], [
+            {
+                "Type": "Image",
+                "Url": "https://example.com/screenshot.png",
+                "Title": "Screenshot",
+            }
+        ])
         self.assertEqual(desired["SupportInformation"]["Description"], "Support details")
         self.assertNotIn("SupportDescription", desired["Description"])
         self.assertEqual(update["VideoUrls"], ["https://example.com/video.mp4"])
+        self.assertEqual(update["PromotionalMedia"], [
+            {
+                "Type": "Image",
+                "Url": "https://example.com/screenshot.png",
+                "Title": "Screenshot",
+            }
+        ])
         self.assertEqual(update["SupportDescription"], "Support details")
         self.assertEqual(update["AdditionalResources"], [{"Text": "Guide", "Url": "https://example.com/guide"}])
         self.assertNotIn("Type", update["AdditionalResources"][0])
+
+    def test_promotional_media_write_shape_drops_empty_description(self) -> None:
+        update = aws_marketplace.to_update_document({
+            "PromotionalMedia": [
+                {
+                    "Type": "Image",
+                    "Url": "https://example.com/screenshot.png",
+                    "Title": "Screenshot",
+                    "Description": "",
+                }
+            ]
+        })
+
+        self.assertEqual(update["PromotionalMedia"], [
+            {
+                "Type": "Image",
+                "Url": "https://example.com/screenshot.png",
+                "Title": "Screenshot",
+            }
+        ])
 
     def test_field_contract_covers_read_and_write_paths(self) -> None:
         self.assertEqual(aws_marketplace.CONTENT_FIELDS, set(aws_marketplace.FIELD_SPECS))

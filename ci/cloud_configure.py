@@ -14,7 +14,23 @@ ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "config/marketplace.json"
 DEFAULT_DIR = ROOT / ".secrets"
 
-EXTRA_TARGETS = ("contentful", "wecom")
+EXTRA_TARGETS = ("contentful", "wecom", "websoft9")
+
+# Aliyun China and Alibaba Cloud International are separate accounts. The CLI
+# prefers ALIYUN_* for China and keeps ALIBABA_CLOUD_* as a legacy fallback.
+ALIYUN_KEYS = """\
+ALIYUN_ACCESS_KEY_ID=
+ALIYUN_ACCESS_KEY_SECRET=
+# Required only for temporary STS credentials:
+ALIYUN_SECURITY_TOKEN=
+"""
+
+ALIBABA_CLOUD_KEYS = """\
+ALIBABA_CLOUD_ACCESS_KEY_ID=
+ALIBABA_CLOUD_ACCESS_KEY_SECRET=
+# Required only for temporary STS credentials:
+ALIBABA_CLOUD_SECURITY_TOKEN=
+"""
 
 TEMPLATES = {
     "aws": """\
@@ -27,17 +43,16 @@ AWS_SECRET_ACCESS_KEY=
 AWS_SESSION_TOKEN=
 AWS_DEFAULT_REGION=us-east-1
 """,
-    "aliyun": """\
-# --- Aliyun China (least-privilege RAM identity) ---
-ALIBABA_CLOUD_ACCESS_KEY_ID=
-ALIBABA_CLOUD_ACCESS_KEY_SECRET=
-# Required only for temporary STS credentials:
-ALIBABA_CLOUD_SECURITY_TOKEN=
-""",
-    "alibabacloud": """\
-# Alibaba Cloud International public listing checks need no credentials.
-# Seller API credentials are not used by the current integration.
-""",
+    "aliyun": (
+        "# --- Aliyun China (least-privilege RAM identity) ---\n"
+        + ALIYUN_KEYS
+    ),
+    "alibabacloud": (
+        "# --- Alibaba Cloud International (separate account from Aliyun China) ---\n"
+        "# Use this site's own AccessKey; do not reuse the Aliyun China key.\n"
+        "# The current public listing check does not consume these values.\n"
+        + ALIBABA_CLOUD_KEYS
+    ),
     "azure": """\
 # --- Azure Marketplace Partner Center ---
 # Backend listing adapter is not implemented yet.
@@ -84,6 +99,14 @@ CONTENTFUL_ENVIRONMENT=master
 # --- WeCom (企业微信) notifications ---
 # Incoming webhook URL; treat it as a secret.
 WECOM_WEBHOOK=
+""",
+    "websoft9": """\
+# --- Websoft9 account ---
+# Base URL of the Websoft9 site or console used by the integration.
+WEBSOFT9_URL=http://t.inner.websoft9.cn:9000/
+# Use the account credentials required by the target Websoft9 service.
+WEBSOFT9_USER=
+WEBSOFT9_PASSWORD=
 """,
 }
 

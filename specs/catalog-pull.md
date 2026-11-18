@@ -150,6 +150,11 @@ Fields that exist in the Contentful content model but are empty are normal query
 results: array fields are emitted as `[]`, Boolean fields as `false` except
 `hasenterprise` (missing/null defaults to `true`), other fields as `null`, and
 counts are reported to stderr. No extra flag is required.
+
+`logo` and `screenshots` are copied from `product_en.json` when Contentful does
+not expose an image URL (Contentful's `logo` field is text in the current
+content model). This keeps the asset source available to
+`mk offer assets build` without adding copy fields to the asset template.
 A requested field id that does not exist in the content model is still rejected
 so `--fields` typos fail loudly.
 

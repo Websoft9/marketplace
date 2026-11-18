@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT))
 
 from cli import contentful, contentful_management as cma  # noqa: E402
 from cli.cli import cli  # noqa: E402
+from tests.click_support import separated_runner
 
 SCHEMA = {
     "key": {"type": "Symbol", "localized": False},
@@ -399,7 +400,7 @@ class PushCliTests(unittest.TestCase):
     def test_default_input_uses_catalog_dir(self) -> None:
         summary = {"selected": 0, "matched": 0, "updated": 0, "published": 0,
                    "unchanged": 0, "skippedEmpty": 0, "missing": [], "errors": []}
-        runner = CliRunner(mix_stderr=False)
+        runner = separated_runner()
         with mock.patch.dict("os.environ", {"MK_CATALOG_DIR": "/tmp/example-catalog"}), \
              mock.patch.object(cma, "push", return_value=summary) as push:
             result = runner.invoke(
@@ -412,7 +413,7 @@ class PushCliTests(unittest.TestCase):
     def test_contentful_token_environment_variable_is_used(self) -> None:
         summary = {"selected": 0, "matched": 0, "updated": 0, "published": 0,
                    "unchanged": 0, "skippedEmpty": 0, "missing": [], "errors": []}
-        runner = CliRunner(mix_stderr=False)
+        runner = separated_runner()
         with mock.patch.dict("os.environ", {"CONTENTFUL_TOKEN": "secret-token"}), \
              mock.patch.object(cma, "push", return_value=summary) as push:
             result = runner.invoke(
@@ -425,7 +426,7 @@ class PushCliTests(unittest.TestCase):
     def test_fields_option_is_forwarded_and_validated(self) -> None:
         summary = {"selected": 0, "matched": 0, "updated": 0, "published": 0,
                    "unchanged": 0, "skippedEmpty": 0, "missing": [], "errors": []}
-        runner = CliRunner(mix_stderr=False)
+        runner = separated_runner()
         with mock.patch.object(cma, "push", return_value=summary) as push:
             result = runner.invoke(
                 cli,
@@ -453,7 +454,7 @@ class PushCliTests(unittest.TestCase):
                 "after": {"present": True, "value": "New"},
             }]}],
         }
-        runner = CliRunner(mix_stderr=False)
+        runner = separated_runner()
         with mock.patch.object(cma, "push", return_value=summary):
             result = runner.invoke(
                 cli,
@@ -472,7 +473,7 @@ class PushCliTests(unittest.TestCase):
             "unchanged": 0, "skippedEmpty": 0, "missing": [],
             "errors": ["wordpress: version conflict"], "changes": [],
         }
-        runner = CliRunner(mix_stderr=False)
+        runner = separated_runner()
         with mock.patch.object(cma, "push", return_value=summary):
             result = runner.invoke(
                 cli,
@@ -484,7 +485,7 @@ class PushCliTests(unittest.TestCase):
         self.assertIn("ERROR", result.stderr)
 
     def test_token_is_required_and_help_lists_options(self) -> None:
-        runner = CliRunner(mix_stderr=False)
+        runner = separated_runner()
         result = runner.invoke(cli, ["catalog", "push", "--space-id", "space"],
                                env={"CONTENTFUL_TOKEN": ""})
         self.assertNotEqual(result.exit_code, 0)

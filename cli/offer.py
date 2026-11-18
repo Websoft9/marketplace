@@ -15,6 +15,7 @@ from .aws_marketplace import (
     CONTENT_FIELDS as FIELDS,
     FIELD_LIMITS as LIMITS,
     FIELD_SPECS,
+    MEDIA_LIMITS,
     aws_call,
     aws_client,
     build_update_request,
@@ -31,6 +32,7 @@ from .marketplace import (
     offer_codes_by_app,
     offer_variants_by_app,
 )
+from .os_catalog import OS_NAMES
 
 ROOT = REPO_ROOT
 DATA = ROOT / "data" / "listing"
@@ -46,23 +48,6 @@ SPECIAL_CASE_SLOTS = {
     "multiOffers": "list",
 }
 DEFAULT_EDITION_LABEL = "Community Edition"
-OS_NAMES = (
-    "amazon linux",
-    "oracle linux",
-    "red hat",
-    "rocky linux",
-    "almalinux",
-    "alma linux",
-    "centos",
-    "debian",
-    "ubuntu",
-    "suse",
-    "sles",
-    "fedora",
-    "windows server",
-    "freebsd",
-    "rhel",
-)
 PLATFORM_PHRASE = " on AWS"
 
 
@@ -764,6 +749,68 @@ def render(catalog_item: dict, version: str, vendor_path: Path = DATA / "vendor.
     }
 
 
+def validate_promotional_media(items: list) -> None:
+    """Validate the AWS promotional media list and its per-item limits."""
+    if not isinstance(items, list) or not 1 <= len(items) <= MEDIA_LIMITS["maxItems"]:
+        raise ValueError(
+            f"PromotionalMedia must contain 1–{MEDIA_LIMITS['maxItems']} items"
+        )
+    videos = images = 0
+    seen_urls: set[str] = set()
+    for index, item in enumerate(items):
+        path = f"PromotionalMedia[{index}]"
+        if not isinstance(item, dict):
+            raise ValueError(f"{path} must be an object")
+        unknown = set(item) - {"Type", "Url", "Title", "Description", "PreviewUrl"}
+        if unknown:
+            raise ValueError(f"{path} has unsupported fields: {', '.join(sorted(unknown))}")
+        media_type = item.get("Type")
+        if media_type not in {"Image", "Video"}:
+            raise ValueError(f"{path}.Type must be Image or Video")
+        url = item.get("Url")
+        if not isinstance(url, str) or not re.fullmatch(r"https://\S+", url):
+            raise ValueError(f"{path}.Url requires an HTTPS URL")
+        if url in seen_urls:
+            raise ValueError(f"{path}.Url duplicates another media item")
+        seen_urls.add(url)
+        title = item.get("Title")
+        if (
+            not isinstance(title, str)
+            or not title.strip()
+            or len(title) > MEDIA_LIMITS["titleMax"]
+        ):
+            raise ValueError(
+                f"{path}.Title must contain 1–{MEDIA_LIMITS['titleMax']} characters"
+            )
+        description = item.get("Description")
+        if description is not None and (
+            not isinstance(description, str)
+            or len(description) > MEDIA_LIMITS["descriptionMax"]
+        ):
+            raise ValueError(
+                f"{path}.Description must contain at most "
+                f"{MEDIA_LIMITS['descriptionMax']} characters"
+            )
+        preview = item.get("PreviewUrl")
+        if preview is not None:
+            if media_type != "Video":
+                raise ValueError(f"{path}.PreviewUrl is only supported for Video")
+            if not isinstance(preview, str) or not re.fullmatch(r"https://\S+", preview):
+                raise ValueError(f"{path}.PreviewUrl requires an HTTPS URL")
+        if media_type == "Video":
+            videos += 1
+        else:
+            images += 1
+    if videos > MEDIA_LIMITS["maxVideos"]:
+        raise ValueError(
+            f"PromotionalMedia supports at most {MEDIA_LIMITS['maxVideos']} videos"
+        )
+    if images > MEDIA_LIMITS["maxImages"]:
+        raise ValueError(
+            f"PromotionalMedia supports at most {MEDIA_LIMITS['maxImages']} images"
+        )
+
+
 def validate_content(content: dict) -> None:
     if not content or set(content) - FIELDS:
         raise ValueError("unsupported or empty UpdateInformation content")
@@ -797,6 +844,8 @@ def validate_content(content: dict) -> None:
             urls = [item["Url"] for item in value]
         if any(not isinstance(url, str) or not re.fullmatch(r"https://[^\s?#]+", url) for url in urls):
             raise ValueError(f"{field} requires unsigned HTTPS URLs")
+    if "PromotionalMedia" in content:
+        validate_promotional_media(content["PromotionalMedia"])
     def text_values(value, path):
         if isinstance(value, str):
             yield path, value

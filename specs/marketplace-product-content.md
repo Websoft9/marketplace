@@ -21,6 +21,7 @@ per-application fact audit for unchanged source data and template output.
 | `data/.work/catalog.json` | Temporary Contentful application facts; git-ignored and not authoritative |
 | `data/listing/vendor.json` | Shared vendor identity, highlights, console capabilities, support and trademark text |
 | `data/listing/templates/aws-ami.json` | Fixed copy structure with named placeholders, no credentials or per-product IDs |
+| `data/listing/templates/aws-ami-assets.json` | Separate logo/promotional-media template; no copy fields |
 | `cli/aws_marketplace.py` | AWS Marketplace adapter: field names/limits, read normalization, update request shape |
 | `.github/workflows/offer-apply.yml` | Manual AWS listing publication: preflight, preview, revision-bound plan, environment approval and apply |
 
@@ -47,7 +48,8 @@ the read/write shapes round-trip.
 AWS-facing names are aligned at the adapter boundary: `ProductTitle`,
 `ShortDescription`, `LongDescription`, `Highlights`, `SearchKeywords`,
 `SupportDescription`, `Categories`, `LogoUrl`, `VideoUrls`,
-`AdditionalResources`. The nested read shape is not copied into authoring data.
+`PromotionalMedia`, `AdditionalResources`. The nested read shape is not copied
+into authoring data.
 
 The template declares its logical namespaces in `namespaces` and uses
 namespace-qualified paths that map directly to source fields:
@@ -81,10 +83,10 @@ runtime product or product schema.
 
 The read shape differs from the update shape:
 
-- Read: `Description.*`, `PromotionalResources.LogoUrl/Videos/AdditionalResources`,
+- Read: `Description.*`, `PromotionalResources.LogoUrl/Videos/PromotionalMedia/AdditionalResources`,
   `SupportInformation.Description`.
-- Update: flat `UpdateInformation` fields, including `VideoUrls` and
-  `SupportDescription`.
+- Update: flat `UpdateInformation` fields, including `VideoUrls`,
+  `PromotionalMedia` and `SupportDescription`.
 - Read-side `AdditionalResources` items include `Type`; update-side items use
   `Text`/`Url`. The adapter removes `Type` for comparison and does not add it to
   the update payload.
@@ -187,10 +189,23 @@ until resolved.
 | Approved support description | `SupportDescription` |
 | Platform-selected category names | `Categories` |
 | Public unsigned resource URLs | `LogoUrl`, `VideoUrls`, `AdditionalResources` |
+| Promotional images/videos | `PromotionalMedia` (public or presigned S3 URLs) |
 
 `aws-ami.json` declares `SearchKeywords` via a direct placeholder and
 `Highlights` via indexed `vendor.highlights` values. It does not update
-`Categories`, `LogoUrl`, or `VideoUrls`. It provides two default Learning resources
+`Categories`, `LogoUrl`, `VideoUrls`, or `PromotionalMedia`.
+
+`aws-ami-assets.json` is the separate asset template. It renders
+`LogoUrl` from `{catalog.logo.imageurl}` and up to five `PromotionalMedia`
+images from `{catalog.screenshots}`. Each screenshot may be a URL string or an
+object with `value`; duplicate URLs are removed and catalog order is preserved.
+The asset template is intentionally separate from the copy template so it can
+later be planned and applied as its own field-scoped `UpdateInformation`
+change set. Asset URLs must be staged to S3 before apply; `PromotionalMedia`
+accepts public S3 or presigned S3 URLs, while the product `LogoUrl` uses an
+unsigned public URL.
+
+`aws-ami.json` provides two default Learning resources
 (AdditionalResources): `<name> Image Guide by Websoft9` at
 `support.websoft9.com/en/docs/<key>`, and `Install Websoft9 on AWS`. A product's
 non-empty `listings.aws.additionalResources` overrides those defaults.
@@ -209,9 +224,11 @@ defect instead of fixing it.
 
 Existing entity values are read from `Description`, `PromotionalResources` and
 `SupportInformation`; the read shape is not the update shape. The AWS adapter
-normalizes `Videos` to `VideoUrls`, reads `SupportInformation.Description` as
-`SupportDescription`, and removes read-side additional-resource `Type` fields
-before comparison. Update payloads use `Text`/`Url` only for additional resources. Empty/absent optional
+normalizes `Videos` to `VideoUrls`, `PromotionalMedia` to its writable
+`Type`/`Url`/`Title`/`Description`/`PreviewUrl` shape, reads
+`SupportInformation.Description` as `SupportDescription`, and removes read-side
+additional-resource `Type` fields before comparison. Update payloads use
+`Text`/`Url` only for additional resources. Empty/absent optional
 categories/media fields preserve existing AWS values; this version does not
 implement explicit deletion of them. Categories must be confirmed AWS category
 names (AWS also validates them). The local checker validates supported lengths,
@@ -247,16 +264,24 @@ offline run. None of these commands contact AWS.
 mk offer build --app odoo --cloud aws [--offer-codes <code>[,<code>...]] [--allow-unlisted-codes]
 mk offer build --app odoo --cloud aws --output /tmp/odoo-preview.md
 mk offer build --app odoo --cloud aws --publish-ready
+mk offer assets build --app odoo --catalog data/.work/catalog.json --output /tmp/odoo-assets.json
 mk offer resolve --app odoo --cloud aws [--code <code>] [--offer <variant>] --profile marketplace-seller
+# Or reuse an explicit public store snapshot (no inventory re-query).
+mk offer resolve --app odoo --cloud aws --inventory /path/to/inventory.json --visibility public
 mk offer plan --app odoo --profile marketplace-seller --output /tmp/odoo-plan.json
 python3 ci/validate_offers.py
 ```
 
-`resolve` reads the live seller Catalog and matches the application by trademark
-in the listing title first, using the full product catalog to detect other
-applications and ambiguous titles. Only a title with no catalog match allows
+`resolve` consumes public image facts through the shared store service, live or
+from `--inventory` store JSON, and uses the [shared deterministic identity
+rules](application-matching.md): normalized full trademark, Apache-prefix fallback
+and conservative app ID fallback, selecting the first application occurrence.
+It loads the full product catalog to detect other applications and exact ties.
+Only a title with no catalog match allows
 fallback to the summary before its first English/Chinese comma. It does not
-read the local offer-code matrix. With `--code`, that code is authoritative and a mismatched title is an
+read the local offer-code matrix. Public visibility is explicit/default; nonpublic
+facts are rejected, and `--profile` cannot accompany `--inventory`.
+With `--code`, a code within the public facts is authoritative and a mismatched title is an
 override. Without `--code`, each detected offer variant must map to exactly one
 code; two codes for the same variant stop the run. `--offer` restricts the
 selection to a declared `multiOffers` variant, and combining it with `--code`
@@ -295,7 +320,7 @@ alternate reviewed local source files. Defaults are
 plan and its apply reuse identical version data. `mk offer doctor --cloud <cloud>
 [--plan-role-arn <arn>] [--apply-role-arn <arn>]` checks that the cloud has a
 plan/apply implementation and validates role ARNs before a run.
-`mk offer report preflight|plan|apply --input <path> [--cloud <cloud>]
+`mk offer report preflight|resolve|plan|apply --input <path> [--cloud <cloud>]
 [--app-name <name>] [--account-id <id>]` renders the same Markdown used for the
 GitHub step summary, including the entity ARN for AWS plans; locally it can be
 redirected to any review file.

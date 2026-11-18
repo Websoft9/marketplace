@@ -17,9 +17,16 @@ def load_catalog(source: str, timeout: float = 30) -> tuple[dict[str, Any], dict
         raise ValueError("catalog must be a JSON array or an object with items")
     by_id: dict[str, dict[str, Any]] = {}
     for item in items:
-        if not isinstance(item, dict) or not isinstance(item.get("id"), str):
+        # Contentful catalogs use ``id``; product_en.json uses ``key``.
+        item_id = item.get("id") if isinstance(item, dict) else None
+        if not isinstance(item_id, str) or not item_id.strip():
+            item_id = item.get("key") if isinstance(item, dict) else None
+        if not isinstance(item_id, str) or not item_id.strip():
             raise ValueError("catalog item has no string id")
-        by_id[item["id"]] = item
+        item_id = item_id.strip()
+        if item.get("id") != item_id:
+            item = {**item, "id": item_id}
+        by_id[item_id] = item
     return (data if isinstance(data, dict) else {"items": items}), by_id
 
 

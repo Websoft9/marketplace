@@ -7,8 +7,9 @@ from pathlib import Path
 
 import click
 
-from .. import catalog_data, catalog_file
+from .. import catalog_data, catalog_file, store
 from .. import offer as service
+from .. import offer_assets
 from .. import offer_report
 from .. import offer_resolve
 from ..marketplace import CATALOG_URL, CONFIGURED_PLATFORMS, OFFER_SOURCE, VERSIONS_URL, catalog_default_path
@@ -318,12 +319,16 @@ def targets_command(app, cloud, catalog_source, offer_codes, allow_unlisted_code
               help="Offer variant from the application's multiOffers, for example Ubuntu, "
                    "Multisite, 'Ubuntu; Multisite', or base for the no-label offer.")
 @click.option("--profile", default=None)
+@click.option("--inventory", "inventory_path", type=click.Path(exists=True, dir_okay=False, path_type=Path),
+              help="Use a complete public mk store products --json snapshot; no inventory re-query.")
+@click.option("--visibility", type=click.Choice(store.VISIBILITIES), default="public", show_default=True,
+              help="Explicit target scope; even --code cannot opt into nonpublic products.")
 @click.option("--product-catalog", default=CATALOG_URL, metavar="SOURCE",
               help="Full product_en.json catalog for detecting other applications and ambiguous titles.")
 @click.option("--output", "output_path", type=click.Path(dir_okay=False, path_type=Path), metavar="PATH",
               help="Write the resolved targets here instead of stdout.")
-def resolve_command(app, catalog_source, versions, vendor, template, cloud, code, offer, profile, product_catalog, output_path):
-    """Resolve live AWS listings to offer targets by application.
+def resolve_command(app, catalog_source, versions, vendor, template, cloud, code, offer, profile, inventory_path, visibility, product_catalog, output_path):
+    """Resolve public AWS store facts to offer targets by application.
 
     Matches the application by trademark in the live listing title/summary,
     detects OS and label variants, and records one code per variant in the
@@ -334,6 +339,8 @@ def resolve_command(app, catalog_source, versions, vendor, template, cloud, code
             f"cloud {cloud!r} has no live resolver; implemented: "
             + ", ".join(service.APPLY_CLOUDS)
         )
+    if inventory_path is not None and profile is not None:
+        raise click.BadParameter("--profile cannot be combined with --inventory; snapshots are not re-queried")
     if code is not None and (not code.strip() or any(c in code for c in ",，")):
         raise click.BadParameter("provide exactly one non-empty code", param_hint="--code")
     code = code.strip() if code is not None else None
@@ -344,11 +351,16 @@ def resolve_command(app, catalog_source, versions, vendor, template, cloud, code
     value = bundle(app, catalog_source, versions, vendor, template)
     try:
         offer_resolve.validate_offer_choice(value, offer)
+        inventory = store.get_inventory(
+            cloud, inventory_path=inventory_path, profile=profile, visibility=visibility,
+            progress=lambda message: click.echo(message, err=True),
+        )
+        products = store.inventory_products(inventory, cloud)
         identities = offer_resolve.load_identities(product_catalog, service.load_special_cases())
-        products = offer_resolve.list_aws_products(profile)
         document = offer_resolve.resolve(
             value, products, code=code, offer=offer, identities=identities
         )
+        document["inventory"] = store.inventory_provenance(inventory, inventory_path)
     except (OSError, ValueError, KeyError) as error:
         raise click.ClickException(str(error)) from error
 
@@ -570,6 +582,38 @@ def build_command(app, catalog_source, versions, vendor, template, cloud, offer_
         write_text_output(text, target)
     else:
         write_output(document, target)
+
+
+@offer_command.group("assets")
+def assets_command():
+    """Build AWS logo and promotional-media previews separately from copy."""
+
+
+@assets_command.command("build")
+@click.option("--app", required=True, callback=single_app,
+              help="One application id from data/.work/catalog.json; lists are not supported.")
+@click.option("--catalog", "catalog_source", default=None, metavar="SOURCE",
+              help="Temporary Contentful catalog JSON. Default: data/.work/catalog.json.")
+@click.option("--template", type=click.Path(exists=True, dir_okay=False, path_type=Path),
+              default=offer_assets.ASSETS_TEMPLATE,
+              help="Asset authoring template. Default: data/listing/templates/aws-ami-assets.json.")
+@click.option("--output", "output_path", type=click.Path(dir_okay=False, path_type=Path), metavar="PATH",
+              help="Default: data/.work/aws/<key>-assets.json; use - for stdout.")
+def assets_build_command(app, catalog_source, template, output_path):
+    """Render LogoUrl and up to five PromotionalMedia images without AWS calls."""
+    source = catalog_source or str(catalog_default_path())
+    try:
+        _, by_id = catalog_data.load_catalog(source)
+        item = by_id.get(app)
+        if item is None:
+            raise ValueError(f"application {app!r} is not in the catalog")
+        value = offer_assets.render_assets(item, template)
+    except (OSError, ValueError) as error:
+        raise click.ClickException(str(error)) from error
+    for warning in value.get("warnings") or []:
+        click.echo(f"WARNING {app}: {warning}", err=True)
+    target = output_path or (service.ROOT / "data" / ".work" / "aws" / f"{app}-assets.json")
+    write_output(value, target)
 
 
 @offer_command.command("titles")
@@ -1026,7 +1070,7 @@ def status_command(change_set_id, profile, wait_seconds):
 
 
 @offer_command.command("report")
-@click.argument("kind", type=click.Choice(["preflight", "plan", "apply"]))
+@click.argument("kind", type=click.Choice(["preflight", "resolve", "plan", "apply"]))
 @click.option("--input", "input_path", required=True,
               type=click.Path(exists=True, dir_okay=False, path_type=Path), metavar="PATH",
               help="Preflight, plan or apply JSON document.")
@@ -1048,6 +1092,8 @@ def report_command(kind, input_path, cloud, app_name, account_id, output_path):
         raise click.ClickException(f"{input_path} must contain a JSON object")
     if kind == "preflight":
         text = offer_report.preflight(value)
+    elif kind == "resolve":
+        text = offer_report.resolve_targets(value)
     elif kind == "plan":
         text = offer_report.plan(
             value, cloud=cloud, app_name=app_name, account_id=account_id

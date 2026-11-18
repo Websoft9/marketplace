@@ -9,9 +9,10 @@ from unittest import mock
 
 from click.testing import CliRunner
 
-from cli import aws_marketplace, catalog_data, offer, offer_resolve
+from cli import aws_inventory, aws_marketplace, catalog_data, offer, offer_resolve, store
 from cli.cli import cli
 from cli.commands import offer as offer_commands
+from tests.click_support import separated_runner
 from tests.offer_fixtures import odoo_item
 
 
@@ -142,7 +143,7 @@ class OfferTests(unittest.TestCase):
         self.item["entityId"] = "prod-example12345"
         self.write()
         self.versions_path.write_text("[]", encoding="utf-8")
-        runner = CliRunner(mix_stderr=False)
+        runner = separated_runner()
         output = self.directory / "aws" / "odoo.json"
 
         result = runner.invoke(
@@ -653,7 +654,7 @@ class OfferTests(unittest.TestCase):
             offer_commands, "labels_for",
             return_value={"code-a": "Ubuntu 26.04; Enterprise"},
         ):
-            runner = CliRunner(mix_stderr=False)
+            runner = separated_runner()
             result = runner.invoke(
                 cli, self.args("build") + ["--cloud", "aws", "--output", "-"]
             )
@@ -669,7 +670,7 @@ class OfferTests(unittest.TestCase):
     def test_build_warns_when_search_keywords_are_truncated(self):
         self.item["keywords"] = [f"keyword-{index}" for index in range(17)]
         self.write()
-        runner = CliRunner(mix_stderr=False)
+        runner = separated_runner()
         result = runner.invoke(
             cli, self.args("build") + ["--cloud", "aws", "--output", "-"]
         )
@@ -686,9 +687,10 @@ class OfferTests(unittest.TestCase):
             code="code-u",
             entity_id="prod-example12345",
             title="Odoo on Ubuntu 26.04",
+            visibility="Public",
         )
         with mock.patch.object(
-            offer_resolve, "list_aws_products", return_value=[product]
+            aws_inventory, "list_aws_products", return_value=[product]
         ), mock.patch.object(offer_resolve, "load_identities", return_value={"odoo": ["Odoo"]}):
             result = self.runner.invoke(
                 cli,
@@ -711,6 +713,94 @@ class OfferTests(unittest.TestCase):
                 }
             ],
         )
+
+    def store_inventory(self, products):
+        with mock.patch.object(store, "collect_products", return_value=products):
+            return store.query_products(["aws"])
+
+    def test_resolve_reuses_a_public_store_snapshot_without_inventory_network(self):
+        facts = self.store_inventory([
+            offer_resolve.Product("code-u", "prod-u", "Odoo on Ubuntu", visibility="Public",
+                                  alternate_code="odoo_ubuntu"),
+        ])
+        snapshot = self.directory / "inventory.json"
+        snapshot.write_text(json.dumps(facts))
+        original_facts = snapshot.read_bytes()
+        with mock.patch.object(store, "query_platform", side_effect=AssertionError("no inventory query")), \
+                mock.patch.object(offer_resolve, "list_aws_products", side_effect=AssertionError("no bypass")), \
+                mock.patch.object(offer_resolve, "load_identities", return_value={"odoo": ["Odoo"]}):
+            result = self.runner.invoke(cli, self.args("resolve") + [
+                "--cloud", "aws", "--inventory", str(snapshot), "--visibility", "public", "--output", "-",
+                "--code", "odoo_ubuntu",
+            ])
+        self.assertEqual(result.exit_code, 0, result.output)
+        document = json.loads(result.stdout)
+        self.assertEqual(document["inventory"]["source"], "snapshot")
+        self.assertEqual(document["inventory"]["scope"], {"productType": "image", "visibility": "public"})
+        self.assertEqual(document["inventory"]["queriedAt"], facts["results"][0]["queriedAt"])
+        self.assertEqual(document["targets"][0]["entityId"], "prod-u")
+        self.assertEqual(document["targets"][0]["appMatch"]["appId"], "odoo")
+        self.assertEqual(snapshot.read_bytes(), original_facts)
+
+    def test_resolve_public_query_ignores_restricted_duplicate_offer_and_code_cannot_expand_scope(self):
+        runner = separated_runner()
+        client = mock.Mock()
+        client.list_entities.return_value = {"EntitySummaryList": [
+            {"EntityId": "prod-public", "AmiProductSummary": {"Visibility": "Public"}},
+            {"EntityId": "prod-hidden", "AmiProductSummary": {"Visibility": "Restricted"}},
+        ]}
+        client.batch_describe_entities.return_value = {"EntityDetails": {
+            "prod-public": {"DetailsDocument": {"Description": {
+                "ProductCode": "public-code", "ProductTitle": "Odoo on Ubuntu", "Visibility": "Public",
+            }}},
+        }}
+        with mock.patch.object(aws_inventory, "aws_client", return_value=client), \
+                mock.patch.object(offer_resolve, "load_identities", return_value={"odoo": ["Odoo"]}):
+            result = runner.invoke(cli, self.args("resolve") + ["--cloud", "aws", "--output", "-"])
+            self.assertEqual(result.exit_code, 0, result.output)
+            report = json.loads(result.stdout)
+            self.assertEqual(report["inventory"]["source"], "live")
+            self.assertEqual(report["targets"][0]["entityId"], "prod-public")
+            self.assertEqual(client.list_entities.call_args.kwargs["EntityTypeFilters"], {
+                "AmiProductFilters": {"Visibility": {"ValueList": ["Public"]}},
+            })
+            requested = client.batch_describe_entities.call_args.kwargs["EntityRequestList"]
+            self.assertEqual([r["EntityId"] for r in requested], ["prod-public"])
+            before = self.catalog_path.read_bytes()
+            result = runner.invoke(cli, self.args("resolve") + ["--cloud", "aws", "--code", "hidden-code"])
+            self.assertNotEqual(result.exit_code, 0)
+            self.assertIn("not found", result.stdout + result.stderr)
+            self.assertEqual(self.catalog_path.read_bytes(), before)
+
+    def test_resolve_rejects_failed_nonpublic_or_wrong_scope_facts_before_catalog_mutation(self):
+        document = self.store_inventory([
+            offer_resolve.Product("code-u", "prod-u", "Odoo", visibility="Public"),
+        ])
+        original = self.catalog_path.read_bytes()
+        for mutate in (
+            lambda d: d.update(complete=False),
+            lambda d: d.update(errors=[{"code": "Error"}]),
+            lambda d: d.update(scope={"productType": "image", "visibility": "all"}),
+            lambda d: d["products"][0].update(visibility="Restricted", public=False),
+        ):
+            facts = copy.deepcopy(document["results"][0])
+            mutate(facts)
+            with mock.patch.object(store, "get_inventory", return_value=facts), \
+                    mock.patch.object(offer_resolve, "load_identities") as identities:
+                result = self.runner.invoke(cli, self.args("resolve") + ["--cloud", "aws"])
+            self.assertNotEqual(result.exit_code, 0)
+            self.assertEqual(self.catalog_path.read_bytes(), original)
+            identities.assert_not_called()
+
+    def test_resolve_rejects_inventory_profile_conflict_and_unsupported_visibility_before_query(self):
+        snapshot = self.directory / "inventory.json"
+        snapshot.write_text("{}")
+        for flags in (["--inventory", str(snapshot), "--profile", "seller"],
+                      ["--visibility", "all"], ["--visibility", "restricted", "--code", "hidden-code"]):
+            with mock.patch.object(store, "get_inventory") as query:
+                result = self.runner.invoke(cli, self.args("resolve") + ["--cloud", "aws", *flags])
+            self.assertEqual(result.exit_code, 2, result.output)
+            query.assert_not_called()
 
     def test_offer_commands_reject_application_lists_before_io(self):
         for app in ("odoo,wordpress", "odoo，wordpress", "odoo wordpress"):
@@ -763,7 +853,7 @@ class OfferTests(unittest.TestCase):
                 self.assertIn('"readBackVerified": true', result.output)
 
     def test_bad_offer_choice_fails_before_aws_inventory(self):
-        with mock.patch.object(offer_resolve, "list_aws_products") as fetch:
+        with mock.patch.object(store, "get_inventory") as fetch:
             result = self.runner.invoke(cli, self.args("resolve") + [
                 "--cloud", "aws", "--code", "u", "--offer", "Multisite",
             ])
@@ -778,11 +868,11 @@ class OfferTests(unittest.TestCase):
             {"key": "drupal", "trademark": "Drupal"},
         ]))
         products = [
-            offer_resolve.Product("u", "prod-u", "Odoo on Ubuntu"),
-            offer_resolve.Product("d", "prod-d", "Odoo on Debian"),
-            offer_resolve.Product("other", "prod-other", "Drupal", "Integrates with Odoo"),
+            offer_resolve.Product("u", "prod-u", "Odoo on Ubuntu", visibility="Public"),
+            offer_resolve.Product("d", "prod-d", "Odoo on Debian", visibility="Public"),
+            offer_resolve.Product("other", "prod-other", "Drupal", "Integrates with Odoo", visibility="Public"),
         ]
-        with mock.patch.object(offer_resolve, "list_aws_products", return_value=products):
+        with mock.patch.object(aws_inventory, "list_aws_products", return_value=products):
             resolved = self.runner.invoke(cli, self.args("resolve") + [
                 "--cloud", "aws", "--product-catalog", str(identities),
             ])
@@ -877,7 +967,7 @@ class OfferTests(unittest.TestCase):
             offer_commands, "labels_for",
             return_value={"code-a": "Ubuntu 26.04", "code-b": "Debian 13"},
         ):
-            result = CliRunner(mix_stderr=False).invoke(
+            result = separated_runner().invoke(
                 cli, self.args("build") + ["--cloud", "aws", "--output", "-"]
             )
         self.assertEqual(result.exit_code, 0, result.stderr)
@@ -903,7 +993,7 @@ class OfferTests(unittest.TestCase):
         self.item["offerCodes"] = {"aws": []}
         self.write()
         with mock.patch.object(offer_commands, "labels_for", return_value={}):
-            result = CliRunner(mix_stderr=False).invoke(
+            result = separated_runner().invoke(
                 cli,
                 self.args("build") + [
                     "--cloud", "aws", "--offer-codes", "other-code",
@@ -925,7 +1015,7 @@ class OfferTests(unittest.TestCase):
         with mock.patch.object(
             offer_commands, "labels_for", return_value={"code-b": "Debian 13"}
         ):
-            result = CliRunner(mix_stderr=False).invoke(
+            result = separated_runner().invoke(
                 cli,
                 self.args("build") + [
                     "--cloud", "aws", "--offer-codes", "code-b", "--output", "-",
@@ -1622,7 +1712,7 @@ class PreflightAndMultiTargetTests(unittest.TestCase):
         ]
         client.start_change_set.side_effect = [{"ChangeSetId": "cs-a"}, {"ChangeSetId": "cs-b"}]
         client.describe_change_set.return_value = {"Status": "SUCCEEDED"}
-        runner = CliRunner(mix_stderr=False)
+        runner = separated_runner()
         with mock.patch.object(offer, "aws_client", return_value=client):
             result = runner.invoke(cli, self.args("apply") + ["--plan", str(self.plan_path), "--wait-seconds", "1"])
         self.assertEqual(result.exit_code, 0, result.stderr)
@@ -1641,7 +1731,7 @@ class PreflightAndMultiTargetTests(unittest.TestCase):
         client.describe_entity.side_effect = [entity_b, self.entity(value, "prod-b")]
         client.start_change_set.return_value = {"ChangeSetId": "cs-b"}
         client.describe_change_set.return_value = {"Status": "SUCCEEDED"}
-        runner = CliRunner(mix_stderr=False)
+        runner = separated_runner()
         with mock.patch.object(offer, "aws_client", return_value=client):
             result = runner.invoke(cli, self.args("apply") + ["--plan", str(self.plan_path), "--wait-seconds", "1"])
         self.assertEqual(result.exit_code, 0, result.stderr)

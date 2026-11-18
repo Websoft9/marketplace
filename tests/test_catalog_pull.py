@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT))
 from cli import contentful  # noqa: E402
 from cli.cli import cli  # noqa: E402
 from cli.commands.catalog import _merge_dataset  # noqa: E402
+from tests.click_support import separated_runner
 
 
 def link(link_type: str, entry_id: str) -> dict:
@@ -30,12 +31,19 @@ def entry(fields: dict, entry_id: str = "sys-id") -> dict:
 
 class CatalogPullTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.runner = CliRunner(mix_stderr=False)
+        self.runner = separated_runner()
         self.temp = tempfile.TemporaryDirectory()
         self.directory = Path(self.temp.name)
         self.catalog = self.directory / "product_en.json"
         self.catalog.write_text(json.dumps([
-            {"key": "wordpress", "trademark": "WordPress"},
+            {
+                "key": "wordpress",
+                "trademark": "WordPress",
+                "logo": {"imageurl": "https://assets.example.com/wordpress-logo.png"},
+                "screenshots": [
+                    {"key": "dashboard", "value": "https://assets.example.com/wordpress-dashboard.png"}
+                ],
+            },
             {"key": "odoo", "trademark": "Odoo"},
             {"key": "ghost", "trademark": "Ghost"},
         ]), encoding="utf-8")
@@ -145,6 +153,14 @@ class CatalogPullTests(unittest.TestCase):
         self.assertFalse(dataset["items"][2]["hasenterprise"])
         self.assertNotIn("notRequested", dataset["items"][0])
         self.assertNotIn("tags", dataset["items"][0])
+        self.assertEqual(
+            dataset["items"][0]["logo"],
+            {"imageurl": "https://assets.example.com/wordpress-logo.png"},
+        )
+        self.assertEqual(
+            dataset["items"][0]["screenshots"],
+            [{"key": "dashboard", "value": "https://assets.example.com/wordpress-dashboard.png"}],
+        )
         self.assertNotIn("missingFields", dataset)
         self.assertIn('"keywords": ["Website", "CMS"]', result.stdout)
         self.assertNotIn('"keywords": [\n', result.stdout)

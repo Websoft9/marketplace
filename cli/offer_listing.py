@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from . import offer_codes
+from .alibaba_credentials import missing_hint, read as read_aliyun_credentials
 
 EXISTS = "exists"
 NOT_FOUND = "not_found"
@@ -104,12 +105,12 @@ class AwsAdapter(Adapter):
 
 class AliyunAdapter(Adapter):
     platform = "aliyun"
-    required_env = ("ALIBABA_CLOUD_ACCESS_KEY_ID", "ALIBABA_CLOUD_ACCESS_KEY_SECRET")
+    required_env = ()
 
     def availability(self) -> tuple[bool, str]:
-        available, reason = super().availability()
-        if not available:
-            return available, reason
+        credentials = read_aliyun_credentials()
+        if not credentials.access_key_id or not credentials.access_key_secret:
+            return False, f"missing {missing_hint()}"
         try:
             import aliyunsdkcore.client  # noqa: F401
             import aliyunsdkmarket  # noqa: F401
@@ -124,9 +125,10 @@ class AliyunAdapter(Adapter):
             DescribeProductRequest,
         )
 
-        access_key = os.environ["ALIBABA_CLOUD_ACCESS_KEY_ID"].strip()
-        access_secret = os.environ["ALIBABA_CLOUD_ACCESS_KEY_SECRET"].strip()
-        security_token = os.environ.get("ALIBABA_CLOUD_SECURITY_TOKEN", "").strip()
+        credentials = read_aliyun_credentials()
+        access_key = credentials.access_key_id
+        access_secret = credentials.access_key_secret
+        security_token = credentials.security_token
         if security_token:
             credentials = StsTokenCredential(
                 sts_access_key_id=access_key,

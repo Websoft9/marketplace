@@ -56,8 +56,44 @@ PREFLIGHT = {
     "unlistedCodes": ["forced-code"],
 }
 
+RESOLVE = {
+    "schemaVersion": 1,
+    "app": "odoo",
+    "cloud": "aws",
+    "targets": [
+        {
+            "code": "code-a",
+            "entityId": "prod-1",
+            "offer": "Ubuntu",
+            "title": "Odoo | Ubuntu",
+            "visibility": "Public",
+            "match": "app",
+        },
+        {
+            "code": "code-b",
+            "entityId": "prod-2",
+            "offer": "",
+            "title": "Odoo",
+            "visibility": "Limited",
+            "match": "override",
+        },
+    ],
+    "unresolved": [{"offer": "Debian", "reason": "no live product matches"}],
+}
+
 
 class ReportTests(unittest.TestCase):
+    def test_resolve_report_includes_store_fact_scope_source_and_time(self):
+        text = offer_report.resolve_targets({**RESOLVE, "inventory": {
+            "source": "snapshot", "queriedAt": "2026-11-17T00:00:00+00:00", "complete": True,
+            "scope": {"visibility": "public", "productType": "image"},
+            "store": {"id": "SELF", "provider": "Authenticated AWS seller"},
+        }})
+        self.assertIn("Store: Authenticated AWS seller (`SELF`)", text)
+        self.assertIn("Inventory source: `snapshot`", text)
+        self.assertIn("2026-11-17T00:00:00+00:00", text)
+        self.assertIn("Scope: `public` `image`; complete: `true`", text)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.directory = Path(self.temp.name)
@@ -125,6 +161,13 @@ class ReportTests(unittest.TestCase):
         self.assertIn("Skipped offer codes: code-b", text)
         self.assertIn("re-run the workflow", text)
         self.assertIn("aws accepted every ChangeSet", text)
+
+    def test_resolve_report_renders_targets_and_unresolved(self):
+        text = offer_report.resolve_targets(RESOLVE)
+        self.assertIn("## Resolved offer targets", text)
+        self.assertIn("| `code-a` | Ubuntu | app | Public | Odoo \\| Ubuntu |", text)
+        self.assertIn("| `code-b` | base | override | Limited | Odoo |", text)
+        self.assertIn("- Unresolved offer `Debian`: no live product matches", text)
 
     def test_report_command_writes_markdown(self):
         path = self.write("plan.json", PLAN)

@@ -558,6 +558,24 @@ def pull_dataset(
                 if isinstance(value, str) and value != own and value in allowed and value not in filtered:
                     filtered.append(value)
             item["relatedApps"] = filtered
+    # The public product catalog carries logo image URLs and screenshots that
+    # Contentful's product type does not consistently expose.
+    media_by_key = {
+        item["key"].strip(): item
+        for item in catalog_items
+        if isinstance(item, dict)
+        and isinstance(item.get("key"), str)
+        and item["key"].strip()
+    }
+    for item in result["items"]:
+        source_item = media_by_key.get(item["id"]) or {}
+        source_logo = source_item.get("logo")
+        if isinstance(source_logo, dict) and source_logo.get("imageurl"):
+            current_logo = item.get("logo")
+            if not (isinstance(current_logo, dict) and current_logo.get("imageurl")):
+                item["logo"] = source_logo
+        if not item.get("screenshots") and source_item.get("screenshots"):
+            item["screenshots"] = source_item["screenshots"]
     result["source"] = {
         "catalog": catalog_source,
         "contentful": {

@@ -3,44 +3,34 @@
 # (for example aws-marketplace-production) before using this workflow. The apply
 # job waits for that approval.
 name: Marketplace Offer Apply
-run-name: "Apply ${{ inputs.app_name || inputs.app }} to ${{ inputs.cloud }}"
+run-name: "Apply ${{ inputs.appid }} to ${{ inputs.cloud }}"
 
 on:
   workflow_dispatch:
     inputs:
-      app:
-        description: "Exactly one application id, for example odoo. Lists such as odoo,wordpress are rejected."
+      appid:
+        description: "appid, e.g. odoo"
         required: true
         type: string
-      app_name:
-        description: "Optional application display name for the run, for example Odoo"
-        required: false
-        type: string
       cloud:
-        description: "Target cloud platform. Only platforms implemented by this workflow are listed."
+        description: "cloud"
         required: true
         default: aws
         type: choice
         options:
           - aws
-      code:
-        description: >-
-          Optional AWS offer code/SKU. Leave empty to resolve every live product
-          for the application by trademark. An explicit code is authoritative;
-          if it belongs to another application it is treated as a deliberate
-          override.
+      product_code:
+        description: "product code, e.g. xxxx"
         required: false
         type: string
-      offer:
-        description: >-
-          Optional offer variant declared in multiOffers. Use base for the
-          no-label offer. Selecting a variant with a code forces that variant.
+      label:
+        description: "Label: force only for the specified product code"
         required: false
         type: choice
-        default: none
+        default: Auto
         options:
-          - none
-          - base
+          - Auto
+          - Remove label
           - Ubuntu
           - Debian
           - Multisite
@@ -50,7 +40,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: marketplace-offer-apply-${{ inputs.cloud }}-${{ inputs.app }}
+  group: marketplace-offer-apply-${{ inputs.cloud }}-${{ inputs.appid }}
   cancel-in-progress: false
 
 jobs:
@@ -59,14 +49,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      APP: ${{ inputs.app }}
-      APP_NAME: ${{ inputs.app_name || inputs.app }}
+      APP: ${{ inputs.appid }}
       CLOUD: ${{ inputs.cloud }}
-      CODE: ${{ inputs.code }}
-      OFFER: ${{ inputs.offer }}
+      CODE: ${{ inputs.product_code }}
+      OFFER: ${{ inputs.label }}
       CONTENTFUL_SPACE_ID: ${{ vars.CONTENTFUL_SPACE_ID || secrets.CONTENTFUL_SPACE_ID }}
       CONTENTFUL_ENVIRONMENT: ${{ vars.CONTENTFUL_ENVIRONMENT || 'master' }}
     steps:
+      - name: Validate workflow inputs
+        run: |
+          if [[ -n "$OFFER" && "$OFFER" != "Auto" && -z "${CODE//[[:space:]]/}" ]]; then
+            echo "::error::Label requires a product code."
+            exit 1
+          fi
+
       - name: Check out repository
         uses: actions/checkout@v6
 
@@ -138,35 +134,35 @@ jobs:
           aws-region: us-east-1
           role-session-name: MarketplaceOfferPlan-${{ github.run_id }}
 
-      - name: Resolve live offer targets
+      - name: Snapshot public store inventory
+        run: |
+          mk store products \
+            --platform "$CLOUD" \
+            --visibility public \
+            --json > /tmp/opencode/offer-run/inventory.json
+
+      - name: Resolve public offer targets from store facts
         run: |
           args=()
           if [[ -n "$CODE" ]]; then
             args+=("--code=$CODE")
           fi
-          if [[ "$OFFER" != "none" ]]; then
-            args+=("--offer=$OFFER")
-          fi
+          case "$OFFER" in
+            Auto|"") ;;
+            "Remove label") args+=("--offer=base") ;;
+            *) args+=("--offer=$OFFER") ;;
+          esac
           mk offer resolve \
             --app "$APP" \
             --cloud "$CLOUD" \
+            --visibility public \
+            --inventory /tmp/opencode/offer-run/inventory.json \
             --catalog /tmp/opencode/offer-run/catalog.json \
             --versions /tmp/opencode/offer-run/apps-verson.json \
             "${args[@]}" \
             --output /tmp/opencode/offer-run/resolve.json
-          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
-          import json
-          p = "/tmp/opencode/offer-run/resolve.json"
-          d = json.load(open(p))
-          print("## Resolved offer targets\n")
-          print("| Code | Offer | Match | Visibility | Title |")
-          print("| --- | --- | --- | --- | --- |")
-          for t in d["targets"]:
-              title = str(t.get("title", "")).replace("|", "\\|").replace("\n", " ")
-              print(f"| `{t.get('code') or '-'}` | {t.get('offer') or 'base'} | {t.get('match')} | {t.get('visibility') or '-'} | {title} |")
-          for item in d.get("unresolved") or []:
-              print(f"\n- Unresolved offer `{item.get('offer')}`: {item.get('reason')}")
-          PY
+          mk offer report resolve \
+            --input /tmp/opencode/offer-run/resolve.json >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build preview
         run: |
@@ -193,13 +189,12 @@ jobs:
           mk offer report plan \
             --input /tmp/opencode/offer-run/plan.json \
             --cloud "$CLOUD" \
-            --app-name "$APP_NAME" \
             --account-id "$ACCOUNT_ID" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload reviewed plan
         uses: actions/upload-artifact@v7
         with:
-          name: offer-plan-${{ inputs.cloud }}-${{ inputs.app }}-${{ github.run_id }}
+          name: offer-plan-${{ inputs.cloud }}-${{ inputs.appid }}-${{ github.run_id }}
           path: /tmp/opencode/offer-run/
           if-no-files-found: error
 
@@ -211,8 +206,7 @@ jobs:
     environment:
       name: ${{ inputs.cloud }}-marketplace-production
     env:
-      APP: ${{ inputs.app }}
-      APP_NAME: ${{ inputs.app_name || inputs.app }}
+      APP: ${{ inputs.appid }}
       CLOUD: ${{ inputs.cloud }}
     steps:
       - name: Check out repository
@@ -229,7 +223,7 @@ jobs:
       - name: Download reviewed plan
         uses: actions/download-artifact@v8
         with:
-          name: offer-plan-${{ inputs.cloud }}-${{ inputs.app }}-${{ github.run_id }}
+          name: offer-plan-${{ inputs.cloud }}-${{ inputs.appid }}-${{ github.run_id }}
           path: /tmp/opencode/offer-run
 
       - name: Check cloud and apply role configuration

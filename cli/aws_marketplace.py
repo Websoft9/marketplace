@@ -106,6 +106,22 @@ FIELD_SPECS: dict[str, dict[str, Any]] = {
         "template": False,
         "readTransform": "urls",
     },
+    "PromotionalMedia": {
+        "read": ("PromotionalResources", "PromotionalMedia"),
+        "write": "PromotionalMedia",
+        "type": "mediaList",
+        "required": False,
+        "template": False,
+        "readTransform": "media",
+    },
+}
+
+MEDIA_LIMITS = {
+    "maxItems": 15,
+    "maxVideos": 5,
+    "maxImages": 10,
+    "titleMax": 100,
+    "descriptionMax": 200,
 }
 
 FIELD_LIMITS = {
@@ -119,6 +135,21 @@ CONTENT_FIELDS = set(FIELD_SPECS)
 def normalize_additional_resources(items: list[dict[str, Any]]) -> list[dict[str, str]]:
     """Read-side AdditionalResources include Type; update-side items are Text/Url only."""
     return [{"Text": item["Text"], "Url": item["Url"]} for item in items]
+
+
+def normalize_promotional_media(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep the writable media fields and drop empty optional values."""
+    normalized: list[dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            raise ValueError("PromotionalMedia items must be objects")
+        entry = {
+            key: item[key]
+            for key in ("Type", "Url", "Title", "Description", "PreviewUrl")
+            if item.get(key) not in (None, "")
+        }
+        normalized.append(entry)
+    return normalized
 
 
 def _get_path(value: Any, path: tuple[str, ...]) -> Any:
@@ -146,6 +177,8 @@ def _read_value(detail: dict[str, Any], field: str, spec: dict[str, Any]) -> Any
         return normalize_additional_resources(value)
     if transform == "urls" and isinstance(value, list):
         return [item if isinstance(item, str) else item["Url"] for item in value]
+    if transform == "media" and isinstance(value, list):
+        return normalize_promotional_media(value)
     return value
 
 
@@ -173,6 +206,8 @@ def to_update_document(content: dict[str, Any]) -> dict[str, Any]:
             continue
         if field == "AdditionalResources":
             value = [{"Text": item["Text"], "Url": item["Url"]} for item in value]
+        elif field == "PromotionalMedia":
+            value = normalize_promotional_media(value)
         result[spec["write"]] = value
     return result
 
@@ -219,13 +254,15 @@ def aws_client(profile: str | None = None):
 
 def aws_call(client, operation: str, **kwargs) -> dict[str, Any]:
     """Expose error codes only; never log raw signed requests or sensitive SDK responses."""
+    from .store_models import InventoryError
+
     try:
         if operation != "batch_describe_entities":
             kwargs = {"Catalog": CATALOG, **kwargs}
         return getattr(client, operation)(**kwargs)
     except Exception as error:
         code = getattr(error, "response", {}).get("Error", {}).get("Code", type(error).__name__)
-        raise ValueError(f"AWS {operation} failed ({code})") from None
+        raise InventoryError(f"AWS {operation} failed ({code})") from None
 
 
 def change_status(response: dict[str, Any]) -> dict[str, Any]:

@@ -8,45 +8,18 @@ code per variant.
 
 from __future__ import annotations
 
-import json
 import re
-from dataclasses import dataclass
+import unicodedata
 from typing import Any
 
-from .aws_marketplace import CATALOG, aws_call, aws_client
-from .offer import OS_NAMES
+# Compatibility exports for existing offer-command callers; collection is catalog-independent.
+from .aws_inventory import _product, list_aws_products
+from .store_models import Product
+from .os_catalog import OS_NAMES, OS_DISPLAY
 from .marketplace import load_json
 
-OS_DISPLAY = {
-    "amazon linux": "Amazon Linux",
-    "oracle linux": "Oracle Linux",
-    "red hat": "Red Hat",
-    "rocky linux": "Rocky Linux",
-    "almalinux": "AlmaLinux",
-    "alma linux": "AlmaLinux",
-    "centos": "CentOS",
-    "debian": "Debian",
-    "ubuntu": "Ubuntu",
-    "suse": "SUSE",
-    "sles": "SLES",
-    "fedora": "Fedora",
-    "windows server": "Windows Server",
-    "freebsd": "FreeBSD",
-    "rhel": "RHEL",
-}
-
 BASE = "base"
-
-
-@dataclass
-class Product:
-    code: str
-    entity_id: str
-    title: str
-    summary: str = ""
-    visibility: str = ""
-    offer: str = ""
-    alternate_code: str = ""
+IDENTITY_RULES_VERSION = "deterministic-first-appearance-v2"
 
 
 def normalize(value: str) -> str:
@@ -54,6 +27,7 @@ def normalize(value: str) -> str:
 
 
 def contains(text: str, term: str) -> bool:
+    """Token containment for OS/variant labels; identity matching uses the v2 engine."""
     text = normalize(text)
     term = normalize(term)
     if not term:
@@ -92,19 +66,90 @@ def load_identities(source: str, special_cases: dict | None = None) -> dict[str,
 
 
 def identify(title: str, summary: str, identities: dict[str, list[str]]) -> set[str]:
-    """Title wins, even when it identifies a different or several applications."""
-    for text in (title, summary_lead(summary)):
-        matches = {
-            app for app, names in identities.items()
-            if any(contains(text, name) for name in names)
+    """Title wins; select first appearance, retaining only true positional ties."""
+    return identify_evidence(title, summary, identities)[0]
+
+
+def identify_evidence(title: str, summary: str, identities: dict[str, list[str]]):
+    """Compatibility interface for the shared, explainable identity selector."""
+    result = identify_details(title, summary, identities)
+    owners = {result["appId"]} if result["appId"] else set(result["candidates"])
+    return owners, result["method"]
+
+
+def normalize_identity(value: str) -> str:
+    # Remove marks before NFKC, otherwise ™ becomes the literal letters "TM".
+    value = str(value or "").translate(str.maketrans("", "", "™®℠"))
+    value = unicodedata.normalize("NFKC", value).casefold()
+    value = value.translate(str.maketrans({c: "-" for c in "‐‑‒–—−"}))
+    return " ".join(value.split())
+
+
+def _safe_id_name(value):
+    """Do not turn short generic IDs (go, r, ai, php) into new aliases."""
+    return (re.fullmatch(r"[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*", value) is not None
+            and (len(value) >= 4 or any(c.isdigit() for c in value))
+            # Reuse the OS vocabulary, not a separately maintained app denylist:
+            # "Oracle" alone is not evidence for the Oracle Database application.
+            and not any(name.startswith(value + " ") for name in OS_NAMES))
+
+
+def _identity_hit(text, app, names, include_ids):
+    full = sorted({normalize_identity(name) for name in names if normalize_identity(name)})
+    shortened = sorted({name[7:].strip() for name in full
+                        if name.startswith("apache ") and len(name[7:].strip()) >= 4})
+    app_name = normalize_identity(app)
+    tiers = [("trademark", full), ("apache-short-name", shortened)]
+    if include_ids and _safe_id_name(app_name):
+        tiers.append(("app-id", [app_name]))
+    # Prefer the complete trademark for THIS application. Only if absent, use
+    # a derived form; a different application's late full name cannot suppress
+    # an earlier short name ("Superset with PHP" must not become PHP).
+    for rank, (kind, terms) in enumerate(tiers):
+        hits = []
+        for term in terms:
+            found = re.search(r"(?<![a-z0-9_])" + re.escape(term) + r"(?![a-z0-9_])", text)
+            if found:
+                hits.append({"appId": app, "name": term, "start": found.start(),
+                             "end": found.end(), "kind": kind, "rank": rank})
+        if hits:
+            return min(hits, key=lambda h: (h["start"], -(h["end"] - h["start"]), h["name"]))
+    return None
+
+
+def identify_details(title, summary, identities, *, include_ids=True):
+    """Title first; per-app full-name fallback; earliest occurrence across apps.
+
+    At the same start position prefer stronger evidence, then the longer name.
+    Truly tied application identities remain ambiguous, never catalog-order based.
+    Positions refer to normalized text, not offsets in the original cloud title.
+    """
+    for field, raw in (("title", title), ("summary-lead", summary_lead(summary))):
+        text = normalize_identity(raw)
+        hits = [hit for app, names in identities.items()
+                if (hit := _identity_hit(text, app, names, include_ids)) is not None]
+        if not hits:
+            continue
+        priority = lambda h: (h["start"], h["rank"], -(h["end"] - h["start"]))
+        best = min(map(priority, hits))
+        winners = {h["appId"] for h in hits if priority(h) == best}
+        hits.sort(key=lambda h: (*priority(h), h["appId"]))
+        evidence = [{k: v for k, v in h.items() if k != "rank"} | {
+            "field": field, "selected": h["appId"] in winners,
+        } for h in hits]
+        return {
+            "status": "matched" if len(winners) == 1 else "ambiguous",
+            "appId": next(iter(winners)) if len(winners) == 1 else None,
+            "candidates": sorted(winners) if len(winners) > 1 else [],
+            "method": field + "-" + hits[0]["kind"], "evidence": evidence,
+            "selection": "first-appearance",
         }
-        if matches:
-            return matches
-    return set()
+    return {"status": "unmatched", "appId": None, "candidates": [], "method": None,
+            "evidence": [], "selection": "first-appearance"}
 
 
 def match_trademark(title: str, summary: str, trademark: str) -> bool:
-    return bool(identify(title, summary, {"target": [trademark]}))
+    return identify_details(title, summary, {"target": [trademark]}, include_ids=False)["appId"] is not None
 
 
 def detect_os(text: str) -> list[str]:
@@ -113,7 +158,7 @@ def detect_os(text: str) -> list[str]:
     found: list[str] = []
     for name in sorted(OS_NAMES, key=len, reverse=True):
         if contains(normalized, name):
-            display = OS_DISPLAY.get(name, name.title())
+            display = OS_DISPLAY[name]
             if display not in found:
                 found.append(display)
     return found
@@ -195,95 +240,8 @@ def validate_offer_choice(bundle: dict, offer: str | None) -> str | None:
     return canonical_offer(requested, multi_offers)
 
 
-def _product(entity_id: str, entity: dict, summary: dict) -> Product:
-    detail = entity.get("DetailsDocument")
-    if detail is None:
-        detail = json.loads(entity.get("Details") or "{}")
-    description = detail.get("Description") or {}
-    title = str(description.get("ProductTitle") or summary.get("ProductTitle") or "")
-    short = str(description.get("ShortDescription") or "")
-    sku = str(description.get("Sku") or "")
-    product_code = str(description.get("ProductCode") or "")
-    # Sku is a seller-defined alias, never a public marketplace product code.
-    code = product_code
-    alternate = sku if sku and sku != code else ""
-    visibility = str(description.get("Visibility") or summary.get("Visibility") or "")
-    return Product(
-        code=code,
-        entity_id=entity_id,
-        title=title,
-        summary=short,
-        visibility=visibility,
-        alternate_code=alternate,
-    )
-
-
-def list_aws_products(
-    profile: str | None = None, max_results: int = 50, *, public_only: bool = False,
-    progress=None,
-) -> list[Product]:
-    """Enumerate all pages first, then describe products in batches of at most 20.
-
-    Public-only inventory excludes Restricted, Limited, Draft and unknown states.
-    Batch failures and missing details never return an apparently complete list.
-    """
-    client = aws_client(profile)
-    summaries = {}
-    token = None
-    seen_tokens: set[str] = set()
-    while True:
-        request: dict[str, Any] = {
-            "EntityType": "AmiProduct",
-            "MaxResults": max_results,
-        }
-        if token:
-            request["NextToken"] = token
-        if public_only:
-            request["EntityTypeFilters"] = {
-                "AmiProductFilters": {"Visibility": {"ValueList": ["Public"]}},
-            }
-        response = aws_call(client, "list_entities", **request)
-        for summary in response.get("EntitySummaryList", []):
-            entity_id = summary.get("EntityId")
-            if not entity_id:
-                raise ValueError("AWS inventory contains a missing entity ID; inventory is incomplete")
-            ami_summary = dict(summary.get("AmiProductSummary") or {})
-            ami_summary.setdefault("Visibility", summary.get("Visibility") or "")
-            if public_only and normalize(ami_summary["Visibility"]) != "public":
-                continue
-            if entity_id in summaries:
-                raise ValueError("AWS inventory repeated an entity ID; inventory is incomplete")
-            summaries[entity_id] = ami_summary
-        token = response.get("NextToken")
-        if not token:
-            break
-        if token in seen_tokens:
-            raise ValueError("AWS pagination repeated a token; inventory is incomplete")
-        seen_tokens.add(token)
-    if progress:
-        progress(f"AWS inventory listed: {len(summaries)} {'Public ' if public_only else ''}AMI products")
-    products: list[Product] = []
-    entity_ids = list(summaries)
-    for offset in range(0, len(entity_ids), 20):
-        batch = entity_ids[offset:offset + 20]
-        response = aws_call(client, "batch_describe_entities", EntityRequestList=[
-            {"Catalog": CATALOG, "EntityId": entity_id} for entity_id in batch
-        ])
-        details = response.get("EntityDetails") or {}
-        if response.get("Errors") or any(entity_id not in details for entity_id in batch):
-            raise ValueError("AWS batch_describe_entities returned errors or missing details; inventory is incomplete")
-        for entity_id in batch:
-            product = _product(entity_id, details[entity_id], summaries[entity_id])
-            # Visibility can change between listing and reading the details.
-            if not public_only or normalize(product.visibility) == "public":
-                products.append(product)
-        if progress:
-            progress(f"AWS inventory details: {offset + len(batch)}/{len(entity_ids)}")
-    return products
-
-
-def _target(product: Product, offer: str, match: str) -> dict[str, Any]:
-    return {
+def _target(product: Product, offer: str, match: str, identities=None) -> dict[str, Any]:
+    result = {
         "code": product.code or product.entity_id,
         "entityId": product.entity_id,
         "offer": offer or "",
@@ -291,6 +249,10 @@ def _target(product: Product, offer: str, match: str) -> dict[str, Any]:
         "visibility": product.visibility,
         "match": match,
     }
+    if identities is not None:
+        result["appMatch"] = identify_details(product.title, product.summary, identities)
+        result["identityRulesVersion"] = IDENTITY_RULES_VERSION
+    return result
 
 
 def _ordered(targets: list[dict[str, Any]], multi_offers: list[str] | None) -> list[dict[str, Any]]:
@@ -344,7 +306,7 @@ def resolve(
         variant = requested if requested is not None else detect_offer(
             product.title, product.summary, multi_offers
         )
-        targets = [_target(product, variant, "app" if matched else "override")]
+        targets = [_target(product, variant, "app" if matched else "override", identities)]
         return {
             "schemaVersion": 1,
             "app": app,
@@ -384,7 +346,7 @@ def resolve(
                 f"offer {requested or BASE!r} matches {len(selected)} AWS products; "
                 "cannot distinguish"
             )
-        targets = [_target(selected[0], requested, "app")]
+        targets = [_target(selected[0], requested, "app", identities)]
     else:
         groups: dict[frozenset[str], list[Product]] = {}
         for product in candidates:
@@ -402,7 +364,7 @@ def resolve(
                     f"detected offer {group[0].offer or BASE!r} is not declared "
                     f"in multiOffers for {app!r}"
                 )
-            targets.append(_target(group[0], group[0].offer, "app"))
+            targets.append(_target(group[0], group[0].offer, "app", identities))
 
     found = {variant_key(target["offer"]) for target in targets}
     unresolved = (

@@ -79,6 +79,15 @@ jobs:
           role-session-name: OfferListingCheck-${{ github.run_id }}
           audience: sts.aliyuncs.com
 
+      - name: Expose Aliyun credential names
+        if: env.PLATFORM == 'aliyun' || env.PLATFORM == 'all'
+        run: |
+          {
+            echo "ALIYUN_ACCESS_KEY_ID=$ALIBABA_CLOUD_ACCESS_KEY_ID"
+            echo "ALIYUN_ACCESS_KEY_SECRET=$ALIBABA_CLOUD_ACCESS_KEY_SECRET"
+            echo "ALIYUN_SECURITY_TOKEN=$ALIBABA_CLOUD_SECURITY_TOKEN"
+          } >> "$GITHUB_ENV"
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
