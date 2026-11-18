@@ -20,6 +20,13 @@ OWNER = "797851739507"
 VIEWPORT = {"width": 1920, "height": 1040}
 PUBLIC_BASE = f"https://{BUCKET}.s3.{REGION}.amazonaws.com"
 APP_ID = re.compile(r"[a-z0-9][a-z0-9_-]{0,99}\Z", re.ASCII)
+ERROR_DESCRIPTIONS = {
+    "no_search_results": "AppStore explicitly reported no matching applications.",
+    "multiple_matching_results": "More than one application matched; none was selected.",
+    "trademark_not_matched": "Search returned applications, but none exactly matched the catalog trademark.",
+    "search_loading_timeout": "AppStore was still loading when the search wait expired.",
+    "search_results_timeout": "No usable search results or explicit empty-results state appeared in time.",
+}
 
 
 class ScreenshotError(ValueError):
@@ -181,10 +188,14 @@ def run_screenshots(
 
 
 def render_summary(report: dict) -> str:
+    failed = [item["appid"] for item in report["results"] if item["status"] == "failed"]
     lines = ["## AppStore screenshots", "",
              f"{report['succeeded']} succeeded, {report['failed']} failed. Viewport: 1920 × 1040.",
+             "", f"Failed list: {', '.join(failed) if failed else 'none'}",
              "", "| Application | Status | Result |", "| --- | --- | --- |"]
     for item in report["results"]:
         detail = item.get("error") or item.get("url") or "Local only"
+        if item.get("error") in ERROR_DESCRIPTIONS:
+            detail += ": " + ERROR_DESCRIPTIONS[item["error"]]
         lines.append(f"| {item['appid']} | {item['status']} | {detail} |")
     return "\n".join(lines) + "\n"

@@ -6,7 +6,7 @@
 - Use Playwright to log in to Websoft9, enter AppStore, search each application ID, and open the matching application's details.
 - Wait for detail content and images to load, then capture a **1920 × 1040** viewport with device scale factor `1` as PNG. Exclude browser chrome; do not capture a scrolling full page.
 - Upload to `s3://assets-797851739507-us-east-1-an/offers/{appid}-installation.png`, overwriting any existing object.
-- Process sequentially. Continue after individual failures, summarize results, and fail the run if any application fails.
+- Process sequentially. Continue after individual failures and summarize results. Actions uses `--allow-app-failures`: application failures produce warnings, not a failed workflow. Configuration, catalog, login and other fatal setup failures still fail the run. Local CLI remains strict unless this flag is supplied.
 - Never upload a screenshot when the match is missing or ambiguous, or details fail to load; preserve the existing object.
 
 ## Configuration
@@ -34,4 +34,6 @@ make cli cloud=websoft9 ARGS="asset screenshots"
 - The workflow retains only the sanitized report for seven days and removes local PNGs. For visual validation use local `--no-upload`; the Action's `no_upload` option validates capture but does not retain PNGs.
 - Match one exact catalog trademark when present. With a missing/blank trademark, require exactly one search result instead; never guess a display name. Both paths require a detail GitHub link identifying the same `appid`. Missing/ambiguous matches, wrong details and unloaded visible images fail only that application, without uploading; continue the batch and report failures.
 - Loading and empty-results cards are not application results and must never be opened or captured.
+- Summary includes a copyable `Failed list: app1, app2` line (`none` if empty), followed by the unchanged per-application table.
+- Search reasons distinguish `no_search_results` (explicit empty state), `multiple_matching_results` (ambiguous candidates), `trademark_not_matched` (results but no exact catalog name), `search_loading_timeout` (still loading), and `search_results_timeout` (no conclusive result state). The summary explains each reason in English.
 - Check the login response before waiting for AppStore. A confirmed authenticated session may refresh once to recover a stalled frontend redirect; never retry credential submission. Report rejected credentials, rate limiting, service errors and navigation failures separately, without response bodies.

@@ -15,31 +15,31 @@
     "PromotionalMedia": [
       {
         "Type": "Image",
-        "Url": "https://libs.websoft9.com/marketplace/aws/{catalog.id}-installation.png",
+        "Url": "https://assets-797851739507-us-east-1-an.s3.us-east-1.amazonaws.com/offers/{catalog.id}-installation.png",
         "Title": "Application Install Automation",
         "Description": "Application Install Automation"
       },
       {
         "Type": "Image",
-        "Url": "https://libs.websoft9.com/marketplace/aws/websoft9-console.png",
+        "Url": "https://assets-797851739507-us-east-1-an.s3.us-east-1.amazonaws.com/offers/websoft9-console.png",
         "Title": "Server Host Dashboard",
         "Description": "Server Host Dashboard"
       },
       {
         "Type": "Image",
-        "Url": "https://libs.websoft9.com/marketplace/aws/compose-editor.png",
+        "Url": "https://assets-797851739507-us-east-1-an.s3.us-east-1.amazonaws.com/offers/compose-editor.png",
         "Title": "Docker Compose file Editor",
         "Description": "Docker Compose file Editor"
       },
       {
         "Type": "Image",
-        "Url": "https://libs.websoft9.com/marketplace/aws/domain-https.png",
+        "Url": "https://assets-797851739507-us-east-1-an.s3.us-east-1.amazonaws.com/offers/domain-https.png",
         "Title": "CA Request and Configure HTTPS for You Application",
         "Description": "CA Request and Configure for You Application"
       },
       {
         "Type": "Image",
-        "Url": "https://libs.websoft9.com/marketplace/aws/websoft9-appstore.png",
+        "Url": "https://assets-797851739507-us-east-1-an.s3.us-east-1.amazonaws.com/offers/websoft9-appstore.png",
         "Title": "Application Templates Store",
         "Description": "Application Templates Store"
       }

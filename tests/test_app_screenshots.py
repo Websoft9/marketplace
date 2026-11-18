@@ -199,6 +199,26 @@ class ScreenshotTests(unittest.TestCase):
         self.assertNotIn("sensitive-url", serialized)
         self.assertEqual(report["failed"], 2)
 
+    def test_summary_has_copyable_failed_ids_and_keeps_detail_table(self):
+        report = {"succeeded": 1, "failed": 2, "results": [
+            {"appid": "moodle", "status": "failed", "error": "no_search_results"},
+            {"appid": "wordpress", "status": "success"},
+            {"appid": "jitsi", "status": "failed", "error": "multiple_matching_results"},
+        ]}
+        text = screenshots.render_summary(report)
+        self.assertIn("1 succeeded, 2 failed", text)
+        self.assertIn("\nFailed list: moodle, jitsi\n", text)
+        self.assertIn("| Application | Status | Result |", text)
+        self.assertIn("| wordpress | success | Local only |", text)
+        self.assertIn("no_search_results: AppStore explicitly reported", text)
+        self.assertIn("multiple_matching_results: More than one application", text)
+
+    def test_summary_has_explicit_empty_failed_list(self):
+        text = screenshots.render_summary({"succeeded": 1, "failed": 0, "results": [
+            {"appid": "wordpress", "status": "success"},
+        ]})
+        self.assertIn("\nFailed list: none\n", text)
+
 
 class ScreenshotCommandTests(unittest.TestCase):
     def test_default_batch_reports_missing_ffmpeg_and_continues_to_wordpress(self):
@@ -212,7 +232,7 @@ class ScreenshotCommandTests(unittest.TestCase):
                  mock.patch("cli.appstore_browser.AppStoreBrowser") as factory, \
                  mock.patch.object(screenshots, "create_s3_client") as aws:
                 browser = factory.return_value.__enter__.return_value
-                browser.capture.side_effect = [screenshots.ScreenshotError("missing_or_ambiguous_result"), png()]
+                browser.capture.side_effect = [screenshots.ScreenshotError("no_search_results"), png()]
                 result = CliRunner().invoke(cli, [
                     "asset", "screenshots", "--catalog", str(catalog), "--no-upload",
                     "--output-dir", str(root / "output"), "--summary", str(root / "summary.md"),
@@ -224,9 +244,9 @@ class ScreenshotCommandTests(unittest.TestCase):
             factory.return_value.__enter__.assert_called_once()
             aws.assert_not_called()
             report = json.loads((root / "output/report.json").read_text())
-            self.assertEqual(report["results"][0]["error"], "missing_or_ambiguous_result")
+            self.assertEqual(report["results"][0]["error"], "no_search_results")
             self.assertEqual(report["results"][1]["status"], "success")
-            self.assertIn("missing_or_ambiguous_result", (root / "summary.md").read_text())
+            self.assertIn("no_search_results", (root / "summary.md").read_text())
 
     def test_command_groups_have_separate_responsibilities(self):
         runner = CliRunner()
@@ -281,6 +301,17 @@ class ScreenshotCommandTests(unittest.TestCase):
         for report in ({"succeeded": 0, "failed": 1}, {"succeeded": 1, "failed": 0, "error": "browser_setup_failed"}):
             result, _ = self.invoke_batch(report)
             self.assertEqual(result.exit_code, 1, result.output)
+
+    def test_allow_app_failures_succeeds_and_warns_even_when_all_apps_fail(self):
+        for succeeded, failed in ((1, 1), (0, 2)):
+            with self.subTest(succeeded=succeeded, failed=failed):
+                result, _ = self.invoke_batch({"succeeded": succeeded, "failed": failed}, "--allow-app-failures")
+                self.assertEqual(result.exit_code, 0, result.output)
+                self.assertIn("Warning:", result.output)
+
+    def test_allow_app_failures_does_not_hide_fatal_errors(self):
+        result, _ = self.invoke_batch({"succeeded": 0, "failed": 2, "error": "login_failed"}, "--allow-app-failures")
+        self.assertEqual(result.exit_code, 1, result.output)
 
     def test_cli_rejects_profile_in_local_only_mode(self):
         result = CliRunner().invoke(cli, ["asset", "screenshots", "--no-upload", "--profile", "test"])
@@ -360,6 +391,8 @@ class ScreenshotWorkflowTests(unittest.TestCase):
         self.assertIn("workflow_dispatch:", text)
         self.assertNotIn("schedule:", text)
         self.assertIn('mk asset screenshots "${args[@]}"', text)
+        self.assertIn('--summary "$GITHUB_STEP_SUMMARY" --allow-app-failures', text)
+        self.assertNotIn("continue-on-error:", text)
         self.assertIn("role-to-assume: ${{ vars.AWS_ROLE_ARN }}", text)
         self.assertIn("id-token: write", text)
         self.assertIn("github.ref == 'refs/heads/main'", text)

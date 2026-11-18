@@ -64,7 +64,7 @@ jobs:
           APPS: ${{ inputs.apps }}
           NO_UPLOAD: ${{ inputs.no_upload }}
         run: |
-          args=(--output-dir "$RUNNER_TEMP/$SCREENSHOTS_SUBDIR" --summary "$GITHUB_STEP_SUMMARY")
+          args=(--output-dir "$RUNNER_TEMP/$SCREENSHOTS_SUBDIR" --summary "$GITHUB_STEP_SUMMARY" --allow-app-failures)
           if [[ -n "$APPS" ]]; then args+=("--apps=$APPS"); fi
           if [[ "$NO_UPLOAD" == "true" ]]; then args+=(--no-upload); fi
           mk asset screenshots "${args[@]}"

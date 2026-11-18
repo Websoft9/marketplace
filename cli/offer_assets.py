@@ -9,13 +9,14 @@ from typing import Any
 from .offer import DATA, digest, format_template, read_json, validate_promotional_media
 
 ASSETS_TEMPLATE = DATA / "templates" / "aws-ami-assets.json"
-ASSETS_TEMPLATE_ID = "aws-ami-assets-v1"
+ASSETS_TEMPLATE_ID = "aws-ami-assets-v2"
 MAX_MEDIA_ITEMS = 5
 ASSET_FIELDS = {"LogoUrl", "PromotionalMedia"}
 
 
 def validate_assets_template(template: dict[str, Any]) -> None:
-    if template.get("schemaVersion") != 1 or template.get("templateId") != ASSETS_TEMPLATE_ID:
+    version = template.get("schemaVersion")
+    if type(version) is not int or version not in (1, 2) or template.get("templateId") != f"aws-ami-assets-v{version}":
         raise ValueError("unsupported or mismatched asset template")
     namespaces = template.get("namespaces")
     if not isinstance(namespaces, list) or not namespaces or any(
@@ -40,6 +41,26 @@ def validate_assets_template(template: dict[str, Any]) -> None:
             f"asset template.assets has unsupported key(s): {', '.join(sorted(unknown))}"
         )
     logo = assets.get("LogoUrl")
+    if version == 2:
+        if logo is not None and not isinstance(logo, str):
+            raise ValueError("asset template.assets.LogoUrl must be text")
+        media = assets.get("PromotionalMedia")
+        if not isinstance(media, list) or not 1 <= len(media) <= MAX_MEDIA_ITEMS:
+            raise ValueError(f"PromotionalMedia must contain 1–{MAX_MEDIA_ITEMS} items")
+        for index, item in enumerate(media):
+            path = f"PromotionalMedia[{index}]"
+            if not isinstance(item, dict):
+                raise ValueError(f"{path} must be an object")
+            if set(item) - {"Type", "Url", "Title", "Description"}:
+                raise ValueError(f"{path} has unsupported fields")
+            if item.get("Type") != "Image":
+                raise ValueError(f"{path}.Type must be Image for this template")
+            for field in ("Url", "Title"):
+                if not isinstance(item.get(field), str) or not item[field].strip():
+                    raise ValueError(f"{path}.{field} must be non-empty text")
+            if "Description" in item and not isinstance(item["Description"], str):
+                raise ValueError(f"{path}.Description must be text")
+        return
     if logo is not None:
         if not isinstance(logo, dict) or not isinstance(logo.get("source"), str):
             raise ValueError("asset template.assets.LogoUrl.source must be text")
@@ -119,6 +140,7 @@ def validate_assets_content(content: dict[str, Any]) -> None:
         media = content["PromotionalMedia"]
         validate_promotional_media(media)
         for index, item in enumerate(media):
+            _validate_text(item["Url"], f"PromotionalMedia[{index}].Url")
             _validate_text(item["Title"], f"PromotionalMedia[{index}].Title")
             if item.get("Description"):
                 _validate_text(
@@ -126,17 +148,10 @@ def validate_assets_content(content: dict[str, Any]) -> None:
                 )
 
 
-def render_assets(
-    catalog_item: dict[str, Any],
-    template_path: Path = ASSETS_TEMPLATE,
-) -> dict[str, Any]:
-    """Build LogoUrl and up to five PromotionalMedia image entries.
-
-    The asset template is intentionally separate from the copy template so it can
-    later be planned and applied as its own change set without changing copy.
-    """
-    template = read_json(template_path)
-    validate_assets_template(template)
+def _render_catalog_assets(
+    catalog_item: dict[str, Any], template: dict[str, Any]
+) -> tuple[dict[str, Any], list[str]]:
+    """Render the legacy v1 catalog-sourced assets."""
     roots = {"catalog": catalog_item}
     content: dict[str, Any] = {}
     warnings: list[str] = []
@@ -200,6 +215,33 @@ def render_assets(
         warnings.append(
             f"catalog has {len(source)} screenshots; only the first {max_items} were rendered"
         )
+    return content, warnings
+
+
+def render_assets(
+    catalog_item: dict[str, Any],
+    template_path: Path = ASSETS_TEMPLATE,
+) -> dict[str, Any]:
+    """Build a separate asset preview from v2 entries or legacy v1 sources."""
+    template = read_json(template_path)
+    validate_assets_template(template)
+    if template["schemaVersion"] == 1:
+        content, warnings = _render_catalog_assets(catalog_item, template)
+    else:
+        roots = {"catalog": catalog_item}
+        assets = template["assets"]
+        content = {}
+        warnings = []
+        if assets.get("LogoUrl") is not None:
+            content["LogoUrl"] = format_template(assets["LogoUrl"], roots)
+        else:
+            warnings.append("LogoUrl is required by AWS but was not rendered")
+        content["PromotionalMedia"] = [
+            {field: format_template(value, roots) for field, value in item.items()}
+            for item in assets["PromotionalMedia"]
+        ]
+    if content:
+        validate_assets_content(content)
     non_s3 = [url for url in ([content.get("LogoUrl")] + [
         item["Url"] for item in content.get("PromotionalMedia", [])
     ]) if url and not _is_s3_url(url)]
@@ -207,9 +249,6 @@ def render_assets(
         warnings.append(
             f"{len(non_s3)} asset URL(s) are not S3-hosted; stage them before apply"
         )
-    if content:
-        validate_assets_content(content)
-
     return {
         "schemaVersion": 1,
         "key": catalog_item.get("id"),

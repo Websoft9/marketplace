@@ -27,8 +27,31 @@ def image(name, host="websoft9-assets.s3.amazonaws.com"):
 
 
 class OfferAssetsTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.legacy_template_path = Path(directory.name) / "assets-v1.json"
+        self.legacy_template = {
+            "schemaVersion": 1,
+            "templateId": "aws-ami-assets-v1",
+            "namespaces": ["catalog"],
+            "assets": {
+                "LogoUrl": {"source": "{catalog.logo.imageurl}", "optional": True},
+                "PromotionalMedia": {
+                    "source": "{catalog.screenshots}",
+                    "maxItems": 5,
+                    "type": "Image",
+                    "title": "{catalog.trademark} screenshot {index}",
+                },
+            },
+        }
+        self.legacy_template_path.write_text(json.dumps(self.legacy_template), encoding="utf-8")
+
+    def render_catalog_assets(self, item):
+        return offer_assets.render_assets(item, self.legacy_template_path)
+
     def test_renders_logo_and_at_most_five_images(self):
-        value = offer_assets.render_assets(
+        value = self.render_catalog_assets(
             item_with([image(f"screen-{index}") for index in range(1, 8)])
         )
 
@@ -47,7 +70,7 @@ class OfferAssetsTests(unittest.TestCase):
         self.assertIn("only the first 5", " ".join(value["warnings"]))
 
     def test_supports_string_and_object_screenshots(self):
-        value = offer_assets.render_assets(
+        value = self.render_catalog_assets(
             item_with(
                 [
                     "https://websoft9-assets.s3.amazonaws.com/odoo/one.png",
@@ -62,7 +85,7 @@ class OfferAssetsTests(unittest.TestCase):
         self.assertEqual(media[1]["Url"].rsplit("/", 1)[-1], "two.png")
 
     def test_deduplicates_media_urls(self):
-        value = offer_assets.render_assets(
+        value = self.render_catalog_assets(
             item_with([image("same"), image("same"), image("other")])
         )
 
@@ -74,7 +97,7 @@ class OfferAssetsTests(unittest.TestCase):
         )
 
     def test_missing_logo_and_screenshots_produce_warnings_not_errors(self):
-        value = offer_assets.render_assets(item_with(None, logo=False))
+        value = self.render_catalog_assets(item_with(None, logo=False))
 
         self.assertNotIn("LogoUrl", value["content"])
         self.assertNotIn("PromotionalMedia", value["content"])
@@ -82,7 +105,7 @@ class OfferAssetsTests(unittest.TestCase):
         self.assertIn("no screenshots", " ".join(value["warnings"]))
 
     def test_non_s3_urls_are_reported_before_apply(self):
-        value = offer_assets.render_assets(
+        value = self.render_catalog_assets(
             item_with([image("screen", host="libs.websoft9.com")])
         )
 
@@ -97,13 +120,71 @@ class OfferAssetsTests(unittest.TestCase):
     def test_template_is_valid_and_capped_at_five(self):
         template = offer.read_json(offer_assets.ASSETS_TEMPLATE)
         offer_assets.validate_assets_template(template)
-        self.assertEqual(template["assets"]["PromotionalMedia"]["maxItems"], 5)
+        self.assertEqual(len(template["assets"]["PromotionalMedia"]), 5)
 
     def test_rejects_more_than_five_template_slots(self):
         template = offer.read_json(offer_assets.ASSETS_TEMPLATE)
-        template["assets"]["PromotionalMedia"]["maxItems"] = 6
+        template["assets"]["PromotionalMedia"].append(
+            dict(template["assets"]["PromotionalMedia"][0])
+        )
         with self.assertRaisesRegex(ValueError, "1–5"):
             offer_assets.validate_assets_template(template)
+
+    def test_legacy_template_remains_valid_and_capped_at_five(self):
+        offer_assets.validate_assets_template(self.legacy_template)
+        self.legacy_template["assets"]["PromotionalMedia"]["maxItems"] = 6
+        with self.assertRaisesRegex(ValueError, "1–5"):
+            offer_assets.validate_assets_template(self.legacy_template)
+
+    def test_renders_v2_template_without_catalog_logo_or_screenshots(self):
+        value = offer_assets.render_assets(item_with(None, logo=False))
+        template = offer.read_json(offer_assets.ASSETS_TEMPLATE)
+
+        self.assertEqual(value["templateId"], "aws-ami-assets-v2")
+        self.assertEqual(value["content"]["LogoUrl"], template["assets"]["LogoUrl"])
+        media = value["content"]["PromotionalMedia"]
+        self.assertEqual(len(media), 5)
+        self.assertEqual(
+            media[0]["Url"],
+            "https://libs.websoft9.com/marketplace/aws/odoo-installation.png",
+        )
+        self.assertEqual(media[0]["Title"], "Application Install Automation")
+        self.assertEqual(media[0]["Description"], "Application Install Automation")
+        self.assertEqual(media[1:], template["assets"]["PromotionalMedia"][1:])
+        self.assertEqual(value["preview"]["assetSummary"], {"logo": True, "media": 5})
+        self.assertEqual(len(value["warnings"]), 1)
+        self.assertIn("6 asset URL(s) are not S3-hosted", value["warnings"][0])
+
+    def test_rejects_mismatched_template_version(self):
+        template = offer.read_json(offer_assets.ASSETS_TEMPLATE)
+        template["templateId"] = "aws-ami-assets-v1"
+        with self.assertRaisesRegex(ValueError, "unsupported or mismatched"):
+            offer_assets.validate_assets_template(template)
+
+    def test_rejects_invalid_v2_template_fields(self):
+        for field, value, message in [
+            ("Type", "Video", "Type must be Image"),
+            ("Url", None, "Url must be non-empty text"),
+            ("Title", "", "Title must be non-empty text"),
+            ("Description", [], "Description must be text"),
+            ("Unknown", "value", "unsupported fields"),
+        ]:
+            with self.subTest(field=field):
+                template = offer.read_json(offer_assets.ASSETS_TEMPLATE)
+                template["assets"]["PromotionalMedia"][0][field] = value
+                with self.assertRaisesRegex(ValueError, message):
+                    offer_assets.validate_assets_template(template)
+
+    def test_v2_rendering_validates_resolved_content(self):
+        for app_id, message in [
+            ("bad id", "requires an HTTPS URL"),
+            ("{unresolved}", "unresolved template placeholders"),
+        ]:
+            with self.subTest(app_id=app_id):
+                item = item_with(None, logo=False)
+                item["id"] = app_id
+                with self.assertRaisesRegex(ValueError, message):
+                    offer_assets.render_assets(item)
 
     def test_media_validation_allows_presigned_urls_and_enforces_counts(self):
         image_item = {
@@ -147,8 +228,8 @@ class OfferAssetsTests(unittest.TestCase):
 
             self.assertEqual(result.exit_code, 0, result.output)
             document = json.loads(output.read_text(encoding="utf-8"))
-            self.assertEqual(document["templateId"], "aws-ami-assets-v1")
-            self.assertEqual(len(document["content"]["PromotionalMedia"]), 2)
+            self.assertEqual(document["templateId"], "aws-ami-assets-v2")
+            self.assertEqual(len(document["content"]["PromotionalMedia"]), 5)
             self.assertTrue(document["content"]["LogoUrl"].startswith("https://"))
 
 

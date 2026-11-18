@@ -195,10 +195,16 @@ until resolved.
 `Highlights` via indexed `vendor.highlights` values. It does not update
 `Categories`, `LogoUrl`, `VideoUrls`, or `PromotionalMedia`.
 
-`aws-ami-assets.json` is the separate asset template. It renders
-`LogoUrl` from `{catalog.logo.imageurl}` and up to five `PromotionalMedia`
-images from `{catalog.screenshots}`. Each screenshot may be a URL string or an
-object with `value`; duplicate URLs are removed and catalog order is preserved.
+`aws-ami-assets.json` is the separate asset template. The current v2 format
+(`schemaVersion: 2`, `templateId: aws-ami-assets-v2`) declares `LogoUrl` as text
+and `PromotionalMedia` as an ordered list of one to five image entries with
+`Type`, `Url`, `Title` and optional `Description`. Text fields support catalog
+placeholders, such as `{catalog.id}` in the application installation image URL.
+The shared logo and console images do not require catalog logo or screenshots.
+The renderer also accepts legacy v1 templates, which render `LogoUrl` from
+`{catalog.logo.imageurl}` and up to five images from `{catalog.screenshots}`.
+Legacy screenshots may be URL strings or objects with `value`; duplicate URLs
+are removed and catalog order is preserved.
 The asset template is intentionally separate from the copy template so it can
 later be planned and applied as its own field-scoped `UpdateInformation`
 change set. Asset URLs must be staged to S3 before apply; `PromotionalMedia`

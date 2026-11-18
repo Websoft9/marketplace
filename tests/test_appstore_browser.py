@@ -36,6 +36,14 @@ STORE = """<!doctype html><html lang="en"><body>
 const titles={n8n:'n8n',mysql:'MySQL',ffmpeg:'FFmpeg',wrong:'Wrong',duplicate:'Duplicate',broken:'Broken'};
 function search(id) {
   document.querySelector('#details').innerHTML='';
+  if(id==='loading') {
+    document.querySelector('#results').innerHTML='<div class="MuiCard-root">Loading App Store data...</div>';
+    return;
+  }
+  if(id==='blank') {
+    document.querySelector('#results').innerHTML='';
+    return;
+  }
   const title=titles[id];
   if(!title) {
     document.querySelector('#results').innerHTML='<div class="MuiCard-root">No apps match the current filters</div>';
@@ -129,8 +137,8 @@ class BrowserFixtureTests(unittest.TestCase):
     def test_missing_trademark_uses_unique_result_and_checks_detail_appid(self):
         with AppStoreBrowser(self.credentials, timeout=1) as browser:
             validate_png(browser.capture({"id": "ffmpeg", "trademark": ""}))
-            for appid, error in (("missing", "missing_or_ambiguous_result"),
-                                 ("duplicate", "missing_or_ambiguous_result"),
+            for appid, error in (("missing", "no_search_results"),
+                                 ("duplicate", "multiple_matching_results"),
                                  ("wrong", "detail_identity_failed")):
                 with self.subTest(appid=appid), self.assertRaises(ScreenshotError) as raised:
                     browser.capture({"id": appid, "trademark": ""})
@@ -151,8 +159,8 @@ class BrowserFixtureTests(unittest.TestCase):
 
     def test_missing_ambiguous_wrong_identity_and_broken_image_fail_closed(self):
         with AppStoreBrowser(self.credentials, timeout=1) as browser:
-            for app, error in (({"id": "missing", "trademark": "Missing"}, "missing_or_ambiguous_result"),
-                               ({"id": "duplicate", "trademark": "Duplicate"}, "missing_or_ambiguous_result"),
+            for app, error in (({"id": "missing", "trademark": "Missing"}, "no_search_results"),
+                               ({"id": "duplicate", "trademark": "Duplicate"}, "multiple_matching_results"),
                                ({"id": "wrong", "trademark": "Wrong"}, "detail_identity_failed"),
                                ({"id": "broken", "trademark": "Broken"}, "detail_not_ready")):
                 with self.subTest(app=app), self.assertRaises(ScreenshotError) as raised:
@@ -161,6 +169,16 @@ class BrowserFixtureTests(unittest.TestCase):
                 self.assertEqual(browser.context.pages, [])
             # Failure must not poison the next application's page.
             validate_png(browser.capture({"id": "mysql", "trademark": "MySQL"}))
+
+    def test_search_distinguishes_name_mismatch_loading_and_missing_state(self):
+        with AppStoreBrowser(self.credentials, timeout=1) as browser:
+            for app, error in (({"id": "mysql", "trademark": "Incorrect name"}, "trademark_not_matched"),
+                               ({"id": "loading", "trademark": ""}, "search_loading_timeout"),
+                               ({"id": "blank", "trademark": ""}, "search_results_timeout")):
+                with self.subTest(app=app), self.assertRaises(ScreenshotError) as raised:
+                    browser.capture(app)
+                self.assertEqual(str(raised.exception), error)
+                self.assertEqual(browser.context.pages, [])
 
 
 if __name__ == "__main__":

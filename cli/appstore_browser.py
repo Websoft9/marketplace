@@ -101,15 +101,34 @@ class AppStoreBrowser:
             search = page.get_by_placeholder(SEARCH_PLACEHOLDER, exact=True)
             search.fill(app["id"])
             search.press("Enter")
-            phase = "missing_or_ambiguous_result"
+            phase = "search_results_timeout"
             # MUI's stable component class, not its generated css-* classes.
             trademark = app.get("trademark", "")
-            card = (page.locator(".MuiCard-root")
-                    .filter(has_not_text=LOADING_PLACEHOLDER)
-                    .filter(has_not_text=EMPTY_RESULTS_PLACEHOLDER))
+            results = (page.locator(".MuiCard-root")
+                       .filter(has_not_text=LOADING_PLACEHOLDER)
+                       .filter(has_not_text=EMPTY_RESULTS_PLACEHOLDER))
+            card = results
             if trademark:
                 card = card.filter(has=page.get_by_text(trademark, exact=True))
-            self.expect(card).to_have_count(1, timeout=self.timeout_ms)
+            empty = page.get_by_text(EMPTY_RESULTS_PLACEHOLDER, exact=True)
+            try:
+                # Wait for either usable candidates or an explicit empty state;
+                # don't conflate a still-loading store with a nonexistent app.
+                self.expect(card.or_(empty)).not_to_have_count(0, timeout=self.timeout_ms)
+                if empty.is_visible():
+                    raise ScreenshotError("no_search_results")
+                self.expect(card).to_have_count(1, timeout=self.timeout_ms)
+            except AssertionError:
+                if page.get_by_text(LOADING_PLACEHOLDER, exact=True).is_visible():
+                    raise ScreenshotError("search_loading_timeout") from None
+                if empty.is_visible():
+                    raise ScreenshotError("no_search_results") from None
+                count = card.count()
+                if count > 1:
+                    raise ScreenshotError("multiple_matching_results") from None
+                if trademark and count == 0 and results.count() > 0:
+                    raise ScreenshotError("trademark_not_matched") from None
+                raise ScreenshotError("search_results_timeout") from None
             if trademark:
                 card.get_by_text(trademark, exact=True).click()
             else:
@@ -140,6 +159,8 @@ class AppStoreBrowser:
             }""", timeout=self.timeout_ms)
             phase = "screenshot_failed"
             return page.screenshot(type="png", full_page=False, animations="disabled", caret="hide")
+        except ScreenshotError:
+            raise
         except Exception:
             raise ScreenshotError(phase) from None
         finally:

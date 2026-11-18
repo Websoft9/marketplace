@@ -20,13 +20,15 @@ def asset_command():
               default=REPO_ROOT / "data" / ".work" / "screenshots", show_default=True,
               help="Screenshot and report directory; defaults to the repository's work directory.")
 @click.option("--no-upload", is_flag=True, help="Save local screenshots without contacting AWS.")
+@click.option("--allow-app-failures", is_flag=True,
+              help="Warn instead of failing for individual applications. Setup/login failures still fail.")
 @click.option("--profile", default=None, help="Optional local AWS profile; Actions uses OIDC credentials.")
 @click.option("--timeout", type=click.IntRange(5, 120), default=30, show_default=True,
               help="Maximum wait per browser operation, in seconds.")
 @click.option("--summary", type=click.Path(dir_okay=False, path_type=Path), default=None,
               help="Append a safe Markdown report, e.g. to GITHUB_STEP_SUMMARY.")
 @click.pass_context
-def screenshots_command(ctx, apps, catalog, output_dir, no_upload, profile, timeout, summary):
+def screenshots_command(ctx, apps, catalog, output_dir, no_upload, allow_app_failures, profile, timeout, summary):
     """Capture AppStore details at 1920x1040 and overwrite offers/{appid}-installation.png."""
     if no_upload and profile:
         raise click.UsageError("--profile cannot be combined with --no-upload")
@@ -46,5 +48,7 @@ def screenshots_command(ctx, apps, catalog, output_dir, no_upload, profile, time
     except OSError:
         raise click.ClickException("Unable to write screenshot output or summary.") from None
     click.echo(f"{report['succeeded']} succeeded, {report['failed']} failed; report: {output_dir / 'report.json'}")
-    if report["failed"] or report.get("error"):
+    if report.get("error") or (report["failed"] and not allow_app_failures):
         ctx.exit(1)
+    if report["failed"]:
+        click.echo(f"Warning: {report['failed']} application(s) failed; see the report and summary for details.", err=True)
