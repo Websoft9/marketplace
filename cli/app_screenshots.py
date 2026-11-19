@@ -13,19 +13,21 @@ from typing import Callable
 from urllib.parse import urlsplit
 
 from .catalog_data import load_catalog
+from . import asset_storage
+from .asset_storage import BUCKET, REGION, OWNER, PUBLIC_BASE
 
-BUCKET = "assets-797851739507-us-east-1-an"
-REGION = "us-east-1"
-OWNER = "797851739507"
 VIEWPORT = {"width": 1920, "height": 1040}
-PUBLIC_BASE = f"https://{BUCKET}.s3.{REGION}.amazonaws.com"
 APP_ID = re.compile(r"[a-z0-9][a-z0-9_-]{0,99}\Z", re.ASCII)
 ERROR_DESCRIPTIONS = {
     "no_search_results": "AppStore explicitly reported no matching applications.",
-    "multiple_matching_results": "More than one application matched; none was selected.",
-    "trademark_not_matched": "Search returned applications, but none exactly matched the catalog trademark.",
+    "exact_id_not_found": "Multiple results were returned, but none had the exact requested application ID.",
+    "result_id_unavailable": "Multiple results were returned, but their application IDs could not all be verified.",
     "search_loading_timeout": "AppStore was still loading when the search wait expired.",
     "search_results_timeout": "No usable search results or explicit empty-results state appeared in time.",
+    "page_load_timeout": "The application page did not load within the configured maximum of 3 seconds.",
+    "network_error": "The page or a required request failed with a temporary network/server error.",
+    "detail_loading_timeout": "The application details or visible images did not finish loading in time.",
+    "detail_image_failed": "A visible detail image finished loading with an error.",
 }
 
 
@@ -88,17 +90,9 @@ def validate_png(image: bytes) -> None:
 
 def create_s3_client(profile: str | None = None):
     try:
-        import boto3
-        from botocore.config import Config
-    except ImportError:
-        raise ScreenshotError("Install screenshot dependencies with pip install '.[screenshots]'.") from None
-    try:
-        return boto3.Session(profile_name=profile).client(
-            "s3", region_name=REGION,
-            config=Config(connect_timeout=10, read_timeout=30, retries={"mode": "standard", "max_attempts": 3}),
-        )
-    except Exception:
-        raise ScreenshotError("Unable to initialize S3 credentials/client.") from None
+        return asset_storage.create_s3_client(profile)
+    except ValueError as error:
+        raise ScreenshotError(str(error)) from None
 
 
 def upload_screenshot(client, appid: str, image: bytes) -> str:
@@ -127,7 +121,7 @@ def upload_screenshot(client, appid: str, image: bytes) -> str:
 
 def run_screenshots(
     applications: list[dict[str, str]], *, credentials: Credentials, output_dir: Path,
-    upload: bool = True, profile: str | None = None, timeout: int = 30,
+    upload: bool = True, profile: str | None = None, timeout: int = 3,
     progress: Callable[[str], None] = lambda message: None,
 ) -> dict:
     from .appstore_browser import AppStoreBrowser
@@ -168,6 +162,8 @@ def run_screenshots(
                     result["error"] = str(error)
                 except Exception:
                     result["error"] = phase
+                attempts = getattr(browser, "last_attempts", 1)
+                result["attempts"] = attempts if isinstance(attempts, int) else 1
                 report["results"].append(result)
                 save_report()
                 progress(f"[{index}/{len(applications)}] {appid}: {result['status']}"

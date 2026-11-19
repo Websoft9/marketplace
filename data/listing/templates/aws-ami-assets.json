@@ -1,6 +1,7 @@
 {
   "schemaVersion": 2,
   "templateId": "aws-ami-assets-v2",
+  "baseUrl": "https://assets-797851739507-us-east-1-an.s3.us-east-1.amazonaws.com",
   "namespaces": [
     "catalog"
   ],
@@ -11,35 +12,35 @@
     "changeType": "UpdateInformation"
   },
   "assets": {
-    "LogoUrl": "https://libs.websoft9.com/marketplace/aws/common-for-aws.png",
+    "LogoUrl": "offers/logo-basic.png",
     "PromotionalMedia": [
       {
         "Type": "Image",
-        "Url": "https://assets-797851739507-us-east-1-an.s3.us-east-1.amazonaws.com/offers/{catalog.id}-installation.png",
+        "Url": "offers/{catalog.id}-installation.png",
         "Title": "Application Install Automation",
         "Description": "Application Install Automation"
       },
       {
         "Type": "Image",
-        "Url": "https://assets-797851739507-us-east-1-an.s3.us-east-1.amazonaws.com/offers/websoft9-console.png",
+        "Url": "offers/websoft9-console.png",
         "Title": "Server Host Dashboard",
         "Description": "Server Host Dashboard"
       },
       {
         "Type": "Image",
-        "Url": "https://assets-797851739507-us-east-1-an.s3.us-east-1.amazonaws.com/offers/compose-editor.png",
+        "Url": "offers/compose-editor.png",
         "Title": "Docker Compose file Editor",
         "Description": "Docker Compose file Editor"
       },
       {
         "Type": "Image",
-        "Url": "https://assets-797851739507-us-east-1-an.s3.us-east-1.amazonaws.com/offers/domain-https.png",
+        "Url": "offers/domain-https.png",
         "Title": "CA Request and Configure HTTPS for You Application",
         "Description": "CA Request and Configure for You Application"
       },
       {
         "Type": "Image",
-        "Url": "https://assets-797851739507-us-east-1-an.s3.us-east-1.amazonaws.com/offers/websoft9-appstore.png",
+        "Url": "offers/websoft9-appstore.png",
         "Title": "Application Templates Store",
         "Description": "Application Templates Store"
       }

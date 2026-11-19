@@ -29,15 +29,20 @@ EntityId and an explicitly reviewed plan.
 ## Manual GitHub Actions apply workflow
 
 `.github/workflows/offer-apply.yml` runs manually for one
-application and one cloud. The form has only `appid`, `cloud`, `product_code`
-and `label`; there is no display-name override. Run labels and artifacts use
-`appid`. `label` defaults to **Auto**, which passes no forced `--offer` and keeps
+application and one cloud. The form has `appid`, `cloud`, `update_type`,
+`product_code` and `label`; there is no display-name override. `update_type`
+appears below cloud and is a single choice: **Product information** (default)
+or **Asset**. One run updates only the selected field group. Run names include
+the update type and `appid`; artifacts use `appid`. `label` defaults to **Auto**,
+which passes no forced `--offer` and keeps
 automatic label detection. **Remove label** forces `--offer=base` for the specified
 `product_code`, regenerating copy without a label; it does not change the image OS.
 Other choices force their named label. Any non-Auto choice requires a product code
 and must be declared in the application's `multiOffers` (empty string for base).
 The form no longer exposes the internal `none`/`base` names. It does not publish
 files committed under `data/.work/<cloud>/`; that directory is git-ignored.
+In Asset mode, Label must remain Auto (non-Auto fails before any cloud access);
+`product_code` can still restrict the target without changing product wording.
 
 `appid` accepts exactly one id. Comma-separated or whitespace-separated lists
 are rejected by preflight and the offer commands before catalog/API access.
@@ -55,6 +60,20 @@ plans and source snapshots as artifacts, then waits for approval on the
 Step summaries are rendered by
 `mk offer report preflight|resolve|plan|apply` from the JSON artifacts, so the
 same Markdown is available locally.
+
+In **Asset** mode the same target resolution and catalog/version snapshots are
+retained, but preview uses `mk offer assets build` instead of the copy build.
+`assets.json` is uploaded together with the reviewed plan; plan/apply both use
+`--assets`. After Environment approval, apply consumes those exact files and
+acknowledges the artifact's planHash with `--approve-plan-hash`. It does not
+regenerate the asset JSON or plan. No screenshots or S3 uploads occur here:
+prepare and inspect images separately before running. Asset refresh explicitly
+resubmits the authored logo/media fields even when URLs are unchanged, without
+changing product information. See [offer-assets.md](offer-assets.md).
+
+Both modes retain the same cloud/application concurrency group and production
+Environment approval; changing the update type does not permit parallel runs
+against the same application's revisions.
 
 Live resolution:
 
@@ -133,13 +152,17 @@ each pending field. The apply job starts only after environment approval,
 rechecks source snapshots and every live revision, and fails closed before
 submitting anything if any target changed. It runs
 `mk offer apply --wait-seconds 0`: success means AWS accepted every ChangeSet and
-returned a ChangeSetId for each target, not that review, approval or publication
-has completed. A partial submission reports `PARTIAL`, lists the submitted and
-failed targets, and exits non-zero; re-running the workflow plans the remaining
-targets, while already-updated targets plan to `NO_CHANGES`. The summary records
+returned a ChangeSetId for each target, not that processing, review, approval or
+publication has completed. This submit-only behavior applies to **both modes**;
+Asset returns `readBackVerified: false` and does not poll or read back after
+submission. Keep asset source images unchanged until AWS processing completes.
+A partial submission reports `PARTIAL`, lists the submitted and
+failed targets, and exits non-zero; in Product information mode, re-running the
+workflow plans the remaining targets, while already-updated targets plan to
+`NO_CHANGES`. The summary records
 each ChangeSetId and plan hash; final status must be checked separately.
 
-### Retrying a partial apply
+### Retrying a partial Product information apply
 
 AWS Marketplace has no transaction across entities, so a multi-target apply can
 submit some targets and then fail. Do not retry the old plan and do not edit it:
@@ -157,6 +180,11 @@ submit some targets and then fail. Do not retry the old plan and do not edit it:
 The apply output includes `resumeHint` when a run ends `PARTIAL`, and the job
 summary lists the offer codes that were skipped. Because the plan hash binds the
 entity revision, replaying a stale artifact cannot silently overwrite a target.
+
+For **Asset**, every new workflow run is an explicit new refresh, so already-updated
+targets do **not** become NO_CHANGES merely because their URLs match. After a
+partial asset submission, inspect submitted ChangeSet IDs first, then regenerate
+and review a plan for remaining targets; use `product_code` to limit the scope.
 
 ## Security boundary
 
@@ -193,4 +221,5 @@ may use the branch subject. Prefer separate read-only plan and write-only apply
 roles. If one role is used for both, allow both subjects in its trust policy.
 Re-run the workflow after updating the trust relationship; no workflow change
 can bypass the IAM trust condition. The reviewed artifact contains
-`catalog.json`, `apps-verson.json`, `preview.json` and `plan.json`.
+`catalog.json`, `apps-verson.json`, `preview.json` and `plan.json`, plus `assets.json`
+for Asset mode (alongside the inventory, preflight and resolution reports).

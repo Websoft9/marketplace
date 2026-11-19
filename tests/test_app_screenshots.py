@@ -13,6 +13,7 @@ from unittest import mock
 from click.testing import CliRunner
 
 from cli import app_screenshots as screenshots
+from cli.appstore_browser import AppStoreBrowser
 from cli.commands import tools as tools_commands
 from cli.cli import cli
 
@@ -203,7 +204,7 @@ class ScreenshotTests(unittest.TestCase):
         report = {"succeeded": 1, "failed": 2, "results": [
             {"appid": "moodle", "status": "failed", "error": "no_search_results"},
             {"appid": "wordpress", "status": "success"},
-            {"appid": "jitsi", "status": "failed", "error": "multiple_matching_results"},
+            {"appid": "jitsi", "status": "failed", "error": "exact_id_not_found"},
         ]}
         text = screenshots.render_summary(report)
         self.assertIn("1 succeeded, 2 failed", text)
@@ -211,7 +212,7 @@ class ScreenshotTests(unittest.TestCase):
         self.assertIn("| Application | Status | Result |", text)
         self.assertIn("| wordpress | success | Local only |", text)
         self.assertIn("no_search_results: AppStore explicitly reported", text)
-        self.assertIn("multiple_matching_results: More than one application", text)
+        self.assertIn("exact_id_not_found: Multiple results were returned", text)
 
     def test_summary_has_explicit_empty_failed_list(self):
         text = screenshots.render_summary({"succeeded": 1, "failed": 0, "results": [
@@ -281,7 +282,11 @@ class ScreenshotCommandTests(unittest.TestCase):
         result, run = self.invoke_batch({"succeeded": 1, "failed": 0}, "--no-upload")
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertFalse(run.call_args.kwargs["upload"])
-        self.assertEqual(run.call_args.kwargs["timeout"], 30)
+        self.assertEqual(run.call_args.kwargs["timeout"], 3)
+
+    def test_timeout_cannot_exceed_three_seconds(self):
+        result = CliRunner().invoke(cli, ["asset", "screenshots", "--timeout", "4"])
+        self.assertEqual(result.exit_code, 2, result.output)
 
     def test_default_output_is_repository_relative_not_working_directory_relative(self):
         runner = CliRunner()
@@ -327,6 +332,47 @@ class ScreenshotCommandTests(unittest.TestCase):
             self.assertEqual(result.exit_code, 0, result.output)
             self.assertTrue(path.read_text().startswith("Existing summary\n"))
             self.assertIn("1920 × 1040", path.read_text())
+
+
+class BrowserRetryTests(unittest.TestCase):
+    def setUp(self):
+        self.browser = AppStoreBrowser(screenshots.Credentials("https://example.test/", "fixture", "fixture"))
+        self.app = {"id": "wordpress", "trademark": "Ignored display name"}
+
+    def test_network_failure_retries_once_and_can_recover(self):
+        with mock.patch.object(self.browser, "_capture_once", side_effect=[
+            screenshots.ScreenshotError("network_error"), png(),
+        ]) as attempt:
+            self.assertEqual(self.browser.capture(self.app), png())
+        self.assertEqual(attempt.call_count, 2)
+        self.assertEqual(self.browser.last_attempts, 2)
+
+    def test_loading_failures_stop_after_one_retry(self):
+        for code in ("page_load_timeout", "search_loading_timeout", "search_results_timeout", "detail_loading_timeout"):
+            with self.subTest(code=code), mock.patch.object(self.browser, "_capture_once", side_effect=
+                    screenshots.ScreenshotError(code)) as attempt:
+                with self.assertRaises(screenshots.ScreenshotError):
+                    self.browser.capture(self.app)
+                self.assertEqual(attempt.call_count, 2)
+
+    def test_deterministic_failures_are_not_retried(self):
+        for code in ("no_search_results", "exact_id_not_found", "result_id_unavailable", "session_unauthorized", "detail_image_failed"):
+            with self.subTest(code=code), mock.patch.object(self.browser, "_capture_once", side_effect=
+                    screenshots.ScreenshotError(code)) as attempt:
+                with self.assertRaises(screenshots.ScreenshotError):
+                    self.browser.capture(self.app)
+                self.assertEqual(attempt.call_count, 1)
+
+    def test_programmatic_timeout_is_capped_and_attempt_count_resets_per_app(self):
+        browser = AppStoreBrowser(self.browser.credentials, timeout=30)
+        self.assertEqual(browser.timeout_ms, 3000)
+        with mock.patch.object(browser, "_capture_once", side_effect=[
+            screenshots.ScreenshotError("network_error"), png(), png(),
+        ]):
+            browser.capture(self.app)
+            self.assertEqual(browser.last_attempts, 2)
+            browser.capture(self.app)
+            self.assertEqual(browser.last_attempts, 1)
 
 
 class BrowserInstallCommandTests(unittest.TestCase):

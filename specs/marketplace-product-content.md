@@ -205,11 +205,18 @@ The renderer also accepts legacy v1 templates, which render `LogoUrl` from
 `{catalog.logo.imageurl}` and up to five images from `{catalog.screenshots}`.
 Legacy screenshots may be URL strings or objects with `value`; duplicate URLs
 are removed and catalog order is preserved.
-The asset template is intentionally separate from the copy template so it can
-later be planned and applied as its own field-scoped `UpdateInformation`
-change set. Asset URLs must be staged to S3 before apply; `PromotionalMedia`
-accepts public S3 or presigned S3 URLs, while the product `LogoUrl` uses an
-unsigned public URL.
+The v2 template has one `baseUrl`; LogoUrl/Url use relative paths resolved by
+build into complete HTTPS URLs. Existing absolute URL templates remain supported.
+The asset template is separate from the copy template. `mk offer plan/apply --assets`
+consumes build JSON directly and explicitly refreshes authored fields even when
+URLs are unchanged, using the existing revision/hash executor. There is no image
+SHA/version staging or S3 byte check. Asset apply requires the reviewed planHash
+and defaults to submit-only (no wait); optional positive `--wait-seconds` enables
+field read-back without requesting another refresh. See [offer-assets.md](offer-assets.md).
+The general AWS media validator accepts presigned URLs, but this asset path
+requires unsigned HTTPS URLs so plans do not store signed parameters.
+`offer-apply.yml` supports assets via its exclusive Asset update type; Product
+information remains the default. Neither mode generates or uploads source images.
 
 `aws-ami.json` provides two default Learning resources
 (AdditionalResources): `<name> Image Guide by Websoft9` at

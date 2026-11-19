@@ -8,6 +8,7 @@ import hashlib
 import json
 import re
 import urllib.error
+import urllib.parse
 from pathlib import Path
 from typing import Any
 
@@ -345,6 +346,10 @@ def with_variant(bundle: dict, label: str, strict: bool = True) -> dict:
     ``strict`` rejects an over-limit title. Build previews pass ``strict=False``
     so the title can be reported as a warning instead of blocking the file.
     """
+    if bundle.get("fieldScope") == "assets":
+        if set(bundle["content"]) - {"LogoUrl", "PromotionalMedia"}:
+            raise ValueError("asset plans cannot contain listing copy fields")
+        return bundle
     label = str(label or "").strip()
     if not label:
         return bundle
@@ -875,14 +880,43 @@ def validate_content(content: dict) -> None:
         raise ValueError(f"{path} contains unresolved template placeholders: {value[:120]!r}")
 
 
-def plan(bundle: dict, entity: dict) -> dict:
+def _asset_review_value(value):
+    """Display old URL paths without persisting signed parameters/credentials."""
+    if isinstance(value, dict):
+        return {key: _asset_review_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_asset_review_value(item) for item in value]
+    if isinstance(value, str) and value.startswith(("https://", "http://")):
+        parts = urllib.parse.urlsplit(value)
+        if parts.query or parts.fragment or "@" in parts.netloc:
+            return urllib.parse.urlunsplit((parts.scheme, parts.netloc.rsplit("@", 1)[-1], parts.path, "", "")) + " [parameters redacted]"
+    return value
+
+
+def plan(bundle: dict, entity: dict, *, refresh_assets: bool = True) -> dict:
     identifier = entity.get("EntityIdentifier", "")
     if not bundle["entityId"] or identifier.split("@")[0] != bundle["entityId"] or "@" not in identifier:
         raise ValueError("snapshot EntityIdentifier does not match the master Catalog EntityId/revision")
     current = current_content(entity)
-    changes = {key: value for key, value in bundle["content"].items() if current.get(key) != value}
+    if bundle.get("fieldScope") == "assets" and set(bundle["content"]) - {"LogoUrl", "PromotionalMedia"}:
+        raise ValueError("asset plans cannot contain listing copy fields")
+    is_assets = bundle.get("fieldScope") == "assets"
+    if is_assets and refresh_assets and (not isinstance(bundle.get("operationId"), str)
+                                        or not re.fullmatch(r"[0-9a-f]{32}", bundle["operationId"])):
+        raise ValueError("asset refresh plan requires its generated operation ID")
+    changes = {key: value for key, value in bundle["content"].items()
+               if current.get(key) != value or (is_assets and refresh_assets)}
+    if (bundle.get("fieldScope") == "assets" and "PromotionalMedia" in changes
+            and any(item.get("Type") != "Image" for item in current.get("PromotionalMedia", []))):
+        raise ValueError("image-only asset plan cannot replace existing non-image PromotionalMedia; preserve that field")
     request = build_update_request(bundle, identifier, changes)
     result = {"schemaVersion": 1, "key": bundle["key"], "sourceHash": bundle["sourceHash"], "baseRevision": identifier, "currentHash": digest(current), "publishBlockers": bundle["publishBlockers"], "diff": {key: {"before": current.get(key), "after": value} for key, value in changes.items()}, "request": request}
+    if bundle.get("fieldScope") == "assets":
+        result["fieldScope"] = "assets"
+        result["refreshAssets"] = refresh_assets
+        result["operationId"] = bundle.get("operationId")
+        for field in result["diff"]:
+            result["diff"][field]["before"] = _asset_review_value(result["diff"][field]["before"])
     result["planHash"] = digest(result)
     return result
 
@@ -917,7 +951,7 @@ def multi_plan(bundle: dict, entities: list[dict], labels: dict[str, str] | None
                 "plan": target_plan,
             }
         )
-    return {
+    result = {
         "schemaVersion": 1,
         "key": bundle["key"],
         "sourceHash": digest([target["plan"]["sourceHash"] for target in targets]),
@@ -925,3 +959,6 @@ def multi_plan(bundle: dict, entities: list[dict], labels: dict[str, str] | None
         "targets": targets,
         "planHash": digest(targets),
     }
+    if bundle.get("fieldScope") == "assets":
+        result.update(fieldScope="assets", refreshAssets=True, operationId=bundle["operationId"])
+    return result

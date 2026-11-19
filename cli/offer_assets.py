@@ -3,15 +3,48 @@
 from __future__ import annotations
 
 import re
+from urllib.parse import unquote, urlsplit
 from pathlib import Path
 from typing import Any
 
-from .offer import DATA, digest, format_template, read_json, validate_promotional_media
+from .offer import DATA, digest, format_template, listing_targets, read_json, validate_promotional_media
+from .aws_marketplace import normalize_promotional_media
 
 ASSETS_TEMPLATE = DATA / "templates" / "aws-ami-assets.json"
 ASSETS_TEMPLATE_ID = "aws-ami-assets-v2"
 MAX_MEDIA_ITEMS = 5
 ASSET_FIELDS = {"LogoUrl", "PromotionalMedia"}
+
+
+def _unsigned_url(value):
+    if not isinstance(value, str):
+        raise ValueError("asset URL requires unsigned HTTPS text")
+    try:
+        parts = urlsplit(value)
+        valid = (parts.scheme == "https" and parts.hostname and not parts.username
+                 and not parts.password and parts.port in (None, 443)
+                 and not parts.query and not parts.fragment and not re.search(r"\s", value))
+    except ValueError:
+        valid = False
+    if not valid:
+        raise ValueError("asset URL requires an HTTPS URL without credentials, queries or fragments")
+    return parts
+
+
+def _resolve_url(value, base_url):
+    if not isinstance(value, str):
+        raise ValueError("asset URL must be text")
+    parts = urlsplit(value)
+    if parts.scheme or parts.netloc:
+        _unsigned_url(value)
+        return value
+    decoded = unquote(value)
+    if (not base_url or value.startswith(("/", "\\")) or "\\" in decoded
+            or any(part in {".", ".."} for part in decoded.split("/"))):
+        raise ValueError("relative asset URL requires baseUrl and cannot escape it")
+    result = base_url.rstrip("/") + "/" + value
+    _unsigned_url(result)
+    return result
 
 
 def validate_assets_template(template: dict[str, Any]) -> None:
@@ -42,6 +75,10 @@ def validate_assets_template(template: dict[str, Any]) -> None:
         )
     logo = assets.get("LogoUrl")
     if version == 2:
+        if "baseUrl" in template:
+            _unsigned_url(template["baseUrl"])
+            if any(c in template["baseUrl"] for c in "{}\\"):
+                raise ValueError("baseUrl must be a static unsigned HTTPS base URL")
         if logo is not None and not isinstance(logo, str):
             raise ValueError("asset template.assets.LogoUrl must be text")
         media = assets.get("PromotionalMedia")
@@ -233,13 +270,15 @@ def render_assets(
         content = {}
         warnings = []
         if assets.get("LogoUrl") is not None:
-            content["LogoUrl"] = format_template(assets["LogoUrl"], roots)
+            content["LogoUrl"] = _resolve_url(format_template(assets["LogoUrl"], roots), template.get("baseUrl"))
         else:
             warnings.append("LogoUrl is required by AWS but was not rendered")
         content["PromotionalMedia"] = [
             {field: format_template(value, roots) for field, value in item.items()}
             for item in assets["PromotionalMedia"]
         ]
+        for item in content["PromotionalMedia"]:
+            item["Url"] = _resolve_url(item["Url"], template.get("baseUrl"))
     if content:
         validate_assets_content(content)
     non_s3 = [url for url in ([content.get("LogoUrl")] + [
@@ -247,7 +286,7 @@ def render_assets(
     ]) if url and not _is_s3_url(url)]
     if non_s3:
         warnings.append(
-            f"{len(non_s3)} asset URL(s) are not S3-hosted; stage them before apply"
+            f"{len(non_s3)} asset URL(s) are not S3-hosted; upload to the intended public asset location before apply"
         )
     return {
         "schemaVersion": 1,
@@ -268,3 +307,35 @@ def render_assets(
         "warnings": warnings,
         "sourceHash": digest({"catalog": catalog_item, "template": template}),
     }
+
+
+def as_offer_bundle(item, document):
+    """Use the authored asset JSON directly; no image reads, staging or byte hashes."""
+    if (not isinstance(document, dict) or type(document.get("schemaVersion")) is not int
+            or document["schemaVersion"] != 1 or document.get("kind") == "staged-offer-assets"
+            or "manifestHash" in document or "files" in document):
+        raise ValueError("--assets requires offer assets build JSON; legacy staged manifests must be rebuilt")
+    if not isinstance(document.get("key"), str) or not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,99}", document["key"]):
+        raise ValueError("asset document requires a valid application key")
+    if (item.get("id") != document.get("key")
+            or (item.get("entityType") or "AmiProduct@1.0") != "AmiProduct@1.0"):
+        raise ValueError("asset document does not belong to this application/AWS AMI type")
+    content = document.get("content")
+    if not isinstance(content, dict) or not content or set(content) - ASSET_FIELDS:
+        raise ValueError("asset document must contain only non-empty LogoUrl/PromotionalMedia content")
+    media = content.get("PromotionalMedia", [])
+    if not isinstance(media, list) or any(not isinstance(p, dict) or "Url" not in p for p in media):
+        raise ValueError("PromotionalMedia must be a list of image records")
+    for url in ([content["LogoUrl"]] if "LogoUrl" in content else []) + [p["Url"] for p in media]:
+        _unsigned_url(url)
+    validate_assets_content(content)
+    if len(media) > MAX_MEDIA_ITEMS or any(p["Type"] != "Image" for p in media):
+        raise ValueError("asset publishing supports at most five images and no videos")
+    desired = dict(content)
+    if "PromotionalMedia" in desired:
+        desired["PromotionalMedia"] = normalize_promotional_media(media)
+    targets = listing_targets(item)
+    return {"schemaVersion": 1, "key": item["id"], "entityId": item.get("entityId"),
+            "entityType": "AmiProduct@1.0", "content": desired, "targets": targets,
+            "fieldScope": "assets", "publishBlockers": [] if targets else ["listing: Catalog EntityId is missing"],
+            "sourceHash": digest({"fieldScope": "assets", "assets": document, "catalog": item})}

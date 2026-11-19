@@ -33,9 +33,17 @@ STORE = """<!doctype html><html lang="en"><body>
 <input placeholder="SEARCH_PLACEHOLDER" oninput="search(this.value)">
 <div id="results"></div><div id="details"></div>
 <script>
-const titles={n8n:'n8n',mysql:'MySQL',ffmpeg:'FFmpeg',wrong:'Wrong',duplicate:'Duplicate',broken:'Broken'};
+const titles={n8n:'n8n',mysql:'MySQL',ffmpeg:'FFmpeg',wrong:'Wrong',broken:'Broken',
+  wordpress:'Same label',wordpresspro:'Same label',wordpressmultisite:'Same label',
+  'similar-pro':'Similar','similarpro':'Similar'};
 function search(id) {
   document.querySelector('#details').innerHTML='';
+  if(id==='wordpress' || id==='similar') {
+    const ids=id==='wordpress' ? ['wordpresspro','wordpress','wordpressmultisite'] : ['similar-pro','similarpro'];
+    document.querySelector('#results').innerHTML=ids.map(key=>
+      `<div class="MuiCard-root" onclick="detail('${key}')"><p>${titles[key]}</p></div>`).join('');
+    return;
+  }
   if(id==='loading') {
     document.querySelector('#results').innerHTML='<div class="MuiCard-root">Loading App Store data...</div>';
     return;
@@ -49,13 +57,13 @@ function search(id) {
     document.querySelector('#results').innerHTML='<div class="MuiCard-root">No apps match the current filters</div>';
     return;
   }
-  const card=title ? `<div class="MuiCard-root"><p onclick="detail('${id}')">${title}</p></div>` : '';
+  const card=title ? `<div class="MuiCard-root" onclick="detail('${id}')"><p>${title}</p></div>` : '';
   if(id==='ffmpeg') {
     document.querySelector('#results').innerHTML='<div class="MuiCard-root">Loading App Store data...</div>';
     setTimeout(()=>{ document.querySelector('#results').innerHTML=card; },150);
     return;
   }
-  document.querySelector('#results').innerHTML=card+(id==='duplicate' ? card : '');
+  document.querySelector('#results').innerHTML=card;
 }
 function detail(id) {
   const target=id==='wrong' ? 'n8n' : id;
@@ -65,6 +73,7 @@ function detail(id) {
     <h2><p>${titles[id]}</p></h2>
     <a aria-label="GitHub" href="https://github.com/Websoft9/docker-library/tree/main/apps/${target}">GitHub</a>
     <img width="100" height="100" src="${image}">
+    <button onclick="document.querySelector('#details').innerHTML=''">Close</button>
     <button>Install</button></div>`;
 }
 </script></body></html>""".replace("SEARCH_PLACEHOLDER", SEARCH_PLACEHOLDER)
@@ -72,6 +81,16 @@ function detail(id) {
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path == "/" and self.server.transient_login_page_failures:
+            self.server.transient_login_page_failures -= 1
+            self.send_response(503)
+            self.end_headers()
+            return
+        if self.path == "/appstore" and self.server.transient_store_failures:
+            self.server.transient_store_failures -= 1
+            self.send_response(503)
+            self.end_headers()
+            return
         login_modes = {"/": "normal", "/stalled": "stalled", "/rejected": "rejected",
                        "/rate-limited": "rate-limited", "/unauthenticated": "unauthenticated",
                        "/unavailable": "unavailable"}
@@ -111,6 +130,8 @@ class BrowserFixtureTests(unittest.TestCase):
     def setUpClass(cls):
         cls.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         cls.server.login_posts = 0
+        cls.server.transient_store_failures = 0
+        cls.server.transient_login_page_failures = 0
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
         cls.credentials = Credentials(f"http://127.0.0.1:{cls.server.server_port}/", "fixture-user", "fixture-password")
@@ -134,12 +155,29 @@ class BrowserFixtureTests(unittest.TestCase):
             validate_png(browser.capture({"id": "mysql", "trademark": "MySQL"}))
         self.assertEqual(self.server.login_posts - before, 1)
 
-    def test_missing_trademark_uses_unique_result_and_checks_detail_appid(self):
+    def test_one_transient_server_failure_retries_without_logging_in_again(self):
+        before = self.server.login_posts
+        with AppStoreBrowser(self.credentials, timeout=1) as browser:
+            self.server.transient_store_failures = 1
+            validate_png(browser.capture({"id": "mysql", "trademark": "Ignored"}))
+            self.assertEqual(browser.last_attempts, 2)
+            self.assertEqual(browser.context.pages, [])
+        self.assertEqual(self.server.login_posts - before, 1)
+
+    def test_login_page_get_can_retry_once_without_repeating_credentials(self):
+        before = self.server.login_posts
+        self.server.transient_login_page_failures = 1
+        with AppStoreBrowser(self.credentials, timeout=1) as browser:
+            validate_png(browser.capture({"id": "mysql", "trademark": "Ignored"}))
+        self.assertEqual(self.server.login_posts - before, 1)
+
+    def test_unique_result_is_used_without_name_matching(self):
         with AppStoreBrowser(self.credentials, timeout=1) as browser:
             validate_png(browser.capture({"id": "ffmpeg", "trademark": ""}))
+            validate_png(browser.capture({"id": "mysql", "trademark": "Incorrect name"}))
+            validate_png(browser.capture({"id": "wrong", "trademark": "Unrelated name"}))
             for appid, error in (("missing", "no_search_results"),
-                                 ("duplicate", "multiple_matching_results"),
-                                 ("wrong", "detail_identity_failed")):
+                                 ("similar", "exact_id_not_found")):
                 with self.subTest(appid=appid), self.assertRaises(ScreenshotError) as raised:
                     browser.capture({"id": appid, "trademark": ""})
                 self.assertEqual(str(raised.exception), error)
@@ -157,12 +195,11 @@ class BrowserFixtureTests(unittest.TestCase):
             self.assertEqual(str(raised.exception), error)
             self.assertEqual(self.server.login_posts - before, 1)
 
-    def test_missing_ambiguous_wrong_identity_and_broken_image_fail_closed(self):
+    def test_missing_exact_id_and_broken_image_fail_closed(self):
         with AppStoreBrowser(self.credentials, timeout=1) as browser:
             for app, error in (({"id": "missing", "trademark": "Missing"}, "no_search_results"),
-                               ({"id": "duplicate", "trademark": "Duplicate"}, "multiple_matching_results"),
-                               ({"id": "wrong", "trademark": "Wrong"}, "detail_identity_failed"),
-                               ({"id": "broken", "trademark": "Broken"}, "detail_not_ready")):
+                               ({"id": "similar", "trademark": "Similar"}, "exact_id_not_found"),
+                               ({"id": "broken", "trademark": "Broken"}, "detail_image_failed")):
                 with self.subTest(app=app), self.assertRaises(ScreenshotError) as raised:
                     browser.capture(app)
                 self.assertEqual(str(raised.exception), error)
@@ -170,15 +207,30 @@ class BrowserFixtureTests(unittest.TestCase):
             # Failure must not poison the next application's page.
             validate_png(browser.capture({"id": "mysql", "trademark": "MySQL"}))
 
-    def test_search_distinguishes_name_mismatch_loading_and_missing_state(self):
+    def test_search_distinguishes_loading_and_missing_state(self):
         with AppStoreBrowser(self.credentials, timeout=1) as browser:
-            for app, error in (({"id": "mysql", "trademark": "Incorrect name"}, "trademark_not_matched"),
-                               ({"id": "loading", "trademark": ""}, "search_loading_timeout"),
+            for app, error in (({"id": "loading", "trademark": ""}, "search_loading_timeout"),
                                ({"id": "blank", "trademark": ""}, "search_results_timeout")):
                 with self.subTest(app=app), self.assertRaises(ScreenshotError) as raised:
                     browser.capture(app)
                 self.assertEqual(str(raised.exception), error)
                 self.assertEqual(browser.context.pages, [])
+                self.assertEqual(browser.last_attempts, 2)
+
+    def test_multiple_results_select_exact_id_not_same_title_or_prefix(self):
+        with AppStoreBrowser(self.credentials, timeout=1) as browser:
+            page = browser.context.new_page()
+            try:
+                page.goto(browser.store_url, wait_until="domcontentloaded")
+                page.get_by_placeholder(SEARCH_PLACEHOLDER, exact=True).fill("wordpress")
+                results = page.locator(".MuiCard-root")
+                browser.expect(results).to_have_count(3, timeout=1000)
+                dialog = browser._select_result(page, results, "wordpress")
+                self.assertEqual(dialog.get_by_role("link", name="GitHub", exact=True).get_attribute("href"),
+                                 "https://github.com/Websoft9/docker-library/tree/main/apps/wordpress")
+            finally:
+                page.close()
+            validate_png(browser.capture({"id": "wordpress", "trademark": "Wrong catalog name"}))
 
 
 if __name__ == "__main__":

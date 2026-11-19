@@ -124,6 +124,9 @@ def plan(
     ]
     pending = sum(1 for target in targets if target["plan"].get("request"))
     lines = [f"## Offer plan: {title}", ""]
+    if value.get("refreshAssets") is True:
+        lines.extend(["**Explicit asset refresh:** resubmit the selected asset fields even when URLs are unchanged.",
+                      "Keep the uploaded images unchanged until this publication completes.", ""])
     if cloud:
         lines.append(f"- Cloud: `{cloud}`")
     lines.extend(
@@ -239,6 +242,7 @@ def apply(value: dict[str, Any], *, cloud: str | None = None) -> str:
     if value.get("status") == "PARTIAL":
         lines.extend(
             [
+                value.get("resumeHint") or
                 "At least one target was not submitted. Check each submitted ChangeSet with "
                 "`mk offer status <change-set-id> --wait-seconds 600`, then re-run the workflow; "
                 "already-updated targets plan to NO_CHANGES and are skipped.",

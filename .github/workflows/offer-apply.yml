@@ -3,7 +3,7 @@
 # (for example aws-marketplace-production) before using this workflow. The apply
 # job waits for that approval.
 name: Marketplace Offer Apply
-run-name: "Apply ${{ inputs.appid }} to ${{ inputs.cloud }}"
+run-name: "Apply ${{ inputs.update_type }} for ${{ inputs.appid }} to ${{ inputs.cloud }}"
 
 on:
   workflow_dispatch:
@@ -19,12 +19,20 @@ on:
         type: choice
         options:
           - aws
+      update_type:
+        description: "Update type"
+        required: true
+        default: Product information
+        type: choice
+        options:
+          - Product information
+          - Asset
       product_code:
         description: "product code, e.g. xxxx"
         required: false
         type: string
       label:
-        description: "Label: force only for the specified product code"
+        description: "Label: force only for the specified code"
         required: false
         type: choice
         default: Auto
@@ -51,6 +59,7 @@ jobs:
     env:
       APP: ${{ inputs.appid }}
       CLOUD: ${{ inputs.cloud }}
+      UPDATE_TYPE: ${{ inputs.update_type }}
       CODE: ${{ inputs.product_code }}
       OFFER: ${{ inputs.label }}
       CONTENTFUL_SPACE_ID: ${{ vars.CONTENTFUL_SPACE_ID || secrets.CONTENTFUL_SPACE_ID }}
@@ -58,6 +67,16 @@ jobs:
     steps:
       - name: Validate workflow inputs
         run: |
+          case "$UPDATE_TYPE" in
+            "Product information") ;;
+            Asset)
+              if [[ -n "$OFFER" && "$OFFER" != "Auto" ]]; then
+                echo "::error::Asset updates require Label Auto; labels only affect product information."
+                exit 1
+              fi
+              ;;
+            *) echo "::error::Unsupported update type."; exit 1 ;;
+          esac
           if [[ -n "$OFFER" && "$OFFER" != "Auto" && -z "${CODE//[[:space:]]/}" ]]; then
             echo "::error::Label requires a product code."
             exit 1
@@ -166,25 +185,42 @@ jobs:
 
       - name: Build preview
         run: |
-          mk offer build \
-            --app "$APP" \
-            --cloud "$CLOUD" \
-            --catalog /tmp/opencode/offer-run/catalog.json \
-            --versions /tmp/opencode/offer-run/apps-verson.json \
-            --output "data/.work/$CLOUD/$APP.json"
-          cp "data/.work/$CLOUD/$APP.json" /tmp/opencode/offer-run/preview.json
+          if [[ "$UPDATE_TYPE" == "Asset" ]]; then
+            mk offer assets build \
+              --app "$APP" \
+              --catalog /tmp/opencode/offer-run/catalog.json \
+              --output /tmp/opencode/offer-run/assets.json
+            cp /tmp/opencode/offer-run/assets.json /tmp/opencode/offer-run/preview.json
+          else
+            mk offer build \
+              --app "$APP" \
+              --cloud "$CLOUD" \
+              --catalog /tmp/opencode/offer-run/catalog.json \
+              --versions /tmp/opencode/offer-run/apps-verson.json \
+              --output "data/.work/$CLOUD/$APP.json"
+            cp "data/.work/$CLOUD/$APP.json" /tmp/opencode/offer-run/preview.json
+          fi
 
       - name: Generate revision-bound plan
         run: |
+          args=()
+          if [[ "$UPDATE_TYPE" == "Asset" ]]; then
+            args+=(--assets /tmp/opencode/offer-run/assets.json)
+          fi
           mk offer plan \
             --app "$APP" \
             --catalog /tmp/opencode/offer-run/catalog.json \
             --versions /tmp/opencode/offer-run/apps-verson.json \
             --all-codes \
+            "${args[@]}" \
             --output /tmp/opencode/offer-run/plan.json
 
       - name: Summarize plan
         run: |
+          echo "### Update type: $UPDATE_TYPE" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$UPDATE_TYPE" == "Asset" ]]; then
+            echo "Refresh already-uploaded images, even when URLs are unchanged. Keep source images unchanged until AWS processing completes." >> "$GITHUB_STEP_SUMMARY"
+          fi
           ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
           mk offer report plan \
             --input /tmp/opencode/offer-run/plan.json \
@@ -208,6 +244,7 @@ jobs:
     env:
       APP: ${{ inputs.appid }}
       CLOUD: ${{ inputs.cloud }}
+      UPDATE_TYPE: ${{ inputs.update_type }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -259,18 +296,29 @@ jobs:
 
       - name: Submit reviewed plan
         run: |
+          args=()
+          case "$UPDATE_TYPE" in
+            Asset)
+              plan_hash="$(python3 -c 'import json; print(json.load(open("/tmp/opencode/offer-run/plan.json"))["planHash"])')"
+              args+=(--assets /tmp/opencode/offer-run/assets.json --approve-plan-hash "$plan_hash")
+              ;;
+            "Product information") ;;
+            *) echo "::error::Unsupported update type."; exit 1 ;;
+          esac
           status=0
           mk offer apply \
             --app "$APP" \
             --catalog /tmp/opencode/offer-run/catalog.json \
             --versions /tmp/opencode/offer-run/apps-verson.json \
             --plan /tmp/opencode/offer-run/plan.json \
+            "${args[@]}" \
             --wait-seconds 0 > /tmp/opencode/offer-run/apply.json || status=$?
           cat /tmp/opencode/offer-run/apply.json
           if [[ ! -s /tmp/opencode/offer-run/apply.json ]]; then
             echo "Apply produced no result document; see the job log above." >> "$GITHUB_STEP_SUMMARY"
             exit "$status"
           fi
+          echo "### Update type: $UPDATE_TYPE" >> "$GITHUB_STEP_SUMMARY"
           mk offer report apply \
             --input /tmp/opencode/offer-run/apply.json \
             --cloud "$CLOUD" >> "$GITHUB_STEP_SUMMARY"

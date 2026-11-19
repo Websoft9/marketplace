@@ -10,18 +10,23 @@ SEARCH_PLACEHOLDER = "Enter an app name to search, such as WordPress, MySQL, Git
 LOADING_PLACEHOLDER = "Loading App Store data..."
 EMPTY_RESULTS_PLACEHOLDER = "No apps match the current filters"
 GITHUB_APP_BASE = "https://github.com/Websoft9/docker-library/tree/main/apps/"
+RETRYABLE_FAILURES = frozenset({
+    "page_load_timeout", "network_error", "search_loading_timeout",
+    "search_results_timeout", "detail_loading_timeout",
+})
 
 
 class AppStoreBrowser:
-    def __init__(self, credentials: Credentials, *, timeout: int = 30):
+    def __init__(self, credentials: Credentials, *, timeout: int = 3):
         self.credentials = credentials
-        self.timeout_ms = timeout * 1000
+        self.timeout_ms = max(1, min(timeout, 3)) * 1000
+        self.last_attempts = 0
         self.playwright = None
         self.browser = None
 
     def __enter__(self):
         try:
-            from playwright.sync_api import sync_playwright, expect, TimeoutError as BrowserTimeout
+            from playwright.sync_api import sync_playwright, expect, TimeoutError as BrowserTimeout, Error as BrowserError
         except ImportError:
             raise ScreenshotError("Playwright is missing from this Python environment; run 'make install', then 'make cli ARGS=\"tools install-browser\"'.") from None
         self.expect = expect
@@ -35,9 +40,21 @@ class AppStoreBrowser:
             )
             self.context.set_default_timeout(self.timeout_ms)
             self.context.set_default_navigation_timeout(self.timeout_ms)
-            phase = "login_failed"
+            phase = "login_page_load_timeout"
             page = self.context.new_page()
-            page.goto(self.credentials.url, wait_until="domcontentloaded")
+            # Retry a failed login-page GET once, never a credential submission.
+            for attempt in range(2):
+                try:
+                    response = page.goto(self.credentials.url, wait_until="domcontentloaded")
+                    if response is not None and response.status >= 500:
+                        if attempt == 0:
+                            continue
+                        raise ScreenshotError("login_service_failed")
+                    break
+                except BrowserError:
+                    if attempt == 1:
+                        raise
+            phase = "login_failed"
             page.locator('input[type="text"]').fill(self.credentials.username)
             page.locator('input[type="password"]').fill(self.credentials.password)
             # A visible login form alone cannot distinguish rejected credentials
@@ -93,59 +110,76 @@ class AppStoreBrowser:
                 self.playwright.stop()
 
     def capture(self, app: dict[str, str]) -> bytes:
+        # At most two attempts, always within the same authenticated context.
+        for attempt in range(2):
+            self.last_attempts = attempt + 1
+            try:
+                return self._capture_once(app)
+            except ScreenshotError as error:
+                if attempt == 1 or str(error) not in RETRYABLE_FAILURES:
+                    raise
+
+    def _select_result(self, page, results, appid: str):
+        count = results.count()
+        if count == 0:
+            raise ScreenshotError("search_results_timeout")
+        unverified = False
+        for index in range(count):
+            results.nth(index).click()
+            dialog = page.get_by_role("dialog")
+            self.expect(dialog).to_have_count(1, timeout=self.timeout_ms)
+            self.expect(dialog.get_by_role("heading")).to_be_visible(timeout=self.timeout_ms)
+            if count == 1:
+                return dialog
+            # Cards do not expose an app ID. Read each candidate's detail link
+            # without installing anything; compare the exact, case-sensitive ID.
+            github = dialog.get_by_role("link", name="GitHub", exact=True)
+            if github.count() == 1:
+                if github.get_attribute("href") == GITHUB_APP_BASE + appid:
+                    return dialog
+            else:
+                unverified = True
+            dialog.get_by_role("button", name="Close", exact=True).click()
+            self.expect(dialog).to_have_count(0, timeout=self.timeout_ms)
+        raise ScreenshotError("result_id_unavailable" if unverified else "exact_id_not_found")
+
+    def _capture_once(self, app: dict[str, str]) -> bytes:
         # A fresh page per application prevents stale dialogs/results after failures.
         page = self.context.new_page()
-        phase = "appstore_navigation_failed"
+        phase = "page_load_timeout"
+        transient_network_error = []
+        page.on("requestfailed", lambda request: transient_network_error.append(True))
+        page.on("response", lambda response: transient_network_error.append(True) if response.status >= 500 else None)
         try:
-            page.goto(self.store_url, wait_until="domcontentloaded")
+            response = page.goto(self.store_url, wait_until="domcontentloaded")
+            if response is not None and response.status in (401, 403):
+                raise ScreenshotError("session_unauthorized")
+            if response is not None and response.status >= 500:
+                raise ScreenshotError("network_error")
             search = page.get_by_placeholder(SEARCH_PLACEHOLDER, exact=True)
             search.fill(app["id"])
             search.press("Enter")
             phase = "search_results_timeout"
             # MUI's stable component class, not its generated css-* classes.
-            trademark = app.get("trademark", "")
             results = (page.locator(".MuiCard-root")
                        .filter(has_not_text=LOADING_PLACEHOLDER)
                        .filter(has_not_text=EMPTY_RESULTS_PLACEHOLDER))
-            card = results
-            if trademark:
-                card = card.filter(has=page.get_by_text(trademark, exact=True))
             empty = page.get_by_text(EMPTY_RESULTS_PLACEHOLDER, exact=True)
             try:
                 # Wait for either usable candidates or an explicit empty state;
                 # don't conflate a still-loading store with a nonexistent app.
-                self.expect(card.or_(empty)).not_to_have_count(0, timeout=self.timeout_ms)
+                self.expect(results.or_(empty)).not_to_have_count(0, timeout=self.timeout_ms)
                 if empty.is_visible():
                     raise ScreenshotError("no_search_results")
-                self.expect(card).to_have_count(1, timeout=self.timeout_ms)
             except AssertionError:
                 if page.get_by_text(LOADING_PLACEHOLDER, exact=True).is_visible():
                     raise ScreenshotError("search_loading_timeout") from None
                 if empty.is_visible():
                     raise ScreenshotError("no_search_results") from None
-                count = card.count()
-                if count > 1:
-                    raise ScreenshotError("multiple_matching_results") from None
-                if trademark and count == 0 and results.count() > 0:
-                    raise ScreenshotError("trademark_not_matched") from None
                 raise ScreenshotError("search_results_timeout") from None
-            if trademark:
-                card.get_by_text(trademark, exact=True).click()
-            else:
-                # With no catalog display name, accept only one search result;
-                # never guess a title or select the first of several candidates.
-                card.click()
-            phase = "detail_identity_failed"
-            dialog = page.get_by_role("dialog")
-            self.expect(dialog).to_have_count(1, timeout=self.timeout_ms)
-            heading = dialog.get_by_role("heading")
-            self.expect(heading.get_by_text(trademark, exact=True) if trademark else heading).to_be_visible()
-            # Verify the application ID independently of its display trademark.
-            self.expect(dialog.get_by_role("link", name="GitHub", exact=True)).to_have_attribute(
-                "href", GITHUB_APP_BASE + app["id"], timeout=self.timeout_ms,
-            )
-            phase = "detail_not_ready"
-            self.expect(dialog.get_by_role("button", name="Install", exact=True)).to_be_visible()
+            phase = "detail_loading_timeout"
+            dialog = self._select_result(page, results, app["id"])
+            self.expect(dialog.get_by_role("button", name="Install", exact=True)).to_be_visible(timeout=self.timeout_ms)
             self.expect(dialog.locator(".MuiSkeleton-root")).to_have_count(0, timeout=self.timeout_ms)
             page.wait_for_function("""() => {
                 const dialog = document.querySelector('[role="dialog"]');
@@ -159,9 +193,17 @@ class AppStoreBrowser:
             }""", timeout=self.timeout_ms)
             phase = "screenshot_failed"
             return page.screenshot(type="png", full_page=False, animations="disabled", caret="hide")
-        except ScreenshotError:
+        except ScreenshotError as error:
+            if transient_network_error and str(error) in RETRYABLE_FAILURES:
+                raise ScreenshotError("network_error") from None
             raise
         except Exception:
+            if transient_network_error:
+                raise ScreenshotError("network_error") from None
+            if phase == "detail_loading_timeout" and page.get_by_role("dialog").locator("img").evaluate_all(
+                "images => images.some(image => image.complete && image.naturalWidth === 0)"
+            ):
+                raise ScreenshotError("detail_image_failed") from None
             raise ScreenshotError(phase) from None
         finally:
             page.close()

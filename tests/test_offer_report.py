@@ -176,6 +176,12 @@ class ReportTests(unittest.TestCase):
         self.assertIn("| `code-b` | base | override | Limited | Odoo |", text)
         self.assertIn("- Unresolved offer `Debian`: no live product matches", text)
 
+    def test_asset_partial_report_preserves_specific_resume_hint(self):
+        value = {**APPLY, "resumeHint": "Inspect submitted ChangeSet IDs before retrying; plan remaining targets."}
+        text = offer_report.apply(value, cloud="aws")
+        self.assertIn(value["resumeHint"], text)
+        self.assertNotIn("already-updated targets plan to NO_CHANGES", text)
+
     def test_report_command_writes_markdown(self):
         path = self.write("plan.json", PLAN)
         output = self.directory / "plan.md"

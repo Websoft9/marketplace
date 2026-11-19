@@ -7,7 +7,7 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from cli import aws_marketplace, offer, offer_assets
+from cli import asset_storage, aws_marketplace, offer, offer_assets
 from cli.cli import cli
 
 
@@ -141,19 +141,43 @@ class OfferAssetsTests(unittest.TestCase):
         template = offer.read_json(offer_assets.ASSETS_TEMPLATE)
 
         self.assertEqual(value["templateId"], "aws-ami-assets-v2")
-        self.assertEqual(value["content"]["LogoUrl"], template["assets"]["LogoUrl"])
+        self.assertEqual(value["content"]["LogoUrl"], f"{asset_storage.PUBLIC_BASE}/offers/logo-basic.png")
         media = value["content"]["PromotionalMedia"]
         self.assertEqual(len(media), 5)
         self.assertEqual(
             media[0]["Url"],
-            "https://libs.websoft9.com/marketplace/aws/odoo-installation.png",
+            f"{asset_storage.PUBLIC_BASE}/offers/odoo-installation.png",
         )
         self.assertEqual(media[0]["Title"], "Application Install Automation")
         self.assertEqual(media[0]["Description"], "Application Install Automation")
-        self.assertEqual(media[1:], template["assets"]["PromotionalMedia"][1:])
+        self.assertEqual(media[1:], [{**p, "Url": template["baseUrl"] + "/" + p["Url"]}
+                                     for p in template["assets"]["PromotionalMedia"][1:]])
         self.assertEqual(value["preview"]["assetSummary"], {"logo": True, "media": 5})
-        self.assertEqual(len(value["warnings"]), 1)
-        self.assertIn("6 asset URL(s) are not S3-hosted", value["warnings"][0])
+        self.assertEqual(value["warnings"], [])
+
+    def test_default_template_has_one_base_url_and_relative_image_paths(self):
+        template = offer.read_json(offer_assets.ASSETS_TEMPLATE)
+        self.assertEqual(template["baseUrl"], asset_storage.PUBLIC_BASE)
+        self.assertEqual(json.dumps(template).count(asset_storage.PUBLIC_BASE), 1)
+        self.assertFalse(template["assets"]["LogoUrl"].startswith("https://"))
+        self.assertTrue(all(not p["Url"].startswith("https://") for p in template["assets"]["PromotionalMedia"]))
+
+    def test_relative_paths_cannot_escape_base_and_base_must_be_unsigned_https(self):
+        for value in ("http://example.com", "https://example.com?token=SECRET", "https://user:pass@example.com",
+                      "https://{catalog.domain}"):
+            template = offer.read_json(offer_assets.ASSETS_TEMPLATE)
+            template["baseUrl"] = value
+            with self.assertRaises(ValueError):
+                offer_assets.validate_assets_template(template)
+        for path in ("../image.png", "%2e%2e/image.png", "//evil.example/image.png", "\\evil\\image.png"):
+            with self.assertRaises(ValueError):
+                offer_assets._resolve_url(path, "https://example.com/base")
+        self.assertEqual(offer_assets._resolve_url("offers/image.png", "https://example.com/"),
+                         "https://example.com/offers/image.png")
+        with self.assertRaisesRegex(ValueError, "requires baseUrl"):
+            offer_assets._resolve_url("offers/image.png", None)
+        self.assertEqual(offer_assets._resolve_url("https://other.example/image.png", "https://example.com"),
+                         "https://other.example/image.png")
 
     def test_rejects_mismatched_template_version(self):
         template = offer.read_json(offer_assets.ASSETS_TEMPLATE)

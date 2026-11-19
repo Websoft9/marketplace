@@ -23,8 +23,8 @@ def asset_command():
 @click.option("--allow-app-failures", is_flag=True,
               help="Warn instead of failing for individual applications. Setup/login failures still fail.")
 @click.option("--profile", default=None, help="Optional local AWS profile; Actions uses OIDC credentials.")
-@click.option("--timeout", type=click.IntRange(5, 120), default=30, show_default=True,
-              help="Maximum wait per browser operation, in seconds.")
+@click.option("--timeout", type=click.IntRange(1, 3), default=3, show_default=True,
+              help="Maximum page/load wait in seconds; cannot exceed 3. Loading/network failures retry once.")
 @click.option("--summary", type=click.Path(dir_okay=False, path_type=Path), default=None,
               help="Append a safe Markdown report, e.g. to GITHUB_STEP_SUMMARY.")
 @click.pass_context

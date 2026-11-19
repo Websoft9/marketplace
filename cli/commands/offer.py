@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import time
+import uuid
 from pathlib import Path
 
 import click
@@ -44,8 +46,13 @@ def inputs(function):
     return function
 
 
-def bundle(app, catalog_source, versions, vendor, template):
+def bundle(app, catalog_source, versions, vendor, template, assets_path=None):
     try:
+        if assets_path is not None:
+            _, by_id = catalog_data.load_catalog(catalog_source or str(catalog_default_path()))
+            if app not in by_id:
+                raise ValueError(f"application {app!r} is not in the catalog")
+            return offer_assets.as_offer_bundle(by_id[app], service.read_json(assets_path))
         item, version, version_options = catalog_data.load_application(
             key=app,
             catalog_source=catalog_source or str(catalog_default_path()),
@@ -856,6 +863,8 @@ def resolve_entity_command(cloud, codes, profile):
 
 @offer_command.command("plan")
 @inputs
+@click.option("--assets", "assets_path", type=click.Path(exists=True, dir_okay=False, path_type=Path),
+              help="Explicitly refresh assets from offer assets build JSON, even when URLs are unchanged.")
 @click.option("--current", type=click.Path(exists=True, dir_okay=False, path_type=Path), help="Offline DescribeEntity fixture; single target only.")
 @click.option("--profile", default=None)
 @click.option("--all-codes", is_flag=True,
@@ -864,11 +873,15 @@ def resolve_entity_command(cloud, codes, profile):
               help="Restrict planning to this offer code; repeatable.")
 @click.option("--output", "output_path", type=click.Path(dir_okay=False, path_type=Path), metavar="PATH",
               help="Write the complete plan/request here instead of stdout.")
-def plan_command(app, catalog_source, versions, vendor, template, current, profile, all_codes, offer_codes, output_path):
+def plan_command(app, catalog_source, versions, vendor, template, assets_path, current, profile, all_codes, offer_codes, output_path):
     """Produce a revision-bound UpdateInformation diff without submitting it."""
-    value = bundle(app, catalog_source, versions, vendor, template)
+    value = bundle(app, catalog_source, versions, vendor, template, assets_path)
+    if assets_path is not None:
+        value["operationId"] = uuid.uuid4().hex
     targets = _selected_targets(value, all_codes, offer_codes)
-    if any("offer" in target for target in targets):
+    if assets_path is not None:
+        labels = {}
+    elif any("offer" in target for target in targets):
         labels = {
             target.get("code"): target.get("offer", "")
             for target in targets
@@ -924,16 +937,25 @@ def submit_target(client, target):
 
 @offer_command.command("apply")
 @inputs
+@click.option("--assets", "assets_path", type=click.Path(exists=True, dir_okay=False, path_type=Path),
+              help="Refresh only the authored assets, using the normal revision-bound executor.")
+@click.option("--approve-plan-hash", default=None,
+              help="Explicit approval of the reviewed planHash; required for asset apply.")
 @click.option("--plan", "plan_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), required=True)
 @click.option("--profile", default=None)
-@click.option("--wait-seconds", type=click.IntRange(min=0), default=0, help="Poll for up to this many seconds; timeout does not cancel the change.")
-def apply_command(app, catalog_source, versions, vendor, template, plan_path, profile, wait_seconds):
+@click.option("--wait-seconds", type=click.IntRange(min=0), default=0, show_default=True,
+              help="Optional polling timeout; 0 returns after submission without read-back.")
+def apply_command(app, catalog_source, versions, vendor, template, assets_path, approve_plan_hash, plan_path, profile, wait_seconds):
     """Submit exactly the reviewed plan after rechecking source and live revision."""
-    value = bundle(app, catalog_source, versions, vendor, template)
+    if assets_path is None and approve_plan_hash is not None:
+        raise click.BadParameter("--approve-plan-hash currently applies only with --assets")
+    value = bundle(app, catalog_source, versions, vendor, template, assets_path)
     if value["publishBlockers"]:
         raise click.ClickException("publication blocked: " + "; ".join(value["publishBlockers"]))
     resolved = value.get("targets") or []
-    if any("offer" in target for target in resolved):
+    if assets_path is not None:
+        labels = {}
+    elif any("offer" in target for target in resolved):
         labels = {
             target.get("code"): target.get("offer", "")
             for target in resolved
@@ -945,6 +967,29 @@ def apply_command(app, catalog_source, versions, vendor, template, plan_path, pr
         )
     try:
         reviewed = service.read_json(plan_path)
+        if not isinstance(reviewed, dict):
+            raise ValueError("reviewed plan must be a JSON object")
+        if assets_path is not None and (not isinstance(reviewed, dict) or
+                not isinstance(approve_plan_hash, str) or
+                not re.fullmatch(r"[0-9a-f]{64}", approve_plan_hash) or
+                approve_plan_hash != reviewed.get("planHash")):
+            raise ValueError("asset apply requires --approve-plan-hash equal to the exact reviewed planHash")
+        if assets_path is not None:
+            operation_id = reviewed.get("operationId")
+            if (reviewed.get("fieldScope") != "assets" or reviewed.get("refreshAssets") is not True
+                    or not isinstance(operation_id, str) or not re.fullmatch(r"[0-9a-f]{32}", operation_id)):
+                raise ValueError("asset refresh requires a newly generated asset plan; regenerate and review it")
+            value["operationId"] = operation_id
+        allowed_entities = {target["entityId"] for target in resolved}
+        if isinstance(reviewed.get("targets"), list) and any(not isinstance(t, dict) for t in reviewed["targets"]):
+            raise ValueError("reviewed plan has malformed targets")
+        planned_entities = ([target.get("entityId") for target in reviewed["targets"]]
+                            if isinstance(reviewed.get("targets"), list)
+                            else [(reviewed.get("baseRevision") or "").split("@")[0]])
+        if (not planned_entities or any(not isinstance(entity, str) or not entity or entity not in allowed_entities
+                                       for entity in planned_entities)
+                or len(set(planned_entities)) != len(planned_entities)):
+            raise ValueError("reviewed plan targets are not unique members of the current application catalog")
         client = service.aws_client(profile)
         if isinstance(reviewed.get("targets"), list):
             entities = [
@@ -987,22 +1032,42 @@ def apply_command(app, catalog_source, versions, vendor, template, plan_path, pr
             }
             if failure:
                 document["resumeHint"] = (
+                    "Inspect submitted ChangeSet IDs before retrying; regenerate and review a new plan for remaining targets."
+                    if assets_path else
                     "Re-run the workflow to plan the remaining offer codes. "
                     "Targets that were already updated plan to NO_CHANGES."
                 )
-            output(document)
+            if assets_path:
+                document["readBackVerified"] = False
+            if not assets_path or failure:
+                output(document)
             if failure:
                 raise click.exceptions.Exit(1)
-            if wait_seconds:
-                for result in submitted:
-                    poll(
-                        client, result["changeSetId"], wait_seconds,
-                        service.with_variant(
-                            {**value, "entityId": result["entityId"]},
-                            labels.get(result.get("code"), ""),
-                        ),
-                        emit=_status_to_stderr,
-                    )
+            if assets_path and not wait_seconds:
+                output(document)
+                return
+            try:
+                if wait_seconds:
+                    for result in submitted:
+                        if assets_path:
+                            _status_to_stderr(result)
+                        poll(
+                            client, result["changeSetId"], wait_seconds,
+                            service.with_variant(
+                                {**value, "entityId": result["entityId"]},
+                                labels.get(result.get("code"), ""),
+                            ),
+                            emit=_status_to_stderr, strict=bool(assets_path),
+                        )
+                        if assets_path:
+                            result.update(status="SUCCEEDED", readBackVerified=True)
+            except ValueError as error:
+                if assets_path:
+                    output({**document, "status": "UNVERIFIED", "error": str(error)})
+                raise
+            if assets_path:
+                document.update(status="SUCCEEDED" if submitted else "NO_CHANGES", readBackVerified=True)
+                output(document)
             return
         single = (reviewed.get("baseRevision") or "").split("@")[0]
         if not single:
@@ -1023,21 +1088,33 @@ def apply_command(app, catalog_source, versions, vendor, template, plan_path, pr
         if reviewed != expected:
             raise ValueError("plan is stale or modified; regenerate and review it")
         if expected["request"] is None:
-            output({"status": "NO_CHANGES"})
+            output({"status": "NO_CHANGES", **({"readBackVerified": True} if assets_path else {})})
             return
         request = copy.deepcopy(expected["request"])
         request.pop("Catalog")
         request["ClientRequestToken"] = expected["planHash"]
         response = service.aws_call(client, "start_change_set", **request)
         change_id = response["ChangeSetId"]
-        output({"changeSetId": change_id, "status": "SUBMITTED", "planHash": expected["planHash"]})
-        if wait_seconds:
-            poll(client, change_id, wait_seconds, bundle_value, emit=_status_to_stderr)
+        result = {"changeSetId": change_id, "status": "SUBMITTED", "planHash": expected["planHash"]}
+        if assets_path and not wait_seconds:
+            output({**result, "readBackVerified": False})
+            return
+        (_status_to_stderr if assets_path else output)(result)
+        try:
+            if wait_seconds:
+                poll(client, change_id, wait_seconds, bundle_value, emit=_status_to_stderr,
+                     strict=bool(assets_path))
+        except ValueError as error:
+            if assets_path:
+                output({**result, "status": "UNVERIFIED", "readBackVerified": False, "error": str(error)})
+            raise
+        if assets_path:
+            output({**result, "status": "SUCCEEDED", "readBackVerified": True})
     except (ValueError, KeyError, OSError) as error:
         raise click.ClickException(str(error)) from error
 
 
-def poll(client, change_id, wait_seconds, value=None, emit=None):
+def poll(client, change_id, wait_seconds, value=None, emit=None, *, strict=False):
     """Poll one ChangeSet; ``emit`` keeps apply's stdout a single JSON document."""
     emit = emit or output
     deadline = time.monotonic() + wait_seconds
@@ -1053,13 +1130,17 @@ def poll(client, change_id, wait_seconds, value=None, emit=None):
                 raise ValueError(f"ChangeSet ended with {status['status']}")
             if value:
                 live = service.aws_call(client, "describe_entity", EntityId=value["entityId"])
-                if service.plan(value, live)["request"] is not None:
+                read_back = (service.plan(value, live, refresh_assets=False)
+                             if value.get("fieldScope") == "assets" else service.plan(value, live))
+                if read_back["request"] is not None:
                     raise ValueError("ChangeSet succeeded but read-back differs; inspect the product before retrying")
                 emit({"readBackVerified": True, "entityId": value["entityId"]})
-            return
+            return {**status, "readBackVerified": bool(value)}
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             emit({**status, "pollingTimedOut": True})
+            if strict:
+                raise ValueError("ChangeSet verification timed out; submission is not verified and was not cancelled")
             return
         time.sleep(min(5, remaining))
 
