@@ -42,6 +42,40 @@ def dataset(*items: dict) -> dict:
 
 
 class CatalogVerifyTests(unittest.TestCase):
+    def test_description_accepts_markdown_without_overview_constraints(self) -> None:
+        markdown = "\n# Heading—标题\n\n" + "Long prose " * 50 + "  \n```sh\necho hello\n```\n"
+        data = dataset(app("odoo", "Odoo", description=markdown))
+        for profile in ("existing", "generated", "push"):
+            with self.subTest(profile=profile):
+                result = catalog_verify.verify(data, fields=["description"], profile=profile)
+                self.assertEqual(result["issues"], [])
+                self.assertEqual(data["items"][0]["description"], markdown)
+
+    def test_description_generated_word_limit_includes_optional_lists(self) -> None:
+        for count in (150, 151):
+            # The list marker is included in the conservative source-token count.
+            markdown = "word " * (count - 3) + "\n\n- Feature highlight\n"
+            data = dataset(app("odoo", "Odoo", description=markdown))
+            for profile in ("existing", "generated", "push"):
+                with self.subTest(count=count, profile=profile):
+                    result = catalog_verify.verify(data, fields=["description"], profile=profile)
+                    self.assertEqual(result["errors"], int(count > 150 and profile == "generated"))
+                    self.assertEqual(data["items"][0]["description"], markdown)
+
+    def test_description_rejects_non_strings_and_empty_generated_content(self) -> None:
+        for value in (None, [], {}, True, 123, "", " \n"):
+            with self.subTest(value=value):
+                result = catalog_verify.verify(
+                    dataset(app("odoo", "Odoo", description=value)),
+                    fields=["description"], profile="generated",
+                )
+                self.assertGreater(result["errors"], 0)
+        for value in (None, "", []):
+            result = catalog_verify.verify(
+                dataset({"id": "odoo", "description": value}), fields=["description"], profile="push",
+            )
+            self.assertEqual(result["checked"]["odoo"]["description"], "skipped-empty")
+
     def test_generated_profile_enforces_formats_but_keeps_semantic_warnings(self) -> None:
         data = dataset(app("target", "Target", keywords=["ERP."],
                            usecases=["AI agent development"], overview="Team application!", summary="Team application."))

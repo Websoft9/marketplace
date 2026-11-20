@@ -94,8 +94,8 @@ const generatedLabel = new Intl.DateTimeFormat("zh-CN", {
           </a>
         ) : (
           <div class="source-item">
-            <span class="source-name">data/offer-codes/</span>
-            <span class="source-desc">商品编码与云平台映射（仓库内）</span>
+            <span class="source-name">本地 offer-codes</span>
+            <span class="source-desc">商品编码与云平台映射（本地覆盖）</span>
           </div>
         )}
         <a class="source-item" href={CATALOG_URL} target="_blank" rel="noreferrer">
@@ -104,7 +104,7 @@ const generatedLabel = new Intl.DateTimeFormat("zh-CN", {
         </a>
       </div>
       <p class="source-note">
-        商品编码在构建时从仓库内 `data/offer-codes/` 读取；应用目录从 product_en.json 抓取。
+        商品编码在构建时从 `config/app.json` 配置的 offer-codes 制品读取；应用目录从 product_en.json 抓取。
       </p>
     </article>
   </section>

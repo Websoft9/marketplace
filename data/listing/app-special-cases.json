@@ -37,6 +37,12 @@
     "haproxy": {
       "multiOffers": ["Ubuntu", "Debian"]
     },
+    "activemq": {
+      "multiOffers": ["Ubuntu", "Debian"]
+    },
+    "superset": {
+      "multiOffers": ["Ubuntu", "Debian"]
+    },
     "wordpress": {
       "multiOffers": ["", "Multisite"]
     }

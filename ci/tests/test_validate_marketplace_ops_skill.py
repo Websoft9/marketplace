@@ -57,8 +57,8 @@ class ValidateMarketplaceOpsSkillTests(unittest.TestCase):
         )
         (root / "config").mkdir()
         (root / "config/marketplace.json").write_text(json.dumps(CONFIG), encoding="utf-8")
-        (root / "data/offer-codes").mkdir(parents=True)
-        (root / "data/offer-codes/matrix.json").write_text(json.dumps(MATRIX), encoding="utf-8")
+        (root / "data/.work/offer-codes").mkdir(parents=True)
+        (root / "data/.work/offer-codes/matrix.json").write_text(json.dumps(MATRIX), encoding="utf-8")
         self.addCleanup(tmp.cleanup)
         return tmp
 
@@ -110,7 +110,7 @@ class ValidateMarketplaceOpsSkillTests(unittest.TestCase):
     def test_matrix_platform_missing_from_config_fails(self) -> None:
         tmp = self.make_root()
         root = Path(tmp.name)
-        (root / "data/offer-codes/matrix.json").write_text(
+        (root / "data/.work/offer-codes/matrix.json").write_text(
             json.dumps([{"id": "odoo", "productID": {"huaweiyun": ["x"]}}]),
             encoding="utf-8",
         )

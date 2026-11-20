@@ -19,6 +19,6 @@ Rules for every platform:
 
 - One fetch per product URL, reused by `status`, `versions`, and `content`.
 - A blocked or generic page is `unverified`, never a confirmed absence.
-- Codes are resolved from `data/offer-codes/matrix.json`; never parse the
+- Codes are resolved from the configured offer-codes artifact; never parse the
   application from a marketplace code.
 - No seller backend API, no login, no retry loops.

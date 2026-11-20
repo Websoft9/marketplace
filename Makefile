@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install cli test test-main test-ci cloud-configure opencode opencode-clear branch-update
+.PHONY: help install cli test test-main test-ci test-offers cloud-configure opencode opencode-clear branch-update
 
 PYTHON ?= python3
 ARGS ?=
@@ -38,9 +38,10 @@ help:
 	@printf '  %-18s %s\n' 'cli' 'enter the mk CLI shell (ARGS: one-shot command; cloud=aws loads .secrets/aws.env)'
 	@printf '\n$(HEADING)%s$(RESET)\n' 'TESTING'
 	@printf '$(DIM)%s$(RESET)\n' '──────────────────────────────'
-	@printf '  %-18s %s\n' 'test' 'run the main and CI test suites'
+	@printf '  %-18s %s\n' 'test' 'run the main and CI test suites plus marketplace metadata validation'
 	@printf '  %-18s %s\n' 'test-main' 'run the main suite (tests/)'
 	@printf '  %-18s %s\n' 'test-ci' 'run the CI suite (ci/tests/)'
+	@printf '  %-18s %s\n' 'test-offers' 'validate marketplace listing templates and metadata'
 	@printf '\n$(HEADING)%s$(RESET)\n' 'ENVIRONMENT'
 	@printf '$(DIM)%s$(RESET)\n' '──────────────────────────────'
 	@printf '  %-18s %s\n' 'cloud-configure' 'write .secrets/<cloud>.env with blank secrets (cloud=aws, cloud=all)'
@@ -90,13 +91,16 @@ cli:
 		exec env $(if $(ENV_FILE),MK_ENV_FILE="$(ENV_FILE)",) PATH="$(CURDIR)/$(CLI_BIN):$$PATH" PS1="$$prompt" PROMPT_COMMAND='history -a' bash --norc --noprofile -i; \
 	fi
 
-test: test-main test-ci
+test: test-main test-ci test-offers
 
 test-main:
 	@$(TEST_PYTHON) -m unittest discover -s tests -q
 
 test-ci:
 	@$(TEST_PYTHON) -m unittest discover -s ci/tests -q
+
+test-offers:
+	@$(TEST_PYTHON) ci/validate_offers.py
 
 cloud-configure:
 	@$(PYTHON) ci/cloud_configure.py $(if $(cloud),--cloud "$(cloud)",$(if $(CLOUD),--cloud "$(CLOUD)",)) $(ARGS)

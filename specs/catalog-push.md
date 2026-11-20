@@ -29,10 +29,10 @@ mk catalog push --apps wordpress,odoo --dry-run --json --no-progress
 mk catalog push --apps wordpress,odoo --fields summary,keywords --dry-run --verbose
 
 # Update drafts only
-mk catalog push --apps wordpress,odoo
+mk catalog push --apps wordpress,odoo --apply
 
 # Update and publish
-mk catalog push --apps wordpress,odoo --publish
+mk catalog push --apps wordpress,odoo --apply --publish
 ```
 
 Every push invocation, including a dry run, validates the exact loaded input
@@ -98,15 +98,24 @@ Trademarks; a link that cannot be mapped back to a sold application is shown as
 | `relatedApps` | `relatedApps` | Non-localized |
 | `summary` | `summary` | `--locale` |
 | `hasenterprise` | `hasEnterprise` | Non-localized |
+| `description` | `description` (Description) | `--locale` |
 
 The field IDs and localization flags come from the Contentful content-type
 schema. The full entry is fetched first and only the target locale/fields are
 merged; other locales, `tags`, references and unknown fields are preserved.
 Input fields outside the table are rejected instead of silently ignored, except
-pull metadata such as `offerCodes`, which is ignored. `--fields` restricts the
+pull metadata such as `offerCodes`, `logo` and `screenshots`, which is ignored.
+`--fields` restricts the
 push to a comma-separated subset of the table, so a generation pass that
 changed only `summary` cannot accidentally write stale values from other
 fields. Unselected fields are left untouched in Contentful.
+
+`description` contains Markdown source, not a RichText document. It is included
+among the default supported push fields when present in the input; use
+`--fields description` to restrict a push or dry run to it. Its complete source
+text, including whitespace and newlines, is preserved in writes and before/after
+diffs. Other locales are preserved. Empty values follow the same skip/`--clear`
+rules as other text fields; older catalogs without `description` remain valid.
 
 `relatedApps` input is an array of application Trademarks. Push validates it
 against the store catalog: names that are not sold in the store are dropped,
@@ -134,6 +143,8 @@ write `""` for text fields, `[]` for array fields or `false` for Boolean fields.
 - Default behavior updates **drafts**. `--publish` publishes each successfully
   updated entry using the new draft version. It cannot be combined with
   `--dry-run`.
+- Actual writes require the explicit `--apply` flag; it cannot be combined with
+  `--dry-run`. A dry run does not require `--apply`.
 - `--allow-missing` skips input applications absent from Contentful; otherwise
   they are errors.
 - The command continues through independent application errors and exits

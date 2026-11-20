@@ -30,6 +30,27 @@ def entry(fields: dict, entry_id: str = "sys-id") -> dict:
 
 
 class CatalogPullTests(unittest.TestCase):
+    def test_default_pull_preserves_markdown_description(self) -> None:
+        markdown = "\n# Heading\n\n- **Bold** [link](https://example.com)  \n\n```python\nprint('你好')\n```\n"
+        self.wordpress["fields"]["Description"] = markdown
+        for options in ((), ("--raw",)):
+            with self.subTest(options=options), mock.patch.object(
+                contentful, "_get_json", side_effect=self.fake_get_json
+            ):
+                result = self.invoke("--no-progress", *options)
+            self.assertEqual(result.exit_code, 0, result.stderr)
+            data = json.loads(result.stdout)
+            self.assertEqual(data["items"][0]["description"], markdown)
+            self.assertIsNone(data["items"][1]["description"])
+
+    def test_description_matches_capitalized_contentful_field_id(self) -> None:
+        data = contentful.build_dataset(
+            entries=[{"item": entry({"key": "wordpress", "Description": "# Heading\n"}), "includes": {}}],
+            target_keys=["wordpress"], fields=("description",),
+            field_types={"Description": "Text"},
+        )
+        self.assertEqual(data["items"][0], {"id": "wordpress", "description": "# Heading\n"})
+
     def setUp(self) -> None:
         self.runner = separated_runner()
         self.temp = tempfile.TemporaryDirectory()
@@ -111,6 +132,7 @@ class CatalogPullTests(unittest.TestCase):
                 {"id": "relatedApps", "type": "Array"},
                 {"id": "summary", "type": "Symbol"},
                 {"id": "hasenterprise", "type": "Boolean"},
+                {"id": "description", "type": "Text"},
             ]}
         query = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
         self.assertEqual(query["content_type"], ["product"])
@@ -239,6 +261,7 @@ class CatalogPullTests(unittest.TestCase):
             {"id": "useCases", "type": "Array"},
             {"id": "relatedApps", "type": "Array"}, {"id": "summary", "type": "Symbol"},
             {"id": "hasenterprise", "type": "Boolean"},
+            {"id": "description", "type": "Text"},
         ]}
         def only_broken(url, token, timeout):
             if "/content_types/product" in url:
@@ -249,6 +272,7 @@ class CatalogPullTests(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.stderr)
         dataset = json.loads(result.stdout)
         self.assertIsNone(dataset["items"][0]["summary"])
+        self.assertIsNone(dataset["items"][0]["description"])
         self.assertNotIn("missingFields", dataset)
 
     def test_unknown_field_is_rejected(self) -> None:
@@ -268,6 +292,7 @@ class CatalogPullTests(unittest.TestCase):
             {"id": "useCases", "type": "Array"},
             {"id": "relatedApps", "type": "Array"}, {"id": "summary", "type": "Symbol"},
             {"id": "hasenterprise", "type": "Boolean"},
+            {"id": "description", "type": "Text"},
         ]}
         def api(url, token, timeout):
             if "/content_types/product" in url:
@@ -346,6 +371,7 @@ class CatalogPullTests(unittest.TestCase):
         self.assertIsNone(dataset["source"]["offer"])
 
     def test_cfpat_token_pulls_through_management_api(self) -> None:
+        markdown = "# WordPress\n\n[Docs](https://example.com)  \n\n```sh\necho hello\n```\n"
         schema = {
             "key": {"type": "Symbol", "localized": False},
             "trademark": {"type": "Symbol", "localized": True},
@@ -355,6 +381,7 @@ class CatalogPullTests(unittest.TestCase):
             "relatedApps": {"type": "Array", "localized": False},
             "summary": {"type": "Symbol", "localized": True},
             "hasEnterprise": {"type": "Boolean", "localized": False},
+            "description": {"type": "Text", "localized": True},
         }
         cma_entry = {"sys": {"id": "entry"}, "fields": {
             "key": {"en-US": "wordpress"},
@@ -365,6 +392,7 @@ class CatalogPullTests(unittest.TestCase):
             "relatedApps": {"en-US": ["Odoo", "Ghost"]},
             "summary": {"en-US": "WordPress summary"},
             "hasEnterprise": {"en-US": True},
+            "description": {"en-US": markdown, "zh-CN": "其他语言"},
         }}
         with mock.patch("cli.contentful_management.fetch_schema", return_value=schema) as schema_call, \
              mock.patch("cli.contentful_management.fetch_entries", return_value=[cma_entry]) as entries_call, \
@@ -383,6 +411,7 @@ class CatalogPullTests(unittest.TestCase):
         self.assertEqual(item["usecases"], ["Blogging", "CMS"])
         self.assertEqual(item["relatedApps"], ["Odoo", "Ghost"])
         self.assertTrue(item["hasenterprise"])
+        self.assertEqual(item["description"], markdown)
         self.assertEqual(dataset["source"]["contentful"]["api"], "https://api.contentful.com")
         schema_call.assert_called_once()
         entries_call.assert_called_once()

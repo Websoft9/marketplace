@@ -15,14 +15,12 @@ from cli import marketplace as app_list  # noqa: E402
 class ConfigTests(unittest.TestCase):
     def test_marketplace_config_is_complete(self) -> None:
         config = app_list.CONFIG
-        self.assertEqual(config["sources"]["offer"], "data/offer-codes")
-        self.assertTrue((ROOT / config["sources"]["offer"]).is_dir())
-        self.assertNotIn("catalog", config["sources"])
-        self.assertNotIn("versions", config["sources"])
+        self.assertNotIn("sources", config)
 
         app_config = app_list.APP_CONFIG
         self.assertTrue(app_config["sources"]["catalog"].startswith("https://"))
         self.assertTrue(app_config["sources"]["versions"].startswith("https://"))
+        self.assertEqual(app_list.OFFER_SOURCE, app_config["sources"]["offer-codes"])
         self.assertNotIn("multi_version_apps", app_config)
 
         product_platforms = tuple(

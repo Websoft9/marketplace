@@ -45,9 +45,6 @@ interface PlatformRoute {
 
 interface MarketplaceConfig {
   version: number;
-  sources: {
-    offer: string;
-  };
   platforms: PlatformConfig[];
   routing: Record<string, PlatformRoute>;
 }
@@ -56,6 +53,7 @@ interface AppConfig {
   sources: {
     catalog: string;
     versions?: string;
+    "offer-codes": string;
   };
 }
 
@@ -183,7 +181,7 @@ const ENV = (
 ).process?.env;
 
 export const OFFER_SOURCE =
-  ENV?.MK_OFFER_SOURCE ?? ENV?.MK_OFFER_URL ?? CONFIG.sources.offer;
+  ENV?.MK_OFFER_SOURCE ?? ENV?.MK_OFFER_URL ?? APP_CONFIG.sources["offer-codes"];
 export const OFFER_SOURCE_IS_URL = /^https?:\/\//.test(OFFER_SOURCE);
 export const CATALOG_URL = ENV?.MK_CATALOG_URL ?? APP_CONFIG.sources.catalog;
 const REPO_ROOT = dirname(dirname(CONFIG_PATH));

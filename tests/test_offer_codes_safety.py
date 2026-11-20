@@ -390,52 +390,22 @@ class ListingSafetyTests(unittest.TestCase):
 
 
 class WorkflowContractTests(unittest.TestCase):
-    def test_issue_reporting_consumes_current_summary_fields(self):
-        path = Path(__file__).resolve().parents[1] / ".github/workflows/offer-listing-check.yml"
-        text = path.read_text()
-        self.assertNotIn('summary["notFound"]', text)
-        self.assertIn('summary["not_found"]', text)
+    def test_history_dependent_listing_check_workflow_is_removed(self):
+        root = Path(__file__).resolve().parents[1]
+        self.assertFalse((root / ".github/workflows/offer-listing-check.yml").exists())
 
-    def test_workflow_reporting_handles_clean_and_missing_results(self):
-        path = Path(__file__).resolve().parents[1] / ".github/workflows/offer-listing-check.yml"
-        block = path.read_text().split("python3 - <<'PY'\n")[-1]
-        lines = []
-        for line in block.splitlines():
-            if line.strip() == "PY":
-                break
-            lines.append(line)
-        source = "\n".join(lines)
-        import textwrap
-        source = textwrap.dedent(source)
-        with tempfile.TemporaryDirectory() as name:
-            report = Path(name) / "report.json"
-            for missing in (0, 1):
-                data = {"summary": {"checked": 1, "exists": 1 - missing, "not_found": missing,
-                                    "not_public": 0, "errors": 0}, "results": []}
-                report.write_text(json.dumps(data))
-                with mock.patch.dict(os.environ, {"REPORT": str(report), "RUN_URL": "https://example.test/run"}), \
-                     mock.patch("subprocess.run", return_value=SimpleNamespace(stdout="")) as run:
-                    if missing:
-                        exec(compile(source, str(path), "exec"), {})
-                        self.assertEqual(run.call_count, 2)
-                        self.assertIn("create", run.call_args.args[0])
-                    else:
-                        with self.assertRaises(SystemExit) as caught:
-                            exec(compile(source, str(path), "exec"), {})
-                        self.assertEqual(caught.exception.code, 0)
-                        run.assert_not_called()
+    def test_runtime_consumers_read_configured_offer_matrix_artifact(self):
+        root = Path(__file__).resolve().parents[1]
+        offer_list = (root / ".github/workflows/offer-list.yml").read_text()
+        self.assertNotIn("mk offer-codes gen", offer_list)
 
-    def test_all_workflow_python_blocks_compile(self):
-        import textwrap
-        path = Path(__file__).resolve().parents[1] / ".github/workflows/offer-listing-check.yml"
-        blocks = path.read_text().split("python3 - <<'PY'")[1:]
-        for block in blocks:
-            lines = []
-            for line in block.splitlines()[1:]:
-                if line.strip() == "PY":
-                    break
-                lines.append(line)
-            compile(textwrap.dedent("\n".join(lines)), str(path), "exec")
+        site = (root / ".github/workflows/deploy-site.yml").read_text()
+        self.assertNotIn("mk offer-codes gen", site)
+        self.assertNotIn("Configure AWS credentials", site)
+        self.assertNotIn("Configure Aliyun credentials", site)
+
+        app_config = json.loads((root / "config/app.json").read_text())
+        self.assertTrue(app_config["sources"]["offer-codes"].startswith("https://"))
 
 
 class SkillContractTests(unittest.TestCase):

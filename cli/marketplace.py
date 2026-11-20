@@ -44,12 +44,11 @@ APP_CONFIG = (
     else {}
 )
 
-SOURCES = CONFIG["sources"]
 APP_SOURCES = APP_CONFIG["sources"]
 OFFER_SOURCE = (
     os.environ.get("MK_OFFER_SOURCE")
     or os.environ.get("MK_OFFER_URL")
-    or SOURCES["offer"]
+    or APP_SOURCES["offer-codes"]
 )
 CATALOG_URL = os.environ.get("MK_CATALOG_URL", APP_SOURCES["catalog"])
 VERSIONS_URL = os.environ.get("MK_VERSIONS_URL", APP_SOURCES["versions"])
@@ -188,10 +187,10 @@ def offer_variants_by_app(source: str, timeout: float = 30) -> dict[str, dict[st
 
 
 def read_offers(source: str, timeout: float = 30) -> list[dict]:
-    """Read offer codes from the local offer-codes directory, a JSON file or a URL.
+    """Read offer codes from the configured artifact, a local JSON file or directory.
 
-    A directory is read in sorted filename order and merged by application id, so
-    the repository folder is the single source of truth for offer codes.
+    The default source is the published URL in ``config/app.json``. Local
+    directories are read in sorted filename order and merged by application id.
     """
     resolved = resolve_source(source)
     if isinstance(resolved, Path) and resolved.is_dir():
@@ -338,7 +337,7 @@ def render_markdown(rows: list[AppRow]) -> str:
         "## Marketplace 应用对应表",
         "",
         "下表列出 `product_en.json` 中的应用及其在各 Marketplace 的商品链接。"
-        f"数据源：`data/offer-codes/`、[product_en.json]({CATALOG_URL})。",
+        f"数据源：[offer-codes 制品]({OFFER_SOURCE})、[product_en.json]({CATALOG_URL})。",
         "",
         f"已上架应用：{len(listed_catalog)} 个；未上架应用：{len(unlisted)} 个。",
         "",

@@ -351,8 +351,9 @@ mk offer plan --app odoo --all-codes --profile marketplace-seller
 
 `preflight` validates the application id against `product_en.json`
 (`--product-catalog`, also accepted as `--catalog-source`) and every requested
-offer code against `data/offer-codes/` (`--offer`, also accepted as
-`--offer-source`), without calling Contentful or AWS. It reports lowercase and
+offer code against the published matrix configured by `sources.offer-codes` in
+`config/app.json` (`--offer`, also accepted as `--offer-source`), without calling
+Contentful or AWS. It reports lowercase and
 close-match suggestions. `--skip-code-check` validates only the application id,
 which is the mode used before live resolution. `--allow-unlisted-codes` makes
 explicit codes authoritative: a code the matrix records under another

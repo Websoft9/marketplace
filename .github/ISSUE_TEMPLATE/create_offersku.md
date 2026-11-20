@@ -1,82 +1,36 @@
 ---
-name: 商品生产与上架
-about: 依据产品设计规范和运行规范制作镜像，并通过两项测试生产合格商品；将合格商品在各大云平台上架
-title: New Offer/SKU on Azure/AWS/阿里云/华为云/华为云-Flexus/AWS(中国)/腾讯云/AlibabaCloud/HUAWEICLOUD/HUAWEICLOUD-Flexus
+name: AMI build and Publish to Marketplace
+about: Build vm Image and publish to major Marketplace
+title: New Offer/SKU on Azure/AWS/Aliyun/Alibaba Cloud/Google Cloud/Huaweweiyun/HUAWEICLOUD/Tencent Cloud
 labels: 
 assignees: 
 
 ---
 
-## 商品信息
+## Prepare image
 
-- Issue 标题包含 Destop, Docker, BT 时，商品非自适应，请使用 `mcloud -e` 进行生产
-- 云平台商品标题包含 **Docker（含可视化界面）** 的商品是自适应商品
+- OS
+  - [x] Ubuntu
+  - [ ] Debian
+  - [ ] OracleLinux
+
+- Spectial image: Desktop/OracleLinux...  （Only for no appstore application）
+
+> Make sure pass the testing automation
+
+## Publish to Marketplace
+
+- [ ] Update SKU
+- [ ] Update Product Information
+- [ ] Update Assets
+- [ ] Test offer
+- [ ] Delete images and snapshoot
+- [ ] Troublesome
+
+If have some troublesome, you can add below sample to comment
 
 ```
-此处增加版本信息，由生产和质检人员填写
-
-- Websoft9:
-- Docker:
-- WordPress:
+- Rejected by platform, reason is that ...
+- Waiting for image global regions distribution
+- Withdraw a submission
 ```
-
-## 规划（生产总监）
-
-### 评估
-
-- [x] 评估通过
-- [ ] 评估不通过，理由【         】
-
-### 商品 ID 维护到 Contentful （仅针对新上架）
-
-> Azure, AWS 可提前获取; 阿里云上架后获取
-
-- [ ] 已增加并构建
-
-### 生产线类型
-
-- [x] mcloud
-- [ ] mcloud -e
-- [ ] 手工
-
-## 生产（技术工程师）
-
-### 制造
-
-- [ ] 安装 Bug 检视
-- [ ] 产品打包
-- [ ] 将 **Websoft9/Docker** 版本信息输入信息填写到本 Issue 中
-
-### 测试
-
-- [ ] 可视化界面 
-- [ ] 服务状态
-- [ ] 端口号
-
-## 质检（技术工程师）
-
-### 质检项
-  
-- [ ] 可视化界面
-- [ ] 服务状态
-- [ ] 端口号
-- [ ] 路径
-- [ ] 数据库密码
-- [ ] 应用密码
-- [ ] 将单应用的版本填写到本商品 Issue（例如：WordPress 6.5, Portainer 2.21）
-
-## 云资源清理（技术工程师）
-
-- [ ] 删除测试服务器
-
-## 上架（运营）
-
-- [ ] 完成草稿
-- [ ] 上架前内审，已纠错内容【         】
-- [ ] 平台审核
-- [ ] 被拒，理由【         】
-- [ ] 主动撤回，理由【         】
-- [ ] 平台审核通过
-- [ ] 等待镜像分发全球
-- [ ] 购买测试（阿里云需通过 mcloud 两次购买，每次 50 个）
-- [ ] 删除镜像和快照

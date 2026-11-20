@@ -70,4 +70,6 @@ GitHub Actions authenticates to AWS through GitHub OIDC and assumes a least-priv
 The `aliyun` option in `.github/workflows/offer-list.yml` uses GitHub OIDC to assume a RAM role. Set the `ALIYUN_ROLE_ARN` and `ALIYUN_OIDC_PROVIDER_ARN` GitHub Actions Variables. The workflow lists front-end-visible mirror products from `长沙网久软件有限公司` and extracts the application version from each product summary.
 
 ## Alibaba Cloud International Marketplace
-The `alibabacloud` option reads the public Websoft9 store listing and shows image products with their detected application versions. It does not require cloud credentials.
+The `alibabacloud` option reads the public Websoft9 store listing and shows image products with their detected application versions. Public store facts do not require cloud credentials.
+
+`.github/workflows/offer-codes-matrix.yml` nevertheless assumes a RAM role for the international account through GitHub OIDC, so future authenticated operations can use the exported `ALIBABA_CLOUD_*` variables without adding long-lived credentials. Set `ALIBABACLOUD_ROLE_ARN` and `ALIBABACLOUD_OIDC_PROVIDER_ARN` as Actions variables; the `ALIBABA_CLOUD_ROLE_ARN` and `ALIBABA_CLOUD_OIDC_PROVIDER_ARN` names are accepted as aliases. The role trust policy uses the GitHub OIDC audience `sts.aliyuncs.com`. This account is separate from Aliyun China; never reuse Aliyun China's `ALIYUN_*` credentials.

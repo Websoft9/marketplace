@@ -15,7 +15,7 @@ a machine cannot judge from the JSON alone:
 1. a code assigned to more than one application;
 2. one application carrying several codes on the same platform.
 
-This skill is **read-only**. It never edits `data/offer-codes/`, never pushes to
+This skill is **read-only**. It never edits `data/.work/offer-codes/`, never pushes to
 Contentful, and never calls a marketplace write API. Read-only seller APIs may
 be queried only when the caller explicitly enables `backend=true`; available
 credentials alone are not authorization to run backend checks. It ends with
@@ -40,8 +40,11 @@ interactive questions.
 - Run commands from the repository root.
 - `mk` is usually not on `PATH`. Use `make cli ARGS="..."` or
   `.venv/bin/mk`.
-- Read `data/offer-codes/` (default) or the source named by
-  `MK_OFFER_SOURCE`. Do not edit it.
+- Read the source configured as `sources.offer-codes` in `config/app.json`, or
+  the source named by `MK_OFFER_SOURCE`. Do not edit it.
+- The configured source is the published artifact. For a local staging matrix,
+  pass `data/.work/offer-codes/matrix.json` explicitly; because this skill is
+  read-only, do not generate or edit that matrix.
 - Read `config/marketplace.json` for `platforms[].urlTemplate`.
 - Read `data/.work/catalog.json` for `id` and `trademark` when matching a
   listing title to an application. A missing catalog is not fatal; skip
@@ -180,7 +183,7 @@ Start with the CLI result, then add the evidence.
 ```markdown
 ## Offer code check
 
-- Source: data/offer-codes/
+- Source: configured published artifact (`config/app.json`)
 - Selection: django, laravel (2 of 108 entries)
 - CLI: 0 error(s), N warning(s)
 - Backend: disabled / N checked, M unverified (skipped, unsupported, errors or limit)

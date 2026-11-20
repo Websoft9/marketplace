@@ -15,6 +15,8 @@ import click
 from .. import store, offer_codes, offer_listing, offer_generate, offer_resolve, offer
 from ..marketplace import CATALOG_URL, OFFER_SOURCE, REPO_ROOT
 
+OFFER_EDIT_SOURCE = str(REPO_ROOT / "data/.work/offer-codes")
+
 
 @click.group("offer-codes")
 def offer_codes_command() -> None:
@@ -69,7 +71,7 @@ def _generation_report(report, *, as_json=False, err=False):
 @click.option("--inventory", "inventory_path", type=click.Path(exists=True, dir_okay=False, path_type=Path),
               help="Read a local mk store products --json snapshot instead of querying cloud APIs.")
 @click.option("--output", type=click.Path(dir_okay=False, path_type=Path),
-              default=REPO_ROOT / "data/offer-codes/matrix.json", show_default=True)
+              default=REPO_ROOT / "data/.work/offer-codes/matrix.json", show_default=True)
 @click.option("--dry-run", is_flag=True, help="Show the proposed diff without writing.")
 @click.option("--json", "as_json", is_flag=True,
               help="Print only the structured result to stdout; progress goes to stderr.")
@@ -453,7 +455,7 @@ def find_command(
 
 
 @offer_codes_command.command("add")
-@click.option("--offer", "--offer-source", "offer_source", default=str(OFFER_SOURCE),
+@click.option("--offer", "--offer-source", "offer_source", default=OFFER_EDIT_SOURCE,
               show_default=True, metavar="SOURCE",
               help="Local offer-codes directory or JSON file.")
 @click.option("--app", required=True, metavar="APP",
@@ -594,7 +596,7 @@ def add_command(
 
 
 @offer_codes_command.command("remove")
-@click.option("--offer", "--offer-source", "offer_source", default=str(OFFER_SOURCE),
+@click.option("--offer", "--offer-source", "offer_source", default=OFFER_EDIT_SOURCE,
               show_default=True, metavar="SOURCE",
               help="Local offer-codes directory or JSON file.")
 @click.option("--app", required=True, metavar="APP",
@@ -706,7 +708,7 @@ def remove_command(
 
 
 @offer_codes_command.command("replace")
-@click.option("--offer", "--offer-source", "offer_source", default=str(OFFER_SOURCE),
+@click.option("--offer", "--offer-source", "offer_source", default=OFFER_EDIT_SOURCE,
               show_default=True, metavar="SOURCE",
               help="Local offer-codes directory or JSON file.")
 @click.option("--from", "old_app", required=True, metavar="APP",

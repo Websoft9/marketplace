@@ -8,6 +8,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from urllib.request import urlopen
 
 
 PATTERNS = {
@@ -27,6 +28,20 @@ PATTERNS = {
 
 def load_json(path: Path) -> object:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def load_matrix(source: str, root: Path) -> list[dict]:
+    if source.startswith(("https://", "http://")):
+        with urlopen(source, timeout=30) as response:
+            value = json.loads(response.read().decode("utf-8"))
+    else:
+        path = Path(source)
+        if not path.is_absolute():
+            path = root / path
+        value = load_json(path)
+    if not isinstance(value, list):
+        raise ValueError("offer-codes source must contain a JSON array")
+    return value
 
 
 def matches(entry: dict, app: str) -> bool:
@@ -103,13 +118,16 @@ def main() -> None:
     root = Path(__file__).resolve().parents[2]
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=root)
+    parser.add_argument("--matrix", help="matrix URL or local JSON file (defaults to config/app.json)")
     parser.add_argument("--app", action="append", default=None, help="repeatable; default all")
     parser.add_argument("--platform", action="append", default=None, help="repeatable; default all")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
     base = args.root.resolve()
-    matrix = load_json(base / "data/offer-codes/matrix.json")
+    app_config = load_json(base / "config/app.json")
+    matrix_source = args.matrix or app_config["sources"]["offer-codes"]
+    matrix = load_matrix(matrix_source, base)
     config = load_json(base / "config/marketplace.json")
     platforms = {item["key"]: item for item in config["platforms"]}
     all_platforms = list(platforms)

@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+from io import BytesIO
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "ci/scripts"))
 
-from marketplace_ops_codes import analyze  # noqa: E402
+from marketplace_ops_codes import analyze, load_matrix  # noqa: E402
 
 PLATFORMS = {
     "aws": {"urlTemplate": "https://aws.test/{code}"},
@@ -89,6 +91,24 @@ class AnalyzeTests(unittest.TestCase):
     def test_unknown_app_is_ignored_locally(self) -> None:
         report = analyze(MATRIX, PLATFORMS, ["missing"], ["aws"])
         self.assertEqual(report["rows"], [])
+
+
+class MatrixSourceTests(unittest.TestCase):
+    def test_loads_configured_remote_artifact(self) -> None:
+        payload = b'[{"id":"odoo","productID":{"aws":[]}}]'
+        with mock.patch("marketplace_ops_codes.urlopen", return_value=BytesIO(payload)) as fetch:
+            matrix = load_matrix("https://artifact.test/offer.json", ROOT)
+        fetch.assert_called_once_with("https://artifact.test/offer.json", timeout=30)
+        self.assertEqual(matrix, [{"id": "odoo", "productID": {"aws": []}}])
+
+    def test_loads_explicit_local_artifact(self) -> None:
+        import json
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "matrix.json"
+            path.write_text(json.dumps(MATRIX), encoding="utf-8")
+            self.assertEqual(load_matrix(str(path), ROOT), MATRIX)
 
 
 if __name__ == "__main__":

@@ -14,8 +14,8 @@ def apply(
     app_ids: tuple[str, ...] | None, fields: tuple[str, ...], skip_invalid: bool = False,
     reference: dict[str, Any] | list[Any] | None = None,
 ) -> dict[str, Any]:
-    if not fields or set(fields) - set(catalog_verify.GENERATED_FIELDS):
-        raise ValueError("apply requires a non-empty subset of generated fields")
+    if not fields or set(fields) - (set(catalog_verify.GENERATED_FIELDS) | {"description"}):
+        raise ValueError("apply requires a non-empty subset of generated fields or description")
     if candidate.resolve() == output.resolve() or baseline.resolve() == output.resolve():
         raise ValueError("candidate and baseline must be separate from the output catalog")
     expected = catalog_file.read_bytes(output)

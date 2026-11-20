@@ -1,0 +1,232 @@
+name: Offer Codes Matrix
+
+# Generate the combined offer-code matrix from live public store facts.
+# The generated matrix is kept only as a workflow artifact for now; it is not
+# committed. `mk offer-codes gen` replaces only the selected platform, so the
+# platforms are generated sequentially into one matrix file.
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: "Cloud platform to generate (all = aws + aliyun + alibabacloud)"
+        type: choice
+        required: true
+        default: all
+        options:
+          - all
+          - aws
+          - aliyun
+          - alibabacloud
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: offer-codes-matrix-${{ inputs.platform }}
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PLATFORM: ${{ inputs.platform }}
+      MATRIX_DIR: /tmp/opencode/offer-matrix
+      MATRIX_FILE: /tmp/opencode/offer-matrix/matrix.json
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install CLI
+        run: python -m pip install --disable-pip-version-check '.[aws,aliyun]'
+
+      - name: Check AWS role configuration
+        if: env.PLATFORM == 'aws' || env.PLATFORM == 'all'
+        env:
+          AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+        run: |
+          if [[ -z "$AWS_ROLE_ARN" ]]; then
+            echo "::error::Configure the AWS_ROLE_ARN Actions variable and allow this repository to assume the role with GitHub OIDC."
+            exit 1
+          fi
+          if [[ ! "$AWS_ROLE_ARN" =~ ^arn:aws:iam::[0-9]{12}:role/.+ ]]; then
+            echo "::error::AWS_ROLE_ARN must be an IAM role ARN, not an OIDC provider ARN."
+            exit 1
+          fi
+
+      - name: Configure AWS credentials with GitHub OIDC
+        if: env.PLATFORM == 'aws' || env.PLATFORM == 'all'
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+          role-session-name: MarketplaceOfferCodesMatrix-${{ github.run_id }}
+
+      - name: Check Aliyun role configuration
+        if: env.PLATFORM == 'aliyun' || env.PLATFORM == 'all'
+        env:
+          ALIYUN_ROLE_ARN: ${{ vars.ALIYUN_ROLE_ARN }}
+          ALIYUN_OIDC_PROVIDER_ARN: ${{ vars.ALIYUN_OIDC_PROVIDER_ARN }}
+        run: |
+          if [[ -z "$ALIYUN_ROLE_ARN" || -z "$ALIYUN_OIDC_PROVIDER_ARN" ]]; then
+            echo "::error::Configure ALIYUN_ROLE_ARN and ALIYUN_OIDC_PROVIDER_ARN as GitHub Actions variables."
+            exit 1
+          fi
+
+      - name: Configure Aliyun credentials with GitHub OIDC
+        if: env.PLATFORM == 'aliyun' || env.PLATFORM == 'all'
+        uses: aliyun/configure-aliyun-credentials-action@1e5248c8d5d93a8781ac344a68e19a43341e79e6 # v1.1.0
+        with:
+          role-to-assume: ${{ vars.ALIYUN_ROLE_ARN }}
+          oidc-provider-arn: ${{ vars.ALIYUN_OIDC_PROVIDER_ARN }}
+          role-session-name: MarketplaceOfferCodesMatrix-${{ github.run_id }}
+          audience: sts.aliyuncs.com
+
+      - name: Expose Aliyun credential names
+        if: env.PLATFORM == 'aliyun' || env.PLATFORM == 'all'
+        run: |
+          {
+            echo "ALIYUN_ACCESS_KEY_ID=$ALIBABA_CLOUD_ACCESS_KEY_ID"
+            echo "ALIYUN_ACCESS_KEY_SECRET=$ALIBABA_CLOUD_ACCESS_KEY_SECRET"
+            echo "ALIYUN_SECURITY_TOKEN=$ALIBABA_CLOUD_SECURITY_TOKEN"
+          } >> "$GITHUB_ENV"
+
+      # Alibaba Cloud International is a separate account from Aliyun China.
+      # The current matrix generation only reads its public storefront, but
+      # assume the RAM role now so future authenticated steps can use the
+      # exported ALIBABA_CLOUD_* credentials without adding long-lived secrets.
+      # Keep this after "Expose Aliyun credential names": the action overwrites
+      # the shared ALIBABA_CLOUD_* variables with the international account's
+      # values, while ALIYUN_* is already preserved for China.
+      - name: Check Alibaba Cloud International role configuration
+        if: env.PLATFORM == 'alibabacloud' || env.PLATFORM == 'all'
+        env:
+          ROLE_ARN: ${{ vars.ALIBABACLOUD_ROLE_ARN || vars.ALIBABA_CLOUD_ROLE_ARN }}
+          OIDC_PROVIDER_ARN: ${{ vars.ALIBABACLOUD_OIDC_PROVIDER_ARN || vars.ALIBABA_CLOUD_OIDC_PROVIDER_ARN }}
+        run: |
+          if [[ -z "$ROLE_ARN" || -z "$OIDC_PROVIDER_ARN" ]]; then
+            echo "::error::Configure ALIBABACLOUD_ROLE_ARN and ALIBABACLOUD_OIDC_PROVIDER_ARN as GitHub Actions variables (ALIBABA_CLOUD_* names are also accepted)."
+            exit 1
+          fi
+          if [[ ! "$ROLE_ARN" =~ ^acs:ram::([0-9]{12,20}):role/[^/]+$ ]]; then
+            echo "::error::ALIBABACLOUD_ROLE_ARN must be a RAM role ARN (acs:ram::<account-id>:role/<role-name>)."
+            exit 1
+          fi
+          role_account_id="${BASH_REMATCH[1]}"
+          if [[ ! "$OIDC_PROVIDER_ARN" =~ ^acs:ram::([0-9]{12,20}):oidc-provider/[^/]+$ ]]; then
+            echo "::error::ALIBABACLOUD_OIDC_PROVIDER_ARN must be an OIDC provider ARN (acs:ram::<account-id>:oidc-provider/<provider-name>)."
+            exit 1
+          fi
+          provider_account_id="${BASH_REMATCH[1]}"
+          if [[ "$role_account_id" != "$provider_account_id" ]]; then
+            echo "::error::The Alibaba Cloud International RAM role and OIDC provider ARNs must belong to the same account."
+            exit 1
+          fi
+
+      - name: Configure Alibaba Cloud International credentials with GitHub OIDC
+        if: env.PLATFORM == 'alibabacloud' || env.PLATFORM == 'all'
+        uses: aliyun/configure-aliyun-credentials-action@1e5248c8d5d93a8781ac344a68e19a43341e79e6 # v1.1.0
+        with:
+          role-to-assume: ${{ vars.ALIBABACLOUD_ROLE_ARN || vars.ALIBABA_CLOUD_ROLE_ARN }}
+          oidc-provider-arn: ${{ vars.ALIBABACLOUD_OIDC_PROVIDER_ARN || vars.ALIBABA_CLOUD_OIDC_PROVIDER_ARN }}
+          role-session-name: MarketplaceOfferCodesMatrix-${{ github.run_id }}
+          audience: sts.aliyuncs.com
+
+      - name: Generate offer-code matrix
+        run: |
+          set -uo pipefail
+          mkdir -p "$MATRIX_DIR"
+
+          case "$PLATFORM" in
+            all) platforms=(aws aliyun alibabacloud) ;;
+            aws|aliyun|alibabacloud) platforms=("$PLATFORM") ;;
+            *) echo "::error::Unsupported platform: $PLATFORM"; exit 2 ;;
+          esac
+          printf '%s\n' "${platforms[@]}" > "$MATRIX_DIR/platforms.txt"
+
+          status=0
+          for current in "${platforms[@]}"; do
+            echo "Generating matrix for ${current}..."
+            if ! mk offer-codes gen \
+              --platform "$current" \
+              --output "$MATRIX_FILE" \
+              --json > "$MATRIX_DIR/generation-${current}.json"; then
+              echo "::error::offer-codes generation failed for ${current}; see the job log."
+              status=1
+            fi
+          done
+
+          if [[ -f "$MATRIX_FILE" ]]; then
+            if ! mk offer-codes verify --offer "$MATRIX_FILE" | tee -a "$GITHUB_STEP_SUMMARY"; then
+              echo "::error::Generated matrix failed offer-codes verification."
+              status=1
+            fi
+          else
+            echo "::error::No matrix.json was generated."
+            status=1
+          fi
+
+          exit "$status"
+
+      - name: Summarize generation results
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          directory = Path(os.environ["MATRIX_DIR"])
+          platforms_file = directory / "platforms.txt"
+          platforms = (
+              platforms_file.read_text(encoding="utf-8").split()
+              if platforms_file.is_file()
+              else []
+          )
+
+          rows = []
+          for platform in platforms:
+              path = directory / f"generation-{platform}.json"
+              try:
+                  report = json.loads(path.read_text(encoding="utf-8"))
+              except (OSError, ValueError):
+                  rows.append((platform, "failed", "-", "-", "-", "-"))
+                  continue
+              status = "ok" if report.get("written") else "not written"
+              rows.append((
+                  platform,
+                  status,
+                  report.get("checked", "-"),
+                  report.get("matched", "-"),
+                  len(report.get("unresolved", [])),
+                  "yes" if report.get("written") else "no",
+              ))
+
+          lines = [
+              "### Offer-code matrix generation",
+              "",
+              "| Platform | Status | Checked | Matched | Unresolved | Written |",
+              "| --- | --- | --- | --- | --- | --- |",
+          ]
+          lines.extend(
+              "| " + " | ".join(str(value) for value in row) + " |"
+              for row in rows
+          )
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("\n".join(lines) + "\n")
+          PY
+
+      - name: Upload offer-code matrix
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: offer-codes-matrix
+          path: ${{ env.MATRIX_DIR }}
+          retention-days: 7
+          if-no-files-found: warn

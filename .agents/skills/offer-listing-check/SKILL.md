@@ -26,7 +26,7 @@ platform and at least one application or product URL.
 | Input | Required | Values | Default |
 | --- | --- | --- | --- |
 | `platforms` | yes | Platform keys from `config/marketplace.json`, e.g. `aws,aliyun,azure` | none |
-| `apps` | one of `apps`/`urls` | Application ids from `data/offer-codes/matrix.json`, e.g. `odoo,wordpress` | none |
+| `apps` | one of `apps`/`urls` | Application ids from the configured offer-codes artifact, e.g. `odoo,wordpress` | none |
 | `urls` | one of `apps`/`urls` | Public product URLs paired with `platforms` order | none |
 | `checks` | no | Subset of `codes,status,versions,content` | `codes,status` |
 | `backend` | no | `false` only | `false` |
@@ -54,14 +54,17 @@ Resolution rules:
 - When editing this skill or its references, run
   `python3 ci/scripts/validate_marketplace_ops_skill.py`. It must pass before
   the change is considered valid.
-- Read `config/marketplace.json` and `data/offer-codes/matrix.json` once per
-  run. Do not cache them across runs.
+- Read `config/marketplace.json` and the `sources.offer-codes` artifact URL in
+  `config/app.json` once per run. Do not cache them across runs.
+- For an explicitly requested local test, use `data/.work/offer-codes/matrix.json`;
+  do not generate it as part of this read-only skill. An unavailable artifact is
+  not proof that an application has no listing.
 
 ## Procedure
 
 1. **Resolve scope.** Validate inputs. Build the target list:
    `platform -> application -> code(s) -> listing URL`. Use the platform
-   `urlTemplate` and `variant` labels from `data/offer-codes/matrix.json`.
+   `urlTemplate` and `variant` labels from the configured offer-codes artifact.
    Applications without a code on a selected platform are reported as
    `no offer code`, not as missing products.
 2. **Run local checks first.** `codes` is local-only unless a conflict needs
@@ -101,8 +104,8 @@ Resolution rules:
   current platform-side evidence.
 - Do not compare versions when either side is missing, ambiguous, or uses an
   incompatible scheme; mark `unverified`.
-- If `config/marketplace.json`, `data/offer-codes/matrix.json`, or the version
-  baseline cannot be read, report the blocker instead of guessing.
+- If `config/marketplace.json`, the configured offer-codes artifact, or the
+  version baseline cannot be read, report the blocker instead of guessing.
 
 ## Report
 

@@ -2,6 +2,7 @@
   "sources": {
     "catalog": "https://artifact.websoft9.com/appstore/release/catalog/product_en.json",
     "versions": "https://artifact.websoft9.com/appstore/dev/library/apps-verson.json",
-    "category​": "https://artifact.websoft9.com/appstore/release/catalog/catalog_en.json"
+    "category​": "https://artifact.websoft9.com/appstore/release/catalog/catalog_en.json",
+    "offer-codes": "https://artifact.websoft9.com/cloud_data/offer.json"
   }
 }

@@ -28,6 +28,7 @@ SCHEMA = {
     "summary": {"type": "Symbol", "localized": True},
     "hasenterprise": {"type": "Boolean", "localized": False},
     "other": {"type": "Symbol", "localized": False},
+    "description": {"type": "Text", "localized": True},
 }
 ENTRY = {
     "sys": {"id": "entry-1", "version": 3},
@@ -61,6 +62,35 @@ RELATED_PRODUCTS = [
 
 
 class BuildChangesTests(unittest.TestCase):
+    def test_description_preserves_markdown_and_other_locales(self) -> None:
+        markdown = "\n# Heading\n\nHard break  \n```sh\necho hello\n```\n"
+        for field_id in ("description", "Description"):
+            with self.subTest(field_id=field_id):
+                schema = {field_id: {"type": "Text", "localized": True}}
+                original = {"fields": {field_id: {"en-US": "Old", "zh-CN": "保留"}, "other": "keep"}}
+                fields, changed, skipped, unchanged = cma.build_changes(
+                    {"id": "wordpress", "description": markdown}, original, schema,
+                )
+                self.assertEqual(changed, ["description"])
+                self.assertEqual(fields[field_id], {"en-US": markdown, "zh-CN": "保留"})
+                self.assertEqual(fields["other"], "keep")
+                self.assertEqual(skipped, [])
+                diff = cma.describe_changes(original, fields, schema, changed, locale="en-US")
+                self.assertEqual(diff[0]["after"], {"present": True, "value": markdown})
+
+    def test_description_empty_values_skip_unless_explicitly_cleared(self) -> None:
+        original = {"fields": {"description": {"en-US": "# Keep", "zh-CN": "保留"}}}
+        for value in (None, "", " \n"):
+            with self.subTest(value=value):
+                item = {"id": "wordpress", "description": value}
+                fields, changed, skipped, _ = cma.build_changes(item, original, SCHEMA)
+                self.assertEqual(fields, original["fields"])
+                self.assertEqual(changed, [])
+                self.assertEqual(skipped, ["description"])
+                fields, changed, _, _ = cma.build_changes(item, original, SCHEMA, clear=True)
+                self.assertEqual(changed, ["description"])
+                self.assertEqual(fields["description"], {"en-US": "", "zh-CN": "保留"})
+
     def test_merges_only_target_locale_and_preserves_other_fields(self) -> None:
         fields, changed, skipped, unchanged = cma.build_changes(
             ITEM, ENTRY, SCHEMA, related_app_ids=RELATED_APP_IDS,
@@ -173,6 +203,14 @@ class InputTests(unittest.TestCase):
         self.assertEqual(order, ["wordpress"])
         self.assertIn("offerCodes", by_id["wordpress"])
 
+    def test_pull_asset_metadata_is_ignored_by_push(self) -> None:
+        self.write({"items": [{**ITEM, "logo": "https://example.test/logo.png",
+                                "screenshots": ["https://example.test/screenshot.png"]}]})
+        by_id, order = cma.load_input(str(self.path))
+        self.assertEqual(order, ["wordpress"])
+        self.assertIn("logo", by_id["wordpress"])
+        self.assertIn("screenshots", by_id["wordpress"])
+
     def test_duplicate_and_missing_ids_fail(self) -> None:
         self.write({"items": [ITEM, ITEM]})
         with self.assertRaisesRegex(contentful.ContentfulError, "duplicate"):
@@ -183,6 +221,30 @@ class InputTests(unittest.TestCase):
 
 
 class PushTests(unittest.TestCase):
+    def test_description_dry_run_and_draft_write_preserve_source(self) -> None:
+        markdown = "\n# Heading\n\n" + "Long Markdown " * 100 + "  \n```sh\necho hello\n```\n"
+        self.path.write_text(json.dumps({"items": [{"id": "wordpress", "description": markdown}]}))
+        result = self.run_push(dry_run=True, field_names={"description"})
+        self.assertEqual(result["errors"], [])
+        self.assertEqual(result["changes"][0]["fields"], [{
+            "field": "description", "before": {"present": False, "value": None},
+            "after": {"present": True, "value": markdown},
+        }])
+        self.update.assert_not_called()
+        self.publish.assert_not_called()
+        result = self.run_push()
+        self.assertEqual(result["errors"], [])
+        self.assertEqual(self.update.call_args.kwargs["fields"]["description"], {"en-US": markdown})
+        self.assertEqual(self.update.call_args.kwargs["version"], 3)
+        self.publish.assert_not_called()
+
+    def test_invalid_description_stops_before_api_access(self) -> None:
+        self.path.write_text(json.dumps({"items": [{"id": "wordpress", "description": {"bad": "shape"}}]}))
+        with self.assertRaisesRegex(contentful.ContentfulError, "local push validation failed"):
+            self.run_push(dry_run=True)
+        self.schema.assert_not_called()
+        self.update.assert_not_called()
+
     def test_local_validation_stops_before_api_for_dry_run_and_write(self) -> None:
         item = {**ITEM, "summary": "word " * 11}
         self.path.write_text(json.dumps({"items": [item]}), encoding="utf-8")
@@ -405,7 +467,7 @@ class PushCliTests(unittest.TestCase):
              mock.patch.object(cma, "push", return_value=summary) as push:
             result = runner.invoke(
                 cli,
-                ["catalog", "push", "--space-id", "space", "--token", "secret", "--no-progress"],
+                ["catalog", "push", "--space-id", "space", "--token", "secret", "--apply", "--no-progress"],
             )
         self.assertEqual(result.exit_code, 0, result.stderr)
         self.assertEqual(push.call_args.kwargs["input_path"], "/tmp/example-catalog/catalog.json")
@@ -418,7 +480,7 @@ class PushCliTests(unittest.TestCase):
              mock.patch.object(cma, "push", return_value=summary) as push:
             result = runner.invoke(
                 cli,
-                ["catalog", "push", "--space-id", "space", "--no-progress"],
+                ["catalog", "push", "--space-id", "space", "--apply", "--no-progress"],
             )
         self.assertEqual(result.exit_code, 0, result.stderr)
         self.assertEqual(push.call_args.kwargs["token"], "secret-token")
@@ -431,7 +493,7 @@ class PushCliTests(unittest.TestCase):
             result = runner.invoke(
                 cli,
                 ["catalog", "push", "--space-id", "space", "--token", "secret",
-                 "--fields", "summary,keywords", "--no-progress"],
+                 "--fields", "summary,keywords", "--apply", "--no-progress"],
             )
         self.assertEqual(result.exit_code, 0, result.stderr)
         self.assertEqual(push.call_args.kwargs["field_names"], {"summary", "keywords"})
@@ -439,7 +501,7 @@ class PushCliTests(unittest.TestCase):
         result = runner.invoke(
             cli,
             ["catalog", "push", "--space-id", "space", "--token", "secret",
-             "--fields", "tags", "--no-progress"],
+             "--fields", "tags", "--apply", "--no-progress"],
         )
         self.assertNotEqual(result.exit_code, 0)
         self.assertIn("unsupported push field", result.stderr)
@@ -492,8 +554,18 @@ class PushCliTests(unittest.TestCase):
         self.assertIn("token", (result.stderr or result.stdout).lower())
         result = runner.invoke(cli, ["catalog", "push", "--help"])
         self.assertEqual(result.exit_code, 0)
-        for option in ("--input", "--apps", "--fields", "--dry-run", "--publish", "--clear", "--json"):
+        for option in ("--input", "--apps", "--fields", "--dry-run", "--apply", "--publish", "--clear", "--json"):
             self.assertIn(option, result.output)
+
+    def test_write_requires_apply_and_apply_cannot_be_dry_run(self) -> None:
+        runner = separated_runner()
+        common = ["catalog", "push", "--space-id", "space", "--token", "secret", "--no-progress"]
+        without_apply = runner.invoke(cli, common)
+        self.assertNotEqual(without_apply.exit_code, 0)
+        self.assertIn("require --apply", without_apply.stderr)
+        contradictory = runner.invoke(cli, common + ["--apply", "--dry-run"])
+        self.assertNotEqual(contradictory.exit_code, 0)
+        self.assertIn("cannot be combined", contradictory.stderr)
 
 
 if __name__ == "__main__":

@@ -66,6 +66,6 @@ checks did not already fetch that URL.
 ## Do not
 
 - Do not verify whether a code still exists; that is `status`.
-- Do not edit `matrix.json` or anything under `data/offer-codes/`.
+- Do not edit `matrix.json` or anything under `data/.work/offer-codes/`.
 - Do not treat an absent code as evidence of delisting or of a missing product.
 - Do not merge two codes into one row, even when they look like the same plan.

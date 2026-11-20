@@ -46,6 +46,40 @@ class CatalogApplyTests(unittest.TestCase):
         self.assertEqual(Path(result["backup"]).read_bytes(), original)
         self.assertEqual(json.loads(self.output.read_text()), data)
 
+    def test_description_can_be_added_without_altering_markdown_or_other_fields(self) -> None:
+        original = self.output.read_bytes()
+        data = copy.deepcopy(self.before)
+        markdown = "\n# Heading\n\nHard break  \n```sh\necho hello\n```\n"
+        data["items"][0]["description"] = markdown
+        self.write(self.candidate, data)
+        result = catalog_apply.apply(self.candidate, self.baseline, self.output,
+                                     app_ids=("odoo",), fields=("description",))
+        self.assertEqual(result["changed"], {"odoo": ["description"]})
+        self.assertEqual(Path(result["backup"]).read_bytes(), original)
+        self.assertEqual(json.loads(self.output.read_text()), data)
+
+    def test_description_can_be_generated_from_null(self) -> None:
+        self.before["items"][0]["description"] = None
+        self.write(self.output, self.before)
+        self.write(self.baseline, self.before)
+        data = copy.deepcopy(self.before)
+        data["items"][0]["description"] = "An application that connects teams and their workflows."
+        self.write(self.candidate, data)
+        result = catalog_apply.apply(self.candidate, self.baseline, self.output,
+                                     app_ids=("odoo",), fields=("description",))
+        self.assertEqual(result["changed"], {"odoo": ["description"]})
+        self.assertEqual(json.loads(self.output.read_text()), data)
+
+    def test_overlong_description_cannot_be_committed(self) -> None:
+        original = self.output.read_bytes()
+        data = copy.deepcopy(self.before)
+        data["items"][0]["description"] = "word " * 151
+        self.write(self.candidate, data)
+        with self.assertRaisesRegex(ValueError, "maximum 150"):
+            catalog_apply.apply(self.candidate, self.baseline, self.output,
+                                app_ids=("odoo",), fields=("description",))
+        self.assertEqual(self.output.read_bytes(), original)
+
     def test_skip_invalid_restores_app_and_validates_only_survivors(self) -> None:
         self.before["items"][1]["summary"] = None
         self.write(self.output, self.before)

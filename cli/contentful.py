@@ -14,7 +14,7 @@ from typing import Any, Callable
 from .marketplace import load_json
 
 DEFAULT_API_URL = "https://cdn.contentful.com"
-DEFAULT_FIELDS = ("trademark", "overview", "keywords", "usecases", "relatedApps", "summary", "hasenterprise")
+DEFAULT_FIELDS = ("trademark", "overview", "keywords", "usecases", "relatedApps", "summary", "hasenterprise", "description")
 USER_AGENT = "Websoft9-manufacture/1.0"
 Progress = Callable[[str], None]
 

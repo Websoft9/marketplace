@@ -22,11 +22,13 @@ FIELDS = (
     "relatedApps",
     "summary",
     "hasenterprise",
+    "description",
 )
 GENERATED_FIELDS = ("overview", "keywords", "usecases", "relatedApps", "summary", "hasenterprise")
 
 MAX_OVERVIEW_CHARS = 350
 MAX_SUMMARY_WORDS = 10
+MAX_DESCRIPTION_WORDS = 150
 MAX_USECASES = 10
 MAX_USECASE_WORDS = 4
 MAX_RELATED_APPS = 8
@@ -208,6 +210,11 @@ def _check_generated(item: dict[str, Any], name: str, issues: list[dict[str, str
     """Generation-only format rules; role, evidence and relationships stay semantic."""
     value = item.get(name)
     app_id = item["id"]
+    if name == "description" and isinstance(value, str):
+        words = value.split()
+        if len(words) > MAX_DESCRIPTION_WORDS:
+            _issue(issues, "error", app_id, name,
+                   f"has {len(words)} words, maximum {MAX_DESCRIPTION_WORDS}")
     if name in {"keywords", "usecases", "overview", "summary"}:
         texts = value if isinstance(value, list) else [value]
         trademark = item.get("trademark")
@@ -262,6 +269,13 @@ def _check_field(
     elif name == "hasenterprise":
         if not isinstance(value, bool):
             _issue(issues, "error", app_id, name, "must be a JSON Boolean")
+    elif name == "description":
+        # Markdown whitespace (including trailing spaces and final newlines)
+        # is meaningful. Validate its type without normalizing the source.
+        if not isinstance(value, str):
+            _issue(issues, "error", app_id, name, "must be a string")
+        elif not value.strip():
+            _issue(issues, "error", app_id, name, "must not be empty")
     elif name == "trademark":
         _check_string(app_id, name, value, issues)
 

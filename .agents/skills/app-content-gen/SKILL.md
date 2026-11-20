@@ -1,6 +1,6 @@
 ---
 name: app-content-gen
-description: Use when refreshing or improving English application metadata in the Contentful catalog, including product summaries and overviews, search keywords, use cases, complementary app relationships, or commercial-edition facts. Gather official evidence, generate selected fields, and safely stage local changes through the CLI. Also supports pull-only requests. Does not push to Contentful, draft full marketplace listings, or check marketplace status and versions.
+description: Use when refreshing or improving English application metadata in the Contentful catalog, including Markdown descriptions, product summaries and overviews, search keywords, use cases, complementary app relationships, or commercial-edition facts. Gather official evidence, generate selected fields, and safely stage local changes through the CLI. Also supports pull-only requests. Does not push to Contentful, draft full marketplace listings, or check marketplace status and versions.
 ---
 
 # Application Content Gen
@@ -36,6 +36,7 @@ generate every field.
 | --- | --- |
 | Improve the English product introduction / "优化 Odoo 的英文产品介绍" | `summary,overview` |
 | Rewrite the short tagline / "重写 Odoo 的一句话简介" | `summary` |
+| Write or improve Description / "补充 Odoo 的 Description 功能描述" | `description`; feature-focused Markdown, target 80–120 words and at most 150 words, may be created when missing or null |
 | Improve buyer search keywords / "改善 WordPress 的搜索关键词" | `keywords` |
 | Add concrete use cases / "补充 WordPress 的使用场景" | `usecases` |
 | Verify current positioning and update copy / "核实 n8n 的当前定位，更新产品介绍" | `summary,overview`, based on current official evidence |
@@ -60,7 +61,7 @@ refresh or generation write; report findings without changing the catalog.
 | Input | Required | Values |
 | --- | --- | --- |
 | `apps` | yes | Comma-separated ids such as `odoo,wordpress`, or `all`; may be resolved from explicitly named products in the request |
-| `fields` | no | Comma-separated catalog fields: `keywords`, `usecases`, `relatedApps`, `overview`, `summary`, `hasenterprise`; may be resolved from explicit natural-language generation intent |
+| `fields` | no | Comma-separated catalog fields: `keywords`, `usecases`, `relatedApps`, `overview`, `summary`, `description`, `hasenterprise`; may be resolved from explicit natural-language generation intent |
 | `refresh` | no | `true` forces a fresh pull of the target applications before generation; default `false` |
 | `batch-size` | no | Applications per generation batch; default `20` |
 
@@ -114,6 +115,24 @@ loading this skill does not automatically load supporting files.
 If role classification is uncertain, inspect the applicable category sections
 before writing; do not omit a cross-field exception merely because `relatedApps`
 was not selected. References guide selected fields only, never expand scope.
+
+## Copy hierarchy
+
+When generating more than one of `summary`, `overview` and `description`, make
+them progressively more informative rather than paraphrasing the same sentence:
+
+- `summary`: a compact product identifier and core value, targeting 5–10 words.
+- `overview`: a concise explanation of product category, purpose and a key
+  capability, targeting 20–40 words.
+- `description`: a substantive feature-led explanation of capabilities,
+  workflows and problems solved, targeting 80–120 words, with a hard maximum
+  of 150 words.
+
+The target ranges are editorial guidance, not new CLI minimums. Do not pad copy
+to hit a target; when a field is unusually short, confirm that it still conveys
+its intended layer and record a justified exception if needed. Keep the existing
+mechanical constraints (including summary's 10-word maximum, overview's
+350-character maximum and description's Markdown-source token cap).
 
 ## Preflight
 
@@ -273,7 +292,9 @@ Comparison rules:
 
 - Include every actual changed field for every successful app. Do not omit or
   silently truncate values needed for the decision. Preserve complete text for
-  `overview` and `summary`; render arrays as JSON so additions, removals and
+  `overview`, `summary` and `description`; show Markdown description source in
+  safely fenced code blocks (not rendered Markdown), preserving whitespace and
+  newlines. Render arrays as JSON so additions, removals and
   reordering are visible.
 - Distinguish `<missing>` (field absent), `null`, `""` and `[]` from each other.
   Do not normalize them into an empty cell or imply that a displayed empty value
@@ -327,7 +348,9 @@ After presenting the comparison:
 ## Stop without writing
 
 - `catalog.json` is missing or malformed and cannot be pulled.
-- A requested field other than `overview` or `summary` is absent from an item.
+- A requested field other than `overview`, `summary` or `description` is absent
+  from an item. These three text fields may be generated from missing or null
+  values when explicitly selected; do not broaden the field scope.
 - Evidence is insufficient for an application: skip that application, report
   why, and continue with the rest.
 - A value still violates the rules after one corrective pass: drop that

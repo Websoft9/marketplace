@@ -17,8 +17,8 @@ from .marketplace import CATALOG_URL
 from . import catalog_verify
 
 DEFAULT_API_URL = "https://api.contentful.com"
-ALLOWED_INPUT_FIELDS = ("trademark", "overview", "keywords", "usecases", "relatedApps", "summary", "hasenterprise")
-IGNORED_INPUT_FIELDS = ("offerCodes",)
+ALLOWED_INPUT_FIELDS = ("trademark", "overview", "keywords", "usecases", "relatedApps", "summary", "hasenterprise", "description")
+IGNORED_INPUT_FIELDS = ("offerCodes", "logo", "screenshots")
 Progress = Callable[[str], None]
 
 

@@ -1,8 +1,13 @@
 # Offer codes dataset
 
-`data/offer-codes/*.json` is the repository source of truth for per-platform
-marketplace product codes. `mk catalog pull` and `mk versions` read it, so a
-malformed entry silently changes those outputs.
+`mk offer-codes gen` stages a per-platform marketplace product matrix under
+`data/.work/offer-codes/` by default. This directory is ignored by Git and is
+not the consumer-facing source. Consumers such as `mk catalog pull`, `mk
+versions`, `offer-list.yml`, and the marketplace site read the published JSON
+artifact configured by `sources.offer-codes` in `config/app.json`. The current
+configured artifact is `https://artifact.websoft9.com/cloud_data/offer.json`.
+The matrix workflow currently uploads a GitHub Actions artifact; publishing the
+generated matrix to the configured URL is a separate workflow responsibility.
 
 This page covers maintenance only. How consumers use the labels is out of scope.
 
@@ -10,7 +15,7 @@ This page covers maintenance only. How consumers use the labels is out of scope.
 
 `data/samples/matrix-history.json` is a historical format example, not a source
 for generation. `mk offer-codes gen` writes the same top-level array and entry
-shape to `data/offer-codes/matrix.json`; it does not add evidence fields or
+shape to its local output; it does not add evidence fields or
 `variants` to generated entries. Mechanical validation uses the existing
 `offer_codes.verify` contract, not a separate schema.
 
@@ -423,8 +428,8 @@ mk offer-codes replace --from old-app --to new-app --platform aws --code CODE
 
 Changed files are rewritten with the repository's canonical JSON formatting
 (4-space indent, trailing newline), through a same-directory temporary file and
-`os.replace`, preserving the original file mode. `data/offer-codes/matrix.json`
-round-trips unchanged, so a move produces a minimal diff.
+`os.replace`, preserving the original file mode. The generated matrix remains
+under the ignored `data/.work/` work area and is not committed as repository data.
 
 All three edit commands hold a directory-level `.offer-codes.lock` from reading
 through writing; file and directory overrides use the same lock. They also
@@ -438,9 +443,12 @@ cross-file filesystem transaction: concurrent readers may see an intermediate
 state, and abrupt process termination or filesystem failure can interrupt
 rollback. Snapshot checks also cannot lock out arbitrary external editors.
 
-The command only changes repository data. Publish the new application's listing
-content separately (for AWS, `mk offer preflight`, `mk offer plan` and
-`mk offer apply`), then run `mk offer-codes verify`.
+The edit commands only change the ignored local runtime matrix. Their changes
+are not durable repository configuration and a later full generation can replace
+the selected platform mappings. Publish listing content separately (for AWS,
+`mk offer preflight`, `mk offer plan` and `mk offer apply`); run
+`mk offer-codes verify --offer data/.work/offer-codes/matrix.json` to validate
+the current local matrix.
 Use `mk list` to view application links; it only prints to standard output and
 does not generate or update a README section.
 
@@ -470,4 +478,10 @@ Cloud endpoint) are `not_found`. Throttling, authorization failures, generic
 unsuccessful replies and unrecognized payloads are `error`, not delisting
 evidence. The strict success path exits zero when all selected codes exist.
 
-The scheduled workflow is `.github/workflows/offer-listing-check.yml`.
+This command is an ad hoc check against the locally generated matrix. The
+scheduled listing-check workflow was removed because an ignored runtime
+artifact is not a persistent expected-code baseline. A fresh matrix contains
+currently public products only, so regenerating immediately before the check
+cannot reveal codes that have disappeared or become non-public. To make that
+kind of historical comparison reliable, a separate persistent baseline would
+be required.

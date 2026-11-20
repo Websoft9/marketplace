@@ -147,13 +147,13 @@ update". Use the user's language.
 For drafts only:
 
 ```sh
-make cli ARGS="catalog push --input <catalog> --apps <apps> --fields <resolved-fields> --json --no-progress" > <run>/push-result.json
+make cli ARGS="catalog push --input <catalog> --apps <apps> --fields <resolved-fields> --apply --json --no-progress" > <run>/push-result.json
 ```
 
 For update and publish in one step:
 
 ```sh
-make cli ARGS="catalog push --input <catalog> --apps <apps> --fields <resolved-fields> --publish --json --no-progress" > <run>/push-result.json
+make cli ARGS="catalog push --input <catalog> --apps <apps> --fields <resolved-fields> --apply --publish --json --no-progress" > <run>/push-result.json
 ```
 
 The command updates only values that differ from Contentful, skips empty values

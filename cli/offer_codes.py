@@ -1,10 +1,9 @@
-"""Mechanical validation for the local marketplace offer-codes dataset.
+"""Mechanical validation for the locally generated marketplace offer-code matrix.
 
-The offer-codes source (``data/offer-codes/`` by default) is the repository
-source of truth for per-platform marketplace product codes. ``mk catalog pull``
-and ``mk versions`` read it, so a malformed entry silently changes those
-outputs. This module checks the structure that all readers assume and the
-cross-entry rules (unique ids, one owner per code) that no reader enforces.
+The generated matrix lives under ``data/.work/offer-codes/`` by default and is
+used as a runtime input by commands that need application-to-product mappings.
+This module checks the structure that those readers assume and cross-entry
+rules (unique ids, one owner per code) that no reader enforces.
 """
 
 from __future__ import annotations

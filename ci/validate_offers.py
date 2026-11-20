@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from cli.offer import load_special_cases
+from cli.offer_assets import validate_assets_template
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data" / "listing"
@@ -63,61 +64,6 @@ def validate_template(template: dict) -> None:
         placeholders(section.get("text", ""), "previewOnlySections", namespaces)
 
 
-def validate_assets_template(template: dict) -> None:
-    if template.get("templateId") != "aws-ami-assets-v1":
-        raise ValueError("unsupported asset template id")
-    if template.get("schemaVersion") != 1:
-        raise ValueError("unsupported asset template schemaVersion")
-    namespaces = template.get("namespaces")
-    if not isinstance(namespaces, list) or not namespaces or any(
-        not isinstance(namespace, str) or not namespace for namespace in namespaces
-    ):
-        raise ValueError("asset template.namespaces must contain at least one namespace")
-    namespaces = set(namespaces)
-    if "catalog" not in namespaces:
-        raise ValueError("asset template requires the catalog namespace")
-    target = template.get("target") or {}
-    if target.get("platform") != "aws" or target.get("entityType") != "AmiProduct@1.0":
-        raise ValueError("invalid asset template AWS target")
-    if target.get("changeType") != "UpdateInformation":
-        raise ValueError("invalid asset template change type")
-    assets = template.get("assets")
-    if not isinstance(assets, dict) or set(assets) - {"LogoUrl", "PromotionalMedia"}:
-        raise ValueError("invalid asset template assets")
-    logo = assets.get("LogoUrl")
-    if logo is not None:
-        if (
-            not isinstance(logo, dict)
-            or set(logo) - {"source", "optional"}
-            or not isinstance(logo.get("source"), str)
-        ):
-            raise ValueError("invalid asset template LogoUrl")
-        placeholders(logo["source"], "assets.LogoUrl", namespaces)
-        if "optional" in logo and not isinstance(logo["optional"], bool):
-            raise ValueError("assets.LogoUrl.optional must be a boolean")
-    media = assets.get("PromotionalMedia")
-    if not isinstance(media, dict):
-        raise ValueError("asset template PromotionalMedia must be an object")
-    if set(media) - {"source", "maxItems", "type", "title", "description"}:
-        raise ValueError("invalid asset template PromotionalMedia keys")
-    if not isinstance(media.get("source"), str) or not isinstance(media.get("title"), str):
-        raise ValueError("asset template PromotionalMedia source/title must be text")
-    max_items = media.get("maxItems")
-    if not isinstance(max_items, int) or isinstance(max_items, bool) or not 1 <= max_items <= 5:
-        raise ValueError("PromotionalMedia.maxItems must be 1–5")
-    if media.get("type") != "Image":
-        raise ValueError("PromotionalMedia.type must be Image")
-    if not media["title"].strip():
-        raise ValueError("PromotionalMedia.title must be non-empty")
-    if not isinstance(media.get("description", ""), str):
-        raise ValueError("PromotionalMedia.description must be text")
-    item_namespaces = namespaces | {"index", "key"}
-    placeholders(media["source"], "assets.PromotionalMedia.source", item_namespaces)
-    placeholders(media["title"], "assets.PromotionalMedia.title", item_namespaces)
-    if media.get("description"):
-        placeholders(media["description"], "assets.PromotionalMedia.description", item_namespaces)
-
-
 def validate_vendor(vendor: dict) -> None:
     missing = [field for field in VENDOR_FIELDS if not isinstance(vendor.get(field), str) or not vendor[field].strip()]
     if missing:
@@ -137,6 +83,11 @@ def main() -> int:
         )
         vendor = json.loads((DATA / "vendor.json").read_text(encoding="utf-8"))
         validate_template(template)
+        if (
+            asset_template.get("templateId") != "aws-ami-assets-v2"
+            or asset_template.get("schemaVersion") != 2
+        ):
+            raise ValueError("asset template must use aws-ami-assets-v2 (schemaVersion 2)")
         validate_assets_template(asset_template)
         validate_vendor(vendor)
         load_special_cases(DATA / "app-special-cases.json")

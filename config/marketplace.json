@@ -1,8 +1,5 @@
 {
   "version": 1,
-  "sources": {
-    "offer": "data/offer-codes"
-  },
   "platforms": [
     {
       "key": "azure",

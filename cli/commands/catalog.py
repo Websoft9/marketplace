@@ -83,7 +83,7 @@ def catalog_command() -> None:
               help="Contentful locale for the English fields.")
 @click.option("--id-field", default="key", show_default=True,
               help="Contentful field containing the application id (for example wordpress).")
-@click.option("--fields", "field_list", default="trademark,overview,keywords,usecases,relatedApps,summary,hasenterprise", show_default=True,
+@click.option("--fields", "field_list", default=",".join(contentful.DEFAULT_FIELDS), show_default=True,
               help="Comma-separated Contentful field ids to include.")
 @click.option("--catalog", "catalog_source", default=CATALOG_URL, show_default=True, metavar="SOURCE",
               help="product_en.json URL or local path; only these application ids are returned.")
@@ -225,6 +225,8 @@ def pull_command(
 @click.option("--page-size", type=click.IntRange(1, 1000), default=1000, show_default=True)
 @click.option("--timeout", type=float, default=30, show_default=True)
 @click.option("--dry-run", is_flag=True, help="Show what would change without writing Contentful.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Confirm that changes should be written; required unless --dry-run.")
 @click.option("--publish", is_flag=True, help="Publish each successfully updated entry.")
 @click.option("--clear", is_flag=True,
               help="Write empty strings/arrays instead of skipping empty input values.")
@@ -249,6 +251,7 @@ def push_command(
     page_size: int,
     timeout: float,
     dry_run: bool,
+    apply_changes: bool,
     publish: bool,
     clear: bool,
     allow_missing: bool,
@@ -258,8 +261,8 @@ def push_command(
 ) -> None:
     """Push repository/catalog changes to Contentful drafts (and optionally publish).
 
-    Only trademark, overview, keywords, usecases, relatedApps, summary and
-    hasenterprise are written, and --fields can restrict the push further.
+    Only trademark, overview, keywords, usecases, relatedApps, summary,
+    hasenterprise and description are written; --fields can restrict the push.
     relatedApps Trademarks are resolved to linked
     product entries; non-store and duplicate names are dropped, and other linked
     fields are not pushed. Empty values are skipped unless --clear is used.
@@ -267,6 +270,10 @@ def push_command(
     instead of being overwritten.
     """
     app_ids = _parse_app_ids(app_list)
+    if dry_run and apply_changes:
+        raise click.ClickException("--apply cannot be combined with --dry-run.")
+    if not dry_run and not apply_changes:
+        raise click.ClickException("write operations require --apply; use --dry-run to preview.")
     if app_ids is not None and not app_ids:
         raise click.ClickException("--apps must contain at least one application id.")
     field_names = None if field_list is None else {
@@ -360,7 +367,8 @@ def verify_command(
 
     Checks keywords, usecases, relatedApps, overview, summary and
     hasenterprise for the selected applications. With --baseline, also checks
-    that no other item or field changed.
+    that no other item or field changed. Use --fields description to validate
+    Markdown text without overview length or punctuation restrictions.
     """
     path = input_path or catalog_default_path()
     try:

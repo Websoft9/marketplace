@@ -80,9 +80,9 @@ includes drafts; linked fields may remain as link objects in that mode.
 | `--content-type` | `product` | Content type id |
 | `--locale` | `en-US` | English locale |
 | `--id-field` | `key` | Contentful field containing the app id (`wordpress`) |
-| `--fields` | `trademark,overview,keywords,usecases,relatedApps,summary,hasenterprise` | Requested field ids |
+| `--fields` | `trademark,overview,keywords,usecases,relatedApps,summary,hasenterprise,description` | Requested field ids |
 | `--catalog` | configured `product_en.json` URL | Target application list (URL or local file) |
-| `--offer` | configured `data/offer-codes/` | Offer-codes directory or JSON file used to add per-platform `offerCodes` |
+| `--offer` | `sources.offer-codes` in `config/app.json` | Published offer-codes artifact URL, local JSON file, or directory used to add per-platform `offerCodes` |
 | `--skip-offer-codes` | off | Do not read the offer-codes matrix; the apply workflow resolves codes live |
 | `--apps` | all catalog applications | Comma-separated application ids to export; must exist in the target catalog |
 | `--output` | `data/.work/catalog.json` | JSON destination; `-` means stdout; `MK_CATALOG_DIR` overrides the directory |
@@ -100,9 +100,17 @@ array resolved to each entry's Trademark. Results are filtered to applications
 present in the target catalog, removing self-references and duplicates; use
 `--raw` to keep the unfiltered links.
 `hasenterprise` also matches `hasEnterprise` and `has_enterprise`.
+`description` is the Contentful **Description** Markdown text field (API id
+`description`; field-id matching also accepts `Description`). Default pulls
+include it as the local `description` key. Markdown headings, links, code blocks,
+line breaks and whitespace are preserved as a JSON string without rendering or
+plain-text conversion. An unset value is emitted as `null`.
 `keywords` is the default for search/tag-like metadata; the older `tags` field is
 still available explicitly via `--fields` and also matches `tag`. Use `--fields`
 for any other content-model names.
+
+The default offer-code source is the published artifact URL in
+`config/app.json`; a local `--offer` value can be used to test staged data.
 
 ## Output
 
@@ -134,7 +142,7 @@ pulled order:
   ],
   "source": {
     "catalog": "https://artifact.websoft9.com/appstore/release/catalog/product_en.json",
-    "offer": "data/offer-codes",
+    "offer": "https://artifact.websoft9.com/cloud_data/offer.json",
     "contentful": {
       "api": "https://cdn.contentful.com",
       "spaceId": "...",
@@ -164,10 +172,10 @@ With merge, missing ids from this pull are retained in that array even when an
 old local item remains; recovered ids are removed and unrelated prior missing
 ids are preserved. Item presence alone does not prove a successful refresh.
 
-`offerCodes` maps the local offer-codes source's `productID` values by platform.
-It is copied from the JSON files under `data/offer-codes/` (merged by application
-id, in filename order) when the app id or one of its `applications` matches; apps
-without an offer entry receive `{}`. No remote `matrix.json` is fetched. Array values such as
+`offerCodes` maps the configured offer-codes artifact's `productID` values by platform.
+It is copied from the JSON array returned by the URL (or from local JSON files,
+merged by application id, in filename order) when the app id or one of its
+`applications` matches; apps without an offer entry receive `{}`. Array values such as
 `keywords` and `usecases` are rendered on one line
 (`["open source", "website"]`), while records and objects remain indented.
 Linked entries/assets and RichText documents are converted to readable values;
@@ -184,6 +192,7 @@ mk catalog verify --apps wordpress,odoo --fields summary \
   --baseline /tmp/catalog.before.json
 mk catalog verify --apps wordpress,odoo --fields relatedApps \
   --reference product_en.json
+mk catalog verify --apps wordpress,odoo --fields description
 ```
 
 The baseline form verifies that no other application and no unselected field
@@ -198,6 +207,22 @@ warnings because universal clients and data pipelines can legitimately span
 layers. Summaries that contain `open source`/`open-source` are errors. Add
 `--json` for a machine-readable result. Errors exit non-zero; warnings are
 reported but do not block.
+
+`description` is opt-in for verify/apply; the default verification field list is
+unchanged so older staging files without it remain compatible. Explicit
+verification accepts non-blank Markdown strings without overview length,
+punctuation or surrounding-whitespace restrictions. The `push` profile also
+permits absent/null/empty descriptions, matching push skip/clear behavior.
+`catalog apply --fields description` uses the usual isolation, backup and atomic
+commit protections and does not change Markdown source text.
+With `--profile generated`, descriptions are limited to 150 whitespace-separated
+Markdown-source tokens in total, including optional lists and standalone markup.
+The limit does not apply to pull, existing-content validation or push. Selected
+descriptions may be generated from missing or null values and committed through
+`catalog apply`; the final candidate must contain a non-blank string. The skill
+reviews substantive prose (required), optional lists, app-specific features,
+distinctive capabilities and problems solved. Ecosystem maturity may be described
+qualitatively, without precise popularity metrics such as GitHub star counts.
 
 ### Validation profiles and ownership
 
