@@ -227,6 +227,11 @@ class InternationalCredentialTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "ALIBABA_CLOUD_ACCESS_KEY_ID"):
                 alibabacloud_market._client()
 
+    def test_missing_supplier_config_fails_before_network(self):
+        with mock.patch.object(alibabacloud_market, "STORE_ID", ""):
+            with self.assertRaisesRegex(ValueError, "alibabacloud.supplier.id"):
+                alibabacloud_market.list_products()
+
 
 if __name__ == "__main__":
     unittest.main()

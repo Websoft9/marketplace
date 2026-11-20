@@ -46,7 +46,12 @@
           "label": "阿里云店铺",
           "url": "https://market.aliyun.com/store/228399/index.html"
         }
-      ]
+      ],
+      "supplier": {
+        "id": "228399",
+        "name": "长沙网久软件有限公司",
+        "uid": "1904996544835414"
+      }
     },
     {
       "key": "alibabacloud",
@@ -58,7 +63,11 @@
           "label": "Alibaba Cloud 店铺",
           "url": "https://marketplace.alibabacloud.com/store/2116499.html"
         }
-      ]
+      ],
+      "supplier": {
+        "id": "2116499",
+        "name": "Websoft9"
+      }
     },
     {
       "key": "googlecloud",

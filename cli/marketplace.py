@@ -67,6 +67,11 @@ PLATFORM_URL_TEMPLATES = {
     for item in PLATFORM_CONFIGS
     if item.get("urlTemplate")
 }
+PLATFORM_SUPPLIERS = {
+    str(item["key"]): item["supplier"]
+    for item in ALL_PLATFORM_CONFIGS
+    if isinstance(item.get("supplier"), dict)
+}
 ROUTING = CONFIG["routing"]
 
 @dataclass

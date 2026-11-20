@@ -40,6 +40,16 @@ class ConfigTests(unittest.TestCase):
             for rule in route.get("rules", []):
                 self.assertIn(rule["platform"], all_platforms, source)
 
+        self.assertEqual(app_list.PLATFORM_SUPPLIERS["aliyun"], {
+            "id": "228399",
+            "name": "长沙网久软件有限公司",
+            "uid": "1904996544835414",
+        })
+        self.assertEqual(app_list.PLATFORM_SUPPLIERS["alibabacloud"], {
+            "id": "2116499",
+            "name": "Websoft9",
+        })
+
 
 class LinkTests(unittest.TestCase):
     def test_aliyun_codes_route_to_china_and_international_marketplaces(self) -> None:

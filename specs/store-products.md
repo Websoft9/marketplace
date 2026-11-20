@@ -45,6 +45,10 @@ delisted products. Absence from the result is not proof of delisting.
 | `aliyun` | 长沙网久软件有限公司, store `228399`, supplier UID `1904996544835414` | `DescribeProducts` `Code`, `Name`, `ShortDescription` | Intersection with the supplier's public store image codes and `hiddenForCloudMarket == 0` |
 | `alibabacloud` | Websoft9, store `2116499` | `DescribeProducts` `Code`, `Name`, `ShortDescription` | Intersection with the publisher's public store image codes and `deliveryMethod == Image` |
 
+Platform supplier IDs, names and the Aliyun supplier UID are maintained in
+`config/marketplace.json` under each platform's `supplier` object. The Aliyun and
+Alibaba Cloud International adapters validate that metadata before querying.
+
 AWS `SELF` is a scope, not a seller profile ID. The command does **not** assume
 that arbitrary AWS credentials belong to the configured Websoft9 seller profile.
 Its store metadata therefore uses `id: "SELF"`, `provider: "Authenticated AWS

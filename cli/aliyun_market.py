@@ -9,14 +9,29 @@ from .alibaba_credentials import (
     missing_hint,
     read as read_credentials,
 )
+from .marketplace import PLATFORM_SUPPLIERS
 from .store_models import InventoryError, Product
 
 
-SUPPLIER_NAME = "长沙网久软件有限公司"
-STORE_ID = "228399"
-# Public supplier UID advertised by store 228399, not an access credential.
-SUPPLIER_UID = "1904996544835414"
+_SUPPLIER = PLATFORM_SUPPLIERS.get("aliyun") or {}
+SUPPLIER_NAME = str(_SUPPLIER.get("name") or "")
+STORE_ID = str(_SUPPLIER.get("id") or "")
+# Public supplier UID advertised by the store, not an access credential.
+SUPPLIER_UID = str(_SUPPLIER.get("uid") or "")
 STORE_API = "https://market.aliyun.com/api/ajax/product/queryProducts.json"
+
+
+def _require_supplier():
+    missing = [
+        key for key, value in (
+            ("id", STORE_ID), ("name", SUPPLIER_NAME), ("uid", SUPPLIER_UID),
+        ) if not value
+    ]
+    if missing:
+        raise InventoryError(
+            "config/marketplace.json must define aliyun.supplier."
+            + ", .".join(missing)
+        )
 
 
 def _error_code(error):
@@ -271,6 +286,7 @@ def _list_api_products(timeout, progress):
 
 def list_aliyun_products(*, timeout=30, progress=None):
     """API code/title/summary are authoritative; storefront is only an image/visibility filter."""
+    _require_supplier()
     products = _list_api_products(timeout, progress)
     visible = _visible_product_codes(timeout, progress)
     if visible - {product.code for product in products}:

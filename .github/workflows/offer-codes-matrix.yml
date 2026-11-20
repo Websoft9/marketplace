@@ -1,4 +1,5 @@
 name: Offer Codes Matrix
+run-name: "Offer Codes Matrix - ${{ inputs.platform == 'all' && 'all clouds' || inputs.platform }}"
 
 # Generate the combined offer-code matrix from live public store facts.
 # The generated matrix is kept only as a workflow artifact for now; it is not
@@ -135,10 +136,18 @@ jobs:
           account_id = str(identity.get("AccountId") or "")
           print(f"Aliyun caller account: {account_id}")
           print(f"Aliyun caller ARN: {identity.get('Arn')}")
-          if account_id != "1468494345915897":
+          config = json.load(open("config/marketplace.json", encoding="utf-8"))
+          aliyun = next(
+              (item for item in config.get("platforms", []) if item.get("key") == "aliyun"),
+              {},
+          )
+          expected_account_id = str((aliyun.get("supplier") or {}).get("uid") or "")
+          if not expected_account_id:
+              print("::warning::config/marketplace.json has no aliyun.supplier.uid; skipping account check")
+          elif account_id != expected_account_id:
               print(
                   "::warning::The assumed Aliyun role is not in the known seller account "
-                  "1468494345915897. Verify ALIYUN_ROLE_ARN if DescribeProducts fails."
+                  f"{expected_account_id}. Verify ALIYUN_ROLE_ARN if DescribeProducts fails."
               )
           PY
 
@@ -320,3 +329,41 @@ jobs:
           path: ${{ env.MATRIX_DIR }}
           retention-days: 7
           if-no-files-found: warn
+
+      - name: Publish matrix to Cloudflare R2
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_R2_SECRET_ID: ${{ secrets.CLOUDFLARE_R2_SECRET_ID || vars.CLOUDFLARE_R2_SECRET_ID }}
+          CLOUDFLARE_R2_SECRET_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_KEY || vars.CLOUDFLARE_R2_SECRET_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_SECRET_ID || vars.CLOUDFLARE_R2_SECRET_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_KEY || vars.CLOUDFLARE_R2_SECRET_KEY }}
+          AWS_SESSION_TOKEN: ""
+          AWS_REGION: auto
+          AWS_DEFAULT_REGION: auto
+          AWS_EC2_METADATA_DISABLED: "true"
+        run: |
+          set -euo pipefail
+          unset AWS_SESSION_TOKEN AWS_PROFILE
+          for name in CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_R2_SECRET_ID CLOUDFLARE_R2_SECRET_KEY; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Configure $name as a GitHub Actions secret or variable."
+              exit 1
+            fi
+          done
+          if [[ ! -f "$MATRIX_FILE" ]]; then
+            echo "::error::No matrix.json to publish."
+            exit 1
+          fi
+
+          endpoint="https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          if [[ "$PLATFORM" == "all" ]]; then
+            destination="s3://artifact/cloud_data/matrix/matrix.json"
+          else
+            destination="s3://artifact/cloud_data/matrix/${PLATFORM}/matrix.json"
+          fi
+
+          aws s3 cp "$MATRIX_FILE" "$destination" \
+            --endpoint-url "$endpoint" \
+            --content-type application/json \
+            --cache-control "public, max-age=300"
+          echo "Published $MATRIX_FILE to $destination"

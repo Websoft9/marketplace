@@ -17,10 +17,12 @@ from .alibaba_credentials import (
     missing_hint_international,
     read_international,
 )
+from .marketplace import PLATFORM_SUPPLIERS
 from .store_models import InventoryError, Product
 
-SUPPLIER_NAME = "Websoft9"
-STORE_ID = "2116499"
+_SUPPLIER = PLATFORM_SUPPLIERS.get("alibabacloud") or {}
+SUPPLIER_NAME = str(_SUPPLIER.get("name") or "")
+STORE_ID = str(_SUPPLIER.get("id") or "")
 # International Market endpoints resolve from an overseas region to
 # market.ap-southeast-1.aliyuncs.com. China uses a separate endpoint/account.
 REGION_ID = "ap-southeast-1"
@@ -28,6 +30,18 @@ STORE_URL = f"https://marketplace.alibabacloud.com/store/{STORE_ID}.html"
 STORE_API = "https://marketplace.alibabacloud.com/api/ajax/newCommodityList/queryNewList.json"
 PAGE_SIZE = 50
 STORE_PAGE_SIZE = 20
+
+
+def _require_supplier():
+    missing = [
+        key for key, value in (("id", STORE_ID), ("name", SUPPLIER_NAME))
+        if not value
+    ]
+    if missing:
+        raise InventoryError(
+            "config/marketplace.json must define alibabacloud.supplier."
+            + ", .".join(missing)
+        )
 
 
 def _error_code(error):
@@ -309,6 +323,7 @@ def _visible_products(timeout, progress):
 
 def list_products(*, timeout=30, progress=None):
     """Return API facts for every publicly visible Websoft9 image product."""
+    _require_supplier()
     products = _list_api_products(timeout, progress)
     visible = _visible_products(timeout, progress)
     missing = set(visible) - {product.code for product in products}

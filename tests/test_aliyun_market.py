@@ -210,6 +210,13 @@ class AliyunInventoryTests(unittest.TestCase):
             aliyun_market.list_aliyun_products()
         self.assertNotIn("SECRET", str(error.exception))
 
+    def test_missing_supplier_config_fails_before_network(self):
+        with mock.patch.object(aliyun_market, "SUPPLIER_UID", ""):
+            with self.assertRaisesRegex(ValueError, "aliyun.supplier.uid"):
+                aliyun_market.list_aliyun_products()
+        self.client.do_action_with_exception.assert_not_called()
+        self.opener.assert_not_called()
+
     def test_visible_products_missing_from_supplier_api_block_write(self):
         for updates in ({"SupplierName": "other"}, {"SupplierId": 123},
                         {"DeliveryWay": "人工服务"}):

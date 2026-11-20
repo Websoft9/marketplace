@@ -22,6 +22,7 @@ app2
 
 - [ ] `summary`
 - [ ] `overview`
+- [ ] `description`
 - [ ] `keywords`
 - [ ] `usecases`
 - [ ] `relatedApps`

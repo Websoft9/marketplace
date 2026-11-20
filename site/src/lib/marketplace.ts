@@ -19,12 +19,19 @@ export interface StoreConfig {
   url: string;
 }
 
+interface SupplierConfig {
+  id: string;
+  name: string;
+  uid?: string;
+}
+
 interface PlatformConfig {
   key: string;
   label: string;
   description: string;
   urlTemplate?: string;
   stores?: StoreConfig[];
+  supplier?: SupplierConfig;
   overviewKey?: string;
 }
 

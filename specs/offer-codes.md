@@ -223,8 +223,10 @@ optional lookup/cleanup alias, never a replacement for `code` or identity eviden
   setup as `mk versions`; SDK errors are sanitized to avoid leaking signed
   requests.
 - Scope is the image products of **长沙网久软件有限公司**, public store `228399`,
-  supplier UID `1904996544835414`. The UID is public store metadata, not a
-  credential. This is Aliyun China only, not Alibaba Cloud International.
+  supplier UID `1904996544835414`, maintained under
+  `aliyun.supplier` in `config/marketplace.json`. The UID is public store
+  metadata, not a credential. This is Aliyun China only, not Alibaba Cloud
+  International.
 - The adapter first enumerates Market API `2015-11-01` `DescribeProducts`, using
   the documented `Filter` keys `productType=MIRROR` and
   `aliyunUid=1904996544835414`. The SDK method is `set_Filters`. If the service
@@ -272,7 +274,8 @@ and [official machine-readable metadata](https://api.aliyun.com/meta/v1/products
   `alibabacloud_market.list_products` behind `store.query_platform`. It first
   enumerates the international Market API `2015-11-01` `DescribeProducts`
   (region `ap-southeast-1`, `SearchTerm=Websoft9`, `productType=MIRROR`) and
-  verifies `SupplierName`, `SupplierId` and `DeliveryWay` locally. It then
+  verifies `SupplierName`, `SupplierId` and `DeliveryWay` locally against
+  `alibabacloud.supplier` in `config/marketplace.json`. It then
   enumerates the public Websoft9 store `2116499`, verifies publisher ownership
   and Image delivery, and requires every visible store image to be present in
   the API inventory. A missing API row blocks writing. See

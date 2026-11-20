@@ -1,4 +1,4 @@
-name: Marketplace Stores Check
+name: Offer Listing Check
 
 on:
   schedule:
