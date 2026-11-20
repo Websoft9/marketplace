@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import importlib.util
 import io
 import json
+import os
 import unittest
 from types import SimpleNamespace
 from unittest import mock
@@ -267,6 +269,24 @@ class AliyunInventoryTests(unittest.TestCase):
         self.assertEqual(events, ["api", "store"])
         self.assertEqual(result[0].title, "API title")
         self.assertEqual(result[0].summary, "API description")
+
+
+class AliyunSdkSignerTests(unittest.TestCase):
+    @unittest.skipUnless(importlib.util.find_spec("aliyunsdkcore"), "Aliyun SDK not installed")
+    def test_explicit_sts_credential_wins_over_environment_keys(self):
+        from aliyunsdkcore.auth.signers.sts_token_signer import StsTokenSigner
+
+        with mock.patch.dict("os.environ", {
+            "ALIYUN_ACCESS_KEY_ID": "env-id",
+            "ALIYUN_ACCESS_KEY_SECRET": "env-secret",
+            "ALIYUN_SECURITY_TOKEN": "sts-token",
+        }, clear=True):
+            client = aliyun_market._client()
+            # The temporary hide is scoped to client construction only.
+            self.assertEqual(os.environ["ALIYUN_ACCESS_KEY_ID"], "env-id")
+            self.assertEqual(os.environ["ALIYUN_ACCESS_KEY_SECRET"], "env-secret")
+        self.assertIsInstance(client._signer, StsTokenSigner)
+        self.assertEqual(client._signer._credential.sts_token, "sts-token")
 
 
 class AliyunCredentialTests(unittest.TestCase):

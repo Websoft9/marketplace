@@ -18,7 +18,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from . import offer_codes
-from .alibaba_credentials import missing_hint, read as read_aliyun_credentials
+from .alibaba_credentials import (
+    explicit_credential_environment,
+    missing_hint,
+    read as read_aliyun_credentials,
+)
 
 EXISTS = "exists"
 NOT_FOUND = "not_found"
@@ -135,7 +139,8 @@ class AliyunAdapter(Adapter):
                 sts_access_key_secret=access_secret,
                 sts_token=security_token,
             )
-            client = AcsClient(region_id="cn-hangzhou", credential=credentials)
+            with explicit_credential_environment():
+                client = AcsClient(region_id="cn-hangzhou", credential=credentials)
         else:
             client = AcsClient(access_key, access_secret, "cn-hangzhou")
 

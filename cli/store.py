@@ -55,8 +55,8 @@ def _scope(platform):
     return {
         "id": alibabacloud_market.STORE_ID, "provider": alibabacloud_market.SUPPLIER_NAME,
         "url": alibabacloud_market.STORE_URL,
-        "ownershipEvidence": "publisherId query + productInfo.companyName/shopUrl",
-    }, [alibabacloud_market.STORE_API]
+        "ownershipEvidence": "DescribeProducts SupplierId/SupplierName + storefront companyName/shopUrl",
+    }, ["Market 2015-11-01 DescribeProducts", alibabacloud_market.STORE_API]
 
 
 def query_platform(platform, *, profile=None, visibility="public", progress=None):
@@ -65,7 +65,8 @@ def query_platform(platform, *, profile=None, visibility="public", progress=None
     store, sources = _scope(platform)
     evidence = ("AWS Description.Visibility or AmiProductSummary.Visibility == Public" if platform == "aws"
                 else "DescribeProducts intersection with store images, hiddenForCloudMarket == 0"
-                if platform == "aliyun" else "Image listing returned by the public publisher storefront")
+                if platform == "aliyun"
+                else "DescribeProducts intersection with store images, deliveryMethod == Image")
     result = {
         "platform": platform, "store": store,
         "queriedAt": datetime.now(timezone.utc).isoformat(),

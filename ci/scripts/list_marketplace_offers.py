@@ -23,6 +23,7 @@ from typing import Any, Protocol
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from cli.alibaba_credentials import explicit_credential_environment
 from cli.marketplace import (
     OFFER_SOURCE,
     PLATFORM_URL_TEMPLATES,
@@ -544,13 +545,20 @@ class AliyunMarketplaceProvider:
                     sts_access_key_secret=access_key_secret,
                     sts_token=security_token,
                 )
-            self._client = AcsClient(
-                access_key_id if credential is None else None,
-                access_key_secret if credential is None else None,
-                region_id=self.region,
-                credential=credential,
-                timeout=30,
-            )
+            if credential is None:
+                self._client = AcsClient(
+                    access_key_id,
+                    access_key_secret,
+                    region_id=self.region,
+                    timeout=30,
+                )
+            else:
+                with explicit_credential_environment():
+                    self._client = AcsClient(
+                        region_id=self.region,
+                        credential=credential,
+                        timeout=30,
+                    )
 
     def list_offers(self) -> list[Offer]:
         visible_products = self._fetch_visible_products()

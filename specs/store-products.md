@@ -14,10 +14,10 @@ mk --env-file .secrets/aliyun.env store products --platform aliyun
 
 # JSON inventory for workflows or artifacts.
 mk --env-file .secrets/aws.env store products --platform aws --json
-mk store products --platform alibabacloud --json
+mk --env-file .secrets/alibabacloud.env store products --platform alibabacloud --json
 
 # Multiple selections are repeatable; platform order is preserved and duplicates removed.
-# Configure both clouds' credentials in the process environment beforehand.
+# Configure the selected clouds' credentials in the process environment beforehand.
 mk store products --platform aws --platform aliyun --json
 mk store products --platform all --json
 # The shared query scope is explicit; only public images are implemented.
@@ -43,7 +43,7 @@ delisted products. Absence from the result is not proof of delisting.
 | --- | --- | --- | --- |
 | `aws` | Authenticated seller, Catalog `OwnershipType=SELF` (API default) | AMI `Description.ProductCode`, `ProductTitle`, `ShortDescription` | `Visibility == Public`, filtered before batch detail reads and rechecked afterwards |
 | `aliyun` | 长沙网久软件有限公司, store `228399`, supplier UID `1904996544835414` | `DescribeProducts` `Code`, `Name`, `ShortDescription` | Intersection with the supplier's public store image codes and `hiddenForCloudMarket == 0` |
-| `alibabacloud` | Websoft9, public store `2116499` | Public store `productInfo.code`, `title`, `describe` | Product appears in publisher storefront; `deliveryMethod == Image` |
+| `alibabacloud` | Websoft9, store `2116499` | `DescribeProducts` `Code`, `Name`, `ShortDescription` | Intersection with the publisher's public store image codes and `deliveryMethod == Image` |
 
 AWS `SELF` is a scope, not a seller profile ID. The command does **not** assume
 that arbitrary AWS credentials belong to the configured Websoft9 seller profile.
@@ -56,22 +56,31 @@ front-end store only for ownership/image/visibility checks. Store title/summary
 never override OpenAPI data. A visible image missing from the filtered API
 dataset fails the query, rather than silently treating that as a complete list.
 
-Alibaba Cloud queries
+Alibaba Cloud International first enumerates Market API `2015-11-01`
+`DescribeProducts` through the international endpoint (region
+`ap-southeast-1`). It uses `SearchTerm=Websoft9` and `productType=MIRROR`, then
+verifies `SupplierName == Websoft9`, `SupplierId == 2116499` and
+`DeliveryWay == Image` locally. It then enumerates
 `https://marketplace.alibabacloud.com/api/ajax/newCommodityList/queryNewList.json`
-with `publisherId=2116499`. It also verifies `companyName == Websoft9`,
+with `publisherId=2116499`, verifies `companyName == Websoft9`,
 `shopUrl == /store/2116499.html` (relative or official-host URL) and
-`deliveryMethod == Image`. Product URLs come from the returned official-host
-`detailUrl`; no per-product detail or version calls are made.
+`deliveryMethod == Image`, and intersects the two sets. A visible store image
+missing from the API inventory fails the query. The international endpoint
+rejects the `aliyunUid` filter, so it is not used. Product URLs come from the
+verified official-host store `detailUrl`; no per-product detail or version
+calls are made.
 
 `StoreVisible` is an evidence label, **not an invented OpenAPI publication
 status**. Both Alibaba storefront endpoints are unversioned website interfaces;
 schema changes, blocking or unverified ownership/visibility fail closed.
 
-AWS and Aliyun SDKs/credentials are the existing optional dependencies and
-environment variables documented in [offer-codes.md](offer-codes.md) and
-[cloud-connector.md](cloud-connector.md). Alibaba Cloud's public storefront
-requires neither credentials nor a vendor SDK. `--env-file` loads one file;
-multi-cloud calls require the relevant credentials together in the environment.
+AWS, Aliyun and Alibaba Cloud International use the existing optional
+dependencies and environment variables documented in
+[offer-codes.md](offer-codes.md) and [cloud-connector.md](cloud-connector.md).
+Alibaba Cloud International reads `ALIBABA_CLOUD_*` (separate from `ALIYUN_*`)
+and uses the Market SDK; the public storefront itself remains unauthenticated.
+`--env-file` loads one file; multi-cloud calls require the relevant credentials
+together in the environment.
 
 ## JSON contract (schemaVersion 1)
 

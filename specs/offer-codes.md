@@ -43,9 +43,9 @@ mk offer-codes gen --platform aliyun --inventory inventory.json --dry-run --json
 mk offer-codes gen --platform aliyun --inventory inventory.json \
   --product-catalog /path/to/product_en.json --dry-run --json
 
-# Alibaba Cloud International: identical generation chain and report, no credentials required.
-mk offer-codes gen --platform alibabacloud --dry-run --json
-mk store products --platform alibabacloud --json > international-inventory.json
+# Alibaba Cloud International: identical generation chain, separate credentials.
+mk --env-file .secrets/alibabacloud.env offer-codes gen --platform alibabacloud --dry-run --json
+mk --env-file .secrets/alibabacloud.env store products --platform alibabacloud --json > international-inventory.json
 mk offer-codes gen --platform alibabacloud --inventory international-inventory.json --dry-run --json
 # Omit --dry-run only after reviewing the diff to write productID.alibabacloud.
 ```
@@ -268,16 +268,22 @@ and [official machine-readable metadata](https://api.aliyun.com/meta/v1/products
   `--product-catalog`, `--dry-run`, JSON/human reports, provenance, partial success
   and all write protections are shared; there is no international-specific
   matcher, candidate builder or writer.
-- Only fact collection differs: international products come from the public
-  Websoft9 store `2116499`, through the existing
-  `alibabacloud_market.list_products` adapter behind `store.query_platform`.
-  It validates supplier/store ownership, Image delivery and complete pagination.
-  See [store-products.md](store-products.md) for the source contract.
-- This path does **not** call the China `DescribeProducts` API or read Aliyun
-  credentials. The public store supplies code, title, short description and URL
-  without a credential or per-product detail request. As with the China
-  storefront evidence, report visibility is `StoreVisible`, not an invented
-  OpenAPI publication status.
+- Only fact collection differs: international products are read through
+  `alibabacloud_market.list_products` behind `store.query_platform`. It first
+  enumerates the international Market API `2015-11-01` `DescribeProducts`
+  (region `ap-southeast-1`, `SearchTerm=Websoft9`, `productType=MIRROR`) and
+  verifies `SupplierName`, `SupplierId` and `DeliveryWay` locally. It then
+  enumerates the public Websoft9 store `2116499`, verifies publisher ownership
+  and Image delivery, and requires every visible store image to be present in
+  the API inventory. A missing API row blocks writing. See
+  [store-products.md](store-products.md) for the source contract.
+- This path calls the **international** Market endpoint, not the China one, and
+  reads `ALIBABA_CLOUD_*` credentials rather than `ALIYUN_*`. The international
+  endpoint rejects the `aliyunUid` filter, so `SearchTerm=Websoft9` plus local
+  supplier checks are used instead. API `Code`, `Name` and `ShortDescription`
+  are authoritative; the public store supplies the verified product URL and
+  visibility. As with the China storefront evidence, report visibility is
+  `StoreVisible`, not an invented OpenAPI publication status.
 - China and international inventories are not interchangeable. `cmjj...` codes
   remain under `productID.aliyun`; `sgcmjj...` codes remain under
   `productID.alibabacloud`, with no prefix stripping or cross-platform inference.
@@ -285,6 +291,9 @@ and [official machine-readable metadata](https://api.aliyun.com/meta/v1/products
   China, AWS and all other platform mappings and application metadata. A
   China-only snapshot is rejected for an international generation request, and
   vice versa.
+
+API contract: [DescribeProducts](https://api.alibabacloud.com/api/Market/2015-11-01/DescribeProducts)
+(international endpoint).
 
 ## Entry shape
 

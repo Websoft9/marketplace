@@ -50,7 +50,7 @@ AWS_DEFAULT_REGION=us-east-1
     "alibabacloud": (
         "# --- Alibaba Cloud International (separate account from Aliyun China) ---\n"
         "# Use this site's own AccessKey; do not reuse the Aliyun China key.\n"
-        "# The current public listing check does not consume these values.\n"
+        "# Used by the authenticated Market inventory and public store verification.\n"
         + ALIBABA_CLOUD_KEYS
     ),
     "azure": """\

@@ -108,6 +108,8 @@ jobs:
           from aliyunsdkcore.client import AcsClient
           from aliyunsdkcore.request import CommonRequest
 
+          from cli.alibaba_credentials import explicit_credential_environment
+
           access_key_id = os.environ["ALIYUN_ACCESS_KEY_ID"]
           access_key_secret = os.environ["ALIYUN_ACCESS_KEY_SECRET"]
           security_token = os.environ.get("ALIYUN_SECURITY_TOKEN", "")
@@ -115,7 +117,10 @@ jobs:
               credential = StsTokenCredential(
                   access_key_id, access_key_secret, security_token
               )
-              client = AcsClient(region_id="cn-hangzhou", credential=credential, timeout=30)
+              with explicit_credential_environment():
+                  client = AcsClient(
+                      region_id="cn-hangzhou", credential=credential, timeout=30
+                  )
           else:
               client = AcsClient(access_key_id, access_key_secret, "cn-hangzhou", timeout=30)
 
@@ -138,12 +143,11 @@ jobs:
           PY
 
       # Alibaba Cloud International is a separate account from Aliyun China.
-      # The current matrix generation only reads its public storefront, but
-      # assume the RAM role now so future authenticated steps can use the
-      # exported ALIBABA_CLOUD_* credentials without adding long-lived secrets.
-      # Keep this after "Expose Aliyun credential names": the action overwrites
-      # the shared ALIBABA_CLOUD_* variables with the international account's
-      # values, while ALIYUN_* is already preserved for China.
+      # Its store inventory now reads the authenticated Market API and verifies
+      # visibility against the public storefront, so these credentials are
+      # required. Keep this after "Expose Aliyun credential names": the action
+      # overwrites the shared ALIBABA_CLOUD_* variables with the international
+      # account's values, while ALIYUN_* is already preserved for China.
       - name: Check Alibaba Cloud International role configuration
         if: env.PLATFORM == 'alibabacloud' || env.PLATFORM == 'all'
         env:

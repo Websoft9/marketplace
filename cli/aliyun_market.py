@@ -4,7 +4,11 @@ import json
 import urllib.parse
 import urllib.request
 
-from .alibaba_credentials import missing_hint, read as read_credentials
+from .alibaba_credentials import (
+    explicit_credential_environment,
+    missing_hint,
+    read as read_credentials,
+)
 from .store_models import InventoryError, Product
 
 
@@ -79,7 +83,8 @@ def _client(timeout: float = 30):
 
     if credential is None:
         return AcsClient(access_key_id, access_key_secret, "cn-hangzhou", timeout=timeout)
-    return AcsClient(region_id="cn-hangzhou", credential=credential, timeout=timeout)
+    with explicit_credential_environment():
+        return AcsClient(region_id="cn-hangzhou", credential=credential, timeout=timeout)
 
 
 def fetch_aliyun_product(code: str, timeout: float = 30) -> dict[str, object]:
