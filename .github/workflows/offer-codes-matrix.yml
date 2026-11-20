@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       platform:
-        description: "Cloud platform to generate (all = aws + aliyun + alibabacloud)"
+        description: "Cloud platform to generate"
         type: choice
         required: true
         default: all
@@ -153,11 +153,39 @@ jobs:
           status=0
           for current in "${platforms[@]}"; do
             echo "Generating matrix for ${current}..."
+            report="$MATRIX_DIR/generation-${current}.json"
             if ! mk offer-codes gen \
               --platform "$current" \
               --output "$MATRIX_FILE" \
-              --json > "$MATRIX_DIR/generation-${current}.json"; then
+              --json > "$report"; then
               echo "::error::offer-codes generation failed for ${current}; see the job log."
+              python3 - "$report" <<'PY'
+          import json
+          import sys
+
+          try:
+              report = json.load(open(sys.argv[1], encoding="utf-8"))
+          except (OSError, ValueError):
+              sys.exit(0)
+          messages = []
+          for section in ("inventory", "matching"):
+              value = report.get(section)
+              if isinstance(value, dict):
+                  for error in value.get("errors") or []:
+                      if isinstance(error, dict):
+                          messages.append(
+                              f"{section}: {error.get('code', 'error')}: {error.get('message', '')}"
+                          )
+          for error in report.get("errors") or []:
+              if isinstance(error, dict):
+                  messages.append(
+                      f"generation: {error.get('code', 'error')}: {error.get('message', '')}"
+                  )
+          for message in messages:
+              print(f"::error::{message}")
+          if not messages:
+              print("No structured error details were emitted.")
+          PY
               status=1
             fi
           done
@@ -191,6 +219,7 @@ jobs:
           )
 
           rows = []
+          error_lines = []
           for platform in platforms:
               path = directory / f"generation-{platform}.json"
               try:
@@ -207,6 +236,21 @@ jobs:
                   len(report.get("unresolved", [])),
                   "yes" if report.get("written") else "no",
               ))
+              for section in ("inventory", "matching"):
+                  value = report.get(section)
+                  if isinstance(value, dict):
+                      for error in value.get("errors") or []:
+                          if isinstance(error, dict):
+                              error_lines.append(
+                                  f"- {platform} {section}: "
+                                  f"{error.get('code', 'error')}: {error.get('message', '')}"
+                              )
+              for error in report.get("errors") or []:
+                  if isinstance(error, dict):
+                      error_lines.append(
+                          f"- {platform} generation: "
+                          f"{error.get('code', 'error')}: {error.get('message', '')}"
+                      )
 
           lines = [
               "### Offer-code matrix generation",
@@ -218,6 +262,8 @@ jobs:
               "| " + " | ".join(str(value) for value in row) + " |"
               for row in rows
           )
+          if error_lines:
+              lines.extend(["", "### Errors", *error_lines])
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
               summary.write("\n".join(lines) + "\n")
           PY
