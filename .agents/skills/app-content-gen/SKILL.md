@@ -50,7 +50,7 @@ also authorize an overview rewrite. Resolve explicitly named products to
 unambiguous catalog ids; never assume `apps=all` because no app was specified.
 
 Do not use this skill to push reviewed content (use `app-content-push`), publish
-AWS listings (use the `offer-apply.yml` workflow described in
+AWS listings (use the `offer-update.yml` workflow described in
 `specs/marketplace-product-content.md`), or inspect marketplace listing status
 and versions (use `offer-listing-check`).
 An explicit read-only review or evidence-only request must not trigger a local

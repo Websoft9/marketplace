@@ -171,6 +171,43 @@ class AliyunInventoryTests(unittest.TestCase):
             aliyun_market.list_aliyun_products()
         self.assertNotIn("SECRET", str(error.exception))
 
+    def test_unsupported_aliyun_uid_filter_falls_back_to_complete_mirror_inventory(self):
+        class InvalidFilter(Exception):
+            def get_error_code(self):
+                return "Invalid.Param"
+
+            def get_http_status(self):
+                return 500
+
+        self.opener.side_effect = [io.BytesIO(json.dumps(store_page([store_product()])).encode())]
+        self.client.do_action_with_exception.side_effect = [
+            InvalidFilter("filter rejected"),
+            json.dumps(api_page([api_product()])).encode(),
+        ]
+        products = aliyun_market.list_aliyun_products()
+        self.assertEqual([product.code for product in products], ["cmjj001"])
+        self.requests[0].set_Filters.assert_called_once_with([
+            {"Key": "productType", "Value": "MIRROR"},
+            {"Key": "aliyunUid", "Value": aliyun_market.SUPPLIER_UID},
+        ])
+        self.requests[1].set_Filters.assert_called_once_with([
+            {"Key": "productType", "Value": "MIRROR"},
+        ])
+
+    def test_server_error_without_invalid_param_keeps_safe_error_detail(self):
+        class ServerError(Exception):
+            def get_error_code(self):
+                return "UnknownError"
+
+            def get_http_status(self):
+                return 500
+
+        self.opener.side_effect = [io.BytesIO(json.dumps(store_page([store_product()])).encode())]
+        self.client.do_action_with_exception.side_effect = ServerError("signature SECRET")
+        with self.assertRaisesRegex(ValueError, "ServerError, HTTP 500, UnknownError") as error:
+            aliyun_market.list_aliyun_products()
+        self.assertNotIn("SECRET", str(error.exception))
+
     def test_visible_products_missing_from_supplier_api_block_write(self):
         for updates in ({"SupplierName": "other"}, {"SupplierId": 123},
                         {"DeliveryWay": "人工服务"}):

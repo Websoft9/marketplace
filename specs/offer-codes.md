@@ -3,7 +3,7 @@
 `mk offer-codes gen` stages a per-platform marketplace product matrix under
 `data/.work/offer-codes/` by default. This directory is ignored by Git and is
 not the consumer-facing source. Consumers such as `mk catalog pull`, `mk
-versions`, `offer-list.yml`, and the marketplace site read the published JSON
+versions`, `offer-listing-check.yml`, and the marketplace site read the published JSON
 artifact configured by `sources.offer-codes` in `config/app.json`. The current
 configured artifact is `https://artifact.websoft9.com/cloud_data/offer.json`.
 The matrix workflow currently uploads a GitHub Actions artifact; publishing the
@@ -227,9 +227,13 @@ optional lookup/cleanup alias, never a replacement for `code` or identity eviden
   credential. This is Aliyun China only, not Alibaba Cloud International.
 - The adapter first enumerates Market API `2015-11-01` `DescribeProducts`, using
   the documented `Filter` keys `productType=MIRROR` and
-  `aliyunUid=1904996544835414`. The SDK method is `set_Filters`. Every page is
+  `aliyunUid=1904996544835414`. The SDK method is `set_Filters`. If the service
+  rejects `aliyunUid` with `Invalid.Param` (the API reports an unsupported
+  filter key as HTTP 500), the adapter retries with `productType=MIRROR` only
+  and relies on the local supplier verification described below. Every page is
   checked against `PageNumber`, `PageSize` and `TotalCount`; changing totals,
-  repeated/missing product codes, malformed pages and API errors block writing.
+  repeated/missing product codes, malformed pages and other API errors block
+  writing.
 - It then enumerates the public store's
   `https://market.aliyun.com/api/ajax/product/queryProducts.json` using
   `supplierId`, `pageIndex`, `pageSize`. It requires consistent `curPage`,

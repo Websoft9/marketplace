@@ -2,7 +2,7 @@
 # Configure required reviewers on the <cloud>-marketplace-production environment
 # (for example aws-marketplace-production) before using this workflow. The apply
 # job waits for that approval.
-name: Offer Apply
+name: Offer Update
 run-name: "Apply ${{ inputs.update_type }} for ${{ inputs.appid }} to ${{ inputs.cloud }}"
 
 on:

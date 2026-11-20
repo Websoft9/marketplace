@@ -3,7 +3,7 @@
 Rule revision: **`deterministic-first-appearance-v2`**.
 
 The identity engine in `cli/offer_resolve.py` is shared by `offer-codes gen`
-and `offer resolve` (used by `offer-apply.yml`). It is deterministic string
+and `offer resolve` (used by `offer-update.yml`). It is deterministic string
 matching, not keyword extraction, fuzzy matching or an LLM. No manually maintained
 application alias table is required. Existing reviewed `titleTrademark` rendering
 exceptions remain valid alternate full names.

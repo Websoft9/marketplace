@@ -97,6 +97,46 @@ jobs:
             echo "ALIYUN_SECURITY_TOKEN=$ALIBABA_CLOUD_SECURITY_TOKEN"
           } >> "$GITHUB_ENV"
 
+      - name: Report Aliyun caller identity
+        if: env.PLATFORM == 'aliyun' || env.PLATFORM == 'all'
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+
+          from aliyunsdkcore.auth.credentials import StsTokenCredential
+          from aliyunsdkcore.client import AcsClient
+          from aliyunsdkcore.request import CommonRequest
+
+          access_key_id = os.environ["ALIYUN_ACCESS_KEY_ID"]
+          access_key_secret = os.environ["ALIYUN_ACCESS_KEY_SECRET"]
+          security_token = os.environ.get("ALIYUN_SECURITY_TOKEN", "")
+          if security_token:
+              credential = StsTokenCredential(
+                  access_key_id, access_key_secret, security_token
+              )
+              client = AcsClient(region_id="cn-hangzhou", credential=credential, timeout=30)
+          else:
+              client = AcsClient(access_key_id, access_key_secret, "cn-hangzhou", timeout=30)
+
+          request = CommonRequest()
+          request.set_method("POST")
+          request.set_protocol_type("https")
+          request.set_domain("sts.aliyuncs.com")
+          request.set_version("2015-04-01")
+          request.set_action_name("GetCallerIdentity")
+          request.set_accept_format("json")
+          identity = json.loads(client.do_action_with_exception(request))
+          account_id = str(identity.get("AccountId") or "")
+          print(f"Aliyun caller account: {account_id}")
+          print(f"Aliyun caller ARN: {identity.get('Arn')}")
+          if account_id != "1468494345915897":
+              print(
+                  "::warning::The assumed Aliyun role is not in the known seller account "
+                  "1468494345915897. Verify ALIYUN_ROLE_ARN if DescribeProducts fails."
+              )
+          PY
+
       # Alibaba Cloud International is a separate account from Aliyun China.
       # The current matrix generation only reads its public storefront, but
       # assume the RAM role now so future authenticated steps can use the

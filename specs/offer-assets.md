@@ -3,7 +3,7 @@
 Asset publishing is an explicit operation, not image synchronization. Prepare
 and upload the wave's images to fixed URLs, review them, then publish selected
 offers through the existing revision-bound plan/apply executor. The manual
-`offer-apply.yml` workflow supports this through its **Asset** update type;
+`offer-update.yml` workflow supports this through its **Asset** update type;
 no real cloud writes are made by tests.
 
 ## CLI

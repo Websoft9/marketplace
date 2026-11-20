@@ -181,7 +181,7 @@ changing remote services or a statement about nonpublic seller inventory.
   No CLI subprocess or second cloud fetch is needed. The two Alibaba platforms
   share the matching/report/matrix implementation while retaining separate fact
   adapters, store identities and matrix keys (`aliyun` and `alibabacloud`).
-- `offer-apply.yml` collects a fresh public store JSON snapshot, then invokes
+- `offer-update.yml` collects a fresh public store JSON snapshot, then invokes
   `offer resolve --inventory FILE --visibility public`. It includes the snapshot
   in the reviewed run artifacts; resolution does not enumerate the store again.
   The resolve report records store, source, timestamp, scope and completeness.

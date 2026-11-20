@@ -178,7 +178,7 @@ class StoreQueryTests(unittest.TestCase):
             store.get_inventory("aws", inventory_path="inventory.json", profile="seller")
 
     def test_apply_workflow_snapshots_public_store_facts_before_resolving(self):
-        workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/offer-apply.yml").read_text()
+        workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/offer-update.yml").read_text()
         snapshot = workflow.index("- name: Snapshot public store inventory")
         resolve = workflow.index("- name: Resolve public offer targets from store facts")
         build = workflow.index("- name: Build preview")

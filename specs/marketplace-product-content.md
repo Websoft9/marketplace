@@ -23,7 +23,7 @@ per-application fact audit for unchanged source data and template output.
 | `data/listing/templates/aws-ami.json` | Fixed copy structure with named placeholders, no credentials or per-product IDs |
 | `data/listing/templates/aws-ami-assets.json` | Separate logo/promotional-media template; no copy fields |
 | `cli/aws_marketplace.py` | AWS Marketplace adapter: field names/limits, read normalization, update request shape |
-| `.github/workflows/offer-apply.yml` | Manual AWS listing publication: preflight, preview, revision-bound plan, environment approval and apply |
+| `.github/workflows/offer-update.yml` | Manual AWS listing publication: preflight, preview, revision-bound plan, environment approval and apply |
 
 ## Layered architecture
 
@@ -215,7 +215,7 @@ and defaults to submit-only (no wait); optional positive `--wait-seconds` enable
 field read-back without requesting another refresh. See [offer-assets.md](offer-assets.md).
 The general AWS media validator accepts presigned URLs, but this asset path
 requires unsigned HTTPS URLs so plans do not store signed parameters.
-`offer-apply.yml` supports assets via its exclusive Asset update type; Product
+`offer-update.yml` supports assets via its exclusive Asset update type; Product
 information remains the default. Neither mode generates or uploads source images.
 
 `aws-ami.json` provides two default Learning resources

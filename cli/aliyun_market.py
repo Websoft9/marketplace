@@ -15,6 +15,42 @@ SUPPLIER_UID = "1904996544835414"
 STORE_API = "https://market.aliyun.com/api/ajax/product/queryProducts.json"
 
 
+def _error_code(error):
+    getter = getattr(error, "get_error_code", None)
+    if callable(getter):
+        try:
+            return getter()
+        except Exception:
+            return None
+    return None
+
+
+def _error_detail(error):
+    """Describe an SDK error without exposing signed request details."""
+    parts = [type(error).__name__]
+    status_getter = getattr(error, "get_http_status", None)
+    if callable(status_getter):
+        try:
+            status = status_getter()
+        except Exception:
+            status = None
+        if status not in (None, ""):
+            parts.append(f"HTTP {status}")
+    code = _error_code(error)
+    if code:
+        parts.append(str(code))
+    return ", ".join(parts)
+
+
+def _api_page(client, request_factory, page, page_size, filters):
+    request = request_factory()
+    request.set_PageNumber(page)
+    request.set_PageSize(page_size)
+    request.set_Filters(filters)
+    request.set_accept_format("json")
+    return client.do_action_with_exception(request)
+
+
 def _client(timeout: float = 30):
     """Use the same AK/STS environment for list and single-product requests."""
     credentials = read_credentials()
@@ -158,19 +194,34 @@ def _list_api_products(timeout, progress):
     expected_total = None
     received = 0
     page_size = 50
+    filters = [
+        {"Key": "productType", "Value": "MIRROR"},
+        {"Key": "aliyunUid", "Value": SUPPLIER_UID},
+    ]
     for page in range(1, 1001):
-        request = DescribeProductsRequest()
-        request.set_PageNumber(page)
-        request.set_PageSize(page_size)
-        request.set_Filters([
-            {"Key": "productType", "Value": "MIRROR"},
-            {"Key": "aliyunUid", "Value": SUPPLIER_UID},
-        ])
-        request.set_accept_format("json")
         try:
-            response = client.do_action_with_exception(request)
+            response = _api_page(client, DescribeProductsRequest, page, page_size, filters)
         except Exception as error:
-            raise InventoryError(f"Aliyun DescribeProducts failed ({type(error).__name__})") from None
+            # The Market service can reject a filter key with HTTP 500 and
+            # Invalid.Param even when it is still listed in the API metadata.
+            # Fall back to the complete mirror inventory and keep the local
+            # supplier verification below. Only do this before page 1 succeeds,
+            # so pagination totals always come from one filter set.
+            if (expected_total is None and len(filters) > 1
+                    and _error_code(error) == "Invalid.Param"):
+                filters = [{"Key": "productType", "Value": "MIRROR"}]
+                if progress:
+                    progress("Aliyun DescribeProducts rejected aliyunUid; retrying with productType only")
+                try:
+                    response = _api_page(client, DescribeProductsRequest, page, page_size, filters)
+                except Exception as retry_error:
+                    raise InventoryError(
+                        f"Aliyun DescribeProducts failed ({_error_detail(retry_error)})"
+                    ) from None
+            else:
+                raise InventoryError(
+                    f"Aliyun DescribeProducts failed ({_error_detail(error)})"
+                ) from None
         parsed = _payload(response, "Aliyun DescribeProducts")
         if parsed.get("Success") is False or parsed.get("Code"):
             raise InventoryError("Aliyun DescribeProducts returned an API error")

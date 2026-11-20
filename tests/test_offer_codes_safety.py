@@ -390,13 +390,14 @@ class ListingSafetyTests(unittest.TestCase):
 
 
 class WorkflowContractTests(unittest.TestCase):
-    def test_history_dependent_listing_check_workflow_is_removed(self):
+    def test_listing_check_workflow_uses_renamed_path(self):
         root = Path(__file__).resolve().parents[1]
-        self.assertFalse((root / ".github/workflows/offer-listing-check.yml").exists())
+        self.assertTrue((root / ".github/workflows/offer-listing-check.yml").exists())
+        self.assertFalse((root / ".github/workflows/offer-list.yml").exists())
 
     def test_runtime_consumers_read_configured_offer_matrix_artifact(self):
         root = Path(__file__).resolve().parents[1]
-        offer_list = (root / ".github/workflows/offer-list.yml").read_text()
+        offer_list = (root / ".github/workflows/offer-listing-check.yml").read_text()
         self.assertNotIn("mk offer-codes gen", offer_list)
 
         site = (root / ".github/workflows/deploy-site.yml").read_text()

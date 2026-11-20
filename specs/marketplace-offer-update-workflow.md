@@ -28,7 +28,7 @@ EntityId and an explicitly reviewed plan.
 
 ## Manual GitHub Actions apply workflow
 
-`.github/workflows/offer-apply.yml` runs manually for one
+`.github/workflows/offer-update.yml` runs manually for one
 application and one cloud. The form has `appid`, `cloud`, `update_type`,
 `product_code` and `label`; there is no display-name override. `update_type`
 appears below cloud and is a single choice: **Product information** (default)
