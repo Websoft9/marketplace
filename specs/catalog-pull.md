@@ -82,7 +82,7 @@ includes drafts; linked fields may remain as link objects in that mode.
 | `--id-field` | `key` | Contentful field containing the app id (`wordpress`) |
 | `--fields` | `trademark,overview,keywords,usecases,relatedApps,summary,hasenterprise,description` | Requested field ids |
 | `--catalog` | configured `product_en.json` URL | Target application list (URL or local file) |
-| `--offer` | `sources.offer-codes` in `config/app.json` | Published offer-codes artifact URL, local JSON file, or directory used to add per-platform `offerCodes` |
+| `--offer` | `sources.offer-codes.url` in `config/sources.json` | Published offer-codes artifact URL, local JSON file, or directory used to add per-platform `offerCodes` |
 | `--skip-offer-codes` | off | Do not read the offer-codes matrix; the apply workflow resolves codes live |
 | `--apps` | all catalog applications | Comma-separated application ids to export; must exist in the target catalog |
 | `--output` | `data/.work/catalog.json` | JSON destination; `-` means stdout; `MK_CATALOG_DIR` overrides the directory |
@@ -110,7 +110,7 @@ still available explicitly via `--fields` and also matches `tag`. Use `--fields`
 for any other content-model names.
 
 The default offer-code source is the published artifact URL in
-`config/app.json`; a local `--offer` value can be used to test staged data.
+`config/sources.json` (`sources.offer-codes.url`); a local `--offer` value can be used to test staged data.
 
 ## Output
 

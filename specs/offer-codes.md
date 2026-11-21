@@ -4,7 +4,7 @@
 `data/.work/offer-codes/` by default. This directory is ignored by Git and is
 not the consumer-facing source. Consumers such as `mk catalog pull`, `mk
 versions`, `offer-listing-check.yml`, and the marketplace site read the published JSON
-artifact configured by `sources.offer-codes` in `config/app.json`. The current
+artifact configured by `sources.offer-codes.url` in `config/sources.json`. The current
 configured artifact is `https://artifact.websoft9.com/cloud_data/offer.json`.
 The matrix workflow currently uploads a GitHub Actions artifact; publishing the
 generated matrix to the configured URL is a separate workflow responsibility.

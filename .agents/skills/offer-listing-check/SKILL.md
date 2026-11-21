@@ -54,8 +54,8 @@ Resolution rules:
 - When editing this skill or its references, run
   `python3 ci/scripts/validate_marketplace_ops_skill.py`. It must pass before
   the change is considered valid.
-- Read `config/marketplace.json` and the `sources.offer-codes` artifact URL in
-  `config/app.json` once per run. Do not cache them across runs.
+- Read `config/marketplace.json` and the `sources.offer-codes.url` artifact URL in
+  `config/sources.json` once per run. Do not cache them across runs.
 - For an explicitly requested local test, use `data/.work/offer-codes/matrix.json`;
   do not generate it as part of this read-only skill. An unavailable artifact is
   not proof that an application has no listing.

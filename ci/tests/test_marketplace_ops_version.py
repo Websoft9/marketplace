@@ -1,14 +1,27 @@
 from __future__ import annotations
 
+import json
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "ci/scripts"))
 
-from marketplace_ops_version import compare, parse_version  # noqa: E402
+from marketplace_ops_version import CONFIG, compare, main, parse_version  # noqa: E402
+
+
+class SourceConfigTests(unittest.TestCase):
+    def test_main_reads_url_from_default_sources_config(self) -> None:
+        self.assertEqual(CONFIG, ROOT / "config/sources.json")
+        config = json.loads(CONFIG.read_text(encoding="utf-8"))
+        with mock.patch.object(sys, "argv", ["versions", "--app", "odoo", "--marketplace", "20", "--json"]):
+            with mock.patch("marketplace_ops_version.load_baseline", return_value=["20"]) as load:
+                with mock.patch("builtins.print"):
+                    main()
+        load.assert_called_once_with("odoo", config["sources"]["versions"]["url"])
 
 
 class ParseVersionTests(unittest.TestCase):

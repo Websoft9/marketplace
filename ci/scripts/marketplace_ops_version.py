@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 TOKEN = re.compile(r"^v?(\d+(?:\.\d+)*)(?:[-+]([0-9A-Za-z.\-]+))?$")
-CONFIG = Path(__file__).resolve().parents[2] / "config/app.json"
+CONFIG = Path(__file__).resolve().parents[2] / "config/sources.json"
 USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/131.0 Safari/537.36"
@@ -91,13 +91,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--app", required=True)
     parser.add_argument("--marketplace", required=True, help="comma-separated versions from the listing")
-    parser.add_argument("--baseline-source", default=None, help="URL or file; defaults to config/app.json")
+    parser.add_argument("--baseline-source", default=None, help="URL or file; defaults to config/sources.json sources.versions.url")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
     source = args.baseline_source
     if not source:
-        source = json.loads(CONFIG.read_text(encoding="utf-8"))["sources"]["versions"]
+        source = json.loads(CONFIG.read_text(encoding="utf-8"))["sources"]["versions"]["url"]
     marketplace = [item.strip() for item in args.marketplace.split(",") if item.strip()]
     result = compare(marketplace, load_baseline(args.app, source))
     if args.json:

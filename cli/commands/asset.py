@@ -25,19 +25,25 @@ def asset_command():
 @click.option("--profile", default=None, help="Optional local AWS profile; Actions uses OIDC credentials.")
 @click.option("--timeout", type=click.IntRange(1, 3), default=3, show_default=True,
               help="Maximum page/load wait in seconds; cannot exceed 3. Loading/network failures retry once.")
+@click.option("--lang", "--language", "lang", default="en", show_default=True, metavar="LANG",
+              help="AppStore UI language: en or zh-CN. Non-English runs add -<lang> to file names.")
 @click.option("--summary", type=click.Path(dir_okay=False, path_type=Path), default=None,
               help="Append a safe Markdown report, e.g. to GITHUB_STEP_SUMMARY.")
 @click.pass_context
-def screenshots_command(ctx, apps, catalog, output_dir, no_upload, allow_app_failures, profile, timeout, summary):
-    """Capture AppStore details at 1920x1040 and overwrite offers/{appid}-installation.png."""
+def screenshots_command(ctx, apps, catalog, output_dir, no_upload, allow_app_failures, profile, timeout, summary, lang):
+    """Capture AppStore details at 1920x1040 and overwrite offers/{appid}-installation[-lang].png."""
     if no_upload and profile:
         raise click.UsageError("--profile cannot be combined with --no-upload")
+    try:
+        language = app_screenshots.resolve_language(lang)
+    except app_screenshots.ScreenshotError as error:
+        raise click.UsageError(str(error)) from None
     try:
         applications = app_screenshots.select_applications(catalog, apps)
         credentials = app_screenshots.Credentials.from_environment()
         report = app_screenshots.run_screenshots(
             applications, credentials=credentials, output_dir=output_dir,
-            upload=not no_upload, profile=profile, timeout=timeout,
+            upload=not no_upload, profile=profile, timeout=timeout, language=language,
             progress=lambda message: click.echo(message, err=True),
         )
         if summary is not None:

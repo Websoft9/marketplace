@@ -113,7 +113,7 @@ class OsCatalogTests(unittest.TestCase):
         # rather than merely testing a loader while keeping a code-side OS list.
         config = self.root / "config"
         config.mkdir()
-        for filename in ("marketplace.json", "app.json"):
+        for filename in ("marketplace.json", "sources.json"):
             (config / filename).write_bytes((CONFIG_PATH.parent / filename).read_bytes())
         (config / "os-catalog.json").write_text(json.dumps(self.example))
         cases = self.root / "cases.json"

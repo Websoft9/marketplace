@@ -1,0 +1,813 @@
+---
+import DashboardLayout from "../layouts/DashboardLayout.astro";
+import StatCard from "../components/StatCard.astro";
+import CopyIconButton from "../components/CopyIconButton.astro";
+import { loadPlatformProducts } from "../lib/products";
+
+const { platforms, generatedAt, totals } = await loadPlatformProducts();
+const basePath = import.meta.env.BASE_URL.replace(/\/+$/, "");
+const appsHref = `${basePath}/apps`;
+const offerUpdateHref =
+  "https://github.com/Websoft9/marketplace/actions/workflows/offer-update.yml";
+const metadataIssueHref = "https://github.com/Websoft9/marketplace/issues";
+const dateFormatter = new Intl.DateTimeFormat("zh-CN", {
+  dateStyle: "medium",
+  timeStyle: "short",
+  timeZone: "Asia/Shanghai",
+});
+const generatedLabel = dateFormatter.format(generatedAt);
+const sourceRank = (platform: (typeof platforms)[number]) =>
+  platform.source === "artifact"
+    ? 0
+    : platform.source === "matrix"
+      ? 1
+      : 2;
+const orderedPlatforms = [...platforms].sort(
+  (a, b) =>
+    sourceRank(a) - sourceRank(b) ||
+    b.stats.total - a.stats.total ||
+    a.label.localeCompare(b.label, "zh-CN"),
+);
+const totalWithApp = totals.matched + totals.mapped;
+---
+
+<DashboardLayout
+  title="云商品列表 | Websoft9 Marketplace"
+  description="按云平台查看 Websoft9 Marketplace 商品、应用匹配和商品 code。"
+>
+  <header class="page-header">
+    <div>
+      <span class="eyebrow">Products / Marketplace</span>
+      <h1>云商品列表</h1>
+      <p class="lede">以云市场店铺商品列表为视图的商品查看与运营快捷入口</p>
+    </div>
+    <div class="header-meta">
+      <span class="build-pill">构建时间 {generatedLabel}</span>
+      <a class="button" href={appsHref}>应用列表</a>
+    </div>
+  </header>
+
+  <div class="product-overview" aria-label="商品总览">
+    <span class="summary-pill"><strong>{totals.platforms}</strong> 个云平台</span>
+    <span class="summary-pill"><strong>{totals.products}</strong> 个商品</span>
+    <span class="summary-pill">
+      <strong>{totalWithApp}</strong> 个已匹配商品
+    </span>
+    <span class="summary-pill"><strong>{totals.apps}</strong> 个应用</span>
+  </div>
+
+  <section class="panel products-panel">
+    <div class="product-tabs" role="tablist" aria-label="云平台" data-product-tabs>
+      {orderedPlatforms.map((platform, index) => (
+        <button
+          type="button"
+          role="tab"
+          id={`tab-${platform.platform}`}
+          class:list={["product-tab", { active: index === 0 }]}
+          aria-controls={`panel-${platform.platform}`}
+          aria-selected={index === 0 ? "true" : "false"}
+          tabindex={index === 0 ? 0 : -1}
+          data-product-tab={platform.platform}
+        >
+          <span>{platform.label}</span>
+          <span class="tab-count">{platform.stats.total}</span>
+        </button>
+      ))}
+    </div>
+
+    {orderedPlatforms.map((platform, index) => (
+      <section
+        class="product-panel"
+        role="tabpanel"
+        id={`panel-${platform.platform}`}
+        aria-labelledby={`tab-${platform.platform}`}
+        data-product-panel={platform.platform}
+        hidden={index !== 0}
+      >
+        <div class="stats-grid product-stats" aria-label={`${platform.label} 商品统计`}>
+          <StatCard
+            label="商品总数"
+            value={platform.stats.total}
+            hint={
+              platform.source === "artifact"
+                ? "来自在线商品制品"
+                : platform.source === "matrix"
+                  ? "来自 offer 矩阵"
+                  : "无可用商品数据源"
+            }
+            tone="blue"
+          />
+          <StatCard
+            label="已匹配商品"
+            value={platform.stats.withApp}
+            hint={`${platform.stats.matched} 自动 · ${platform.stats.mapped} 映射`}
+            tone="green"
+          />
+          <StatCard
+            label="未匹配商品"
+            value={platform.stats.unmatched}
+            hint="需要人工确认应用归属"
+            tone="amber"
+          />
+          <StatCard
+            label="覆盖应用"
+            value={platform.stats.apps}
+            hint="不同应用 ID"
+            tone="slate"
+          />
+        </div>
+
+        <div class="product-toolbar">
+          <p class="table-summary" aria-live="polite">
+            显示 <strong data-visible-count>{platform.rows.length}</strong> /
+            {platform.rows.length} 个商品
+          </p>
+          <div class="filters">
+            <input
+              type="search"
+              data-product-search
+              placeholder="关键字"
+              aria-label="搜索商品"
+              autocomplete="off"
+            />
+            <select data-product-status aria-label="匹配筛选">
+              <option value="all">全部</option>
+              <option value="matched">已匹配</option>
+              <option value="unmatched">未匹配</option>
+            </select>
+            <button
+              class="button export-markdown-button"
+              type="button"
+              data-export-markdown
+              title="导出当前平台全部商品为 Markdown 表格"
+              disabled={platform.rows.length === 0}
+            >
+              导出
+            </button>
+          </div>
+        </div>
+
+        <div class="table-scroll product-table-scroll">
+          <table class="product-table" data-product-table>
+            <thead>
+              <tr>
+                <th scope="col" aria-sort="ascending" data-sort-header="title">
+                  <button class="sort-button" type="button" data-sort-key="title">
+                    商品标题
+                    <span class="sort-indicator" data-sort-indicator aria-hidden="true">↑</span>
+                  </button>
+                </th>
+                <th scope="col" aria-sort="none" data-sort-header="app">
+                  <button class="sort-button" type="button" data-sort-key="app">
+                    应用
+                    <span class="sort-indicator" data-sort-indicator aria-hidden="true">↕</span>
+                  </button>
+                </th>
+                <th scope="col">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {platform.rows.map((row, rowIndex) => {
+                const searchText = [
+                  row.title,
+                  row.appId,
+                  row.appName,
+                  row.code,
+                  row.shortDescription,
+                ]
+                  .filter(Boolean)
+                  .join(" ")
+                  .toLowerCase();
+                const searchTerm = row.appName ?? row.title;
+                const searchHref = platform.searchUrlPrefix
+                  ? `${platform.searchUrlPrefix}${encodeURIComponent(searchTerm)}`
+                  : undefined;
+                return (
+                  <tr
+                    data-product-row
+                    data-index={rowIndex}
+                    data-search={searchText}
+                    data-match={row.matchStatus}
+                    data-sort-title={row.title.toLowerCase()}
+                    data-sort-app={(row.appName ?? row.appId ?? "").toLowerCase()}
+                    data-code={row.code}
+                    data-export-title={row.title}
+                    data-export-url={row.url ?? ""}
+                    data-app-id={row.appId ?? ""}
+                    data-app-name={row.appName ?? ""}
+                  >
+                    <td class="product-title-cell">
+                      {row.url ? (
+                        <a
+                          class="product-title-link"
+                          href={row.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          title={row.shortDescription}
+                        >
+                          {row.title}
+                        </a>
+                      ) : (
+                        <span class="product-title-link" title={row.shortDescription}>
+                          {row.title}
+                        </span>
+                      )}
+                      <span class="product-code-line">
+                        <code class="product-code" title={row.code}>
+                          {row.code}
+                        </code>
+                        <CopyIconButton
+                          value={row.code}
+                          label={`复制商品 code ${row.code}`}
+                        />
+                      </span>
+                    </td>
+                    <td class="product-app-cell">
+                      {row.appId ? (
+                        <span class="product-app-id">
+                          {row.appInCatalog ? (
+                            <a
+                              href={`${basePath}/apps/${row.appId}`}
+                              title={`查看 ${row.appName ?? row.appId} 应用详情`}
+                            >
+                              {row.appId}
+                            </a>
+                          ) : (
+                            <code>{row.appId}</code>
+                          )}
+                          <CopyIconButton
+                            value={row.appId}
+                            label={`复制应用 ID ${row.appId}`}
+                          />
+                        </span>
+                      ) : (
+                        <span class="empty-cell">—</span>
+                      )}
+                      {row.appName && row.appName !== row.appId ? (
+                        row.appWebsiteUrl ? (
+                          <a
+                            class="product-app-name product-app-link"
+                            href={row.appWebsiteUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={`打开 ${row.appName} 官网`}
+                          >
+                            {row.appName}
+                          </a>
+                        ) : (
+                          <span class="product-app-name">{row.appName}</span>
+                        )
+                      ) : null}
+                    </td>
+                    <td class="product-actions-cell">
+                      <button
+                        class="row-actions-toggle"
+                        type="button"
+                        data-actions-toggle
+                        data-search-url={searchHref ?? ""}
+                        aria-haspopup="menu"
+                        aria-expanded="false"
+                        aria-label={`${row.title} 操作`}
+                        title="操作"
+                      >
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="currentColor"
+                          aria-hidden="true"
+                        >
+                          <circle cx="12" cy="5" r="1.7"></circle>
+                          <circle cx="12" cy="12" r="1.7"></circle>
+                          <circle cx="12" cy="19" r="1.7"></circle>
+                        </svg>
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="empty-state" data-product-empty hidden={platform.rows.length > 0}>
+          {platform.rows.length > 0
+            ? "没有匹配的商品，请调整搜索或筛选条件。"
+            : platform.source === "unavailable"
+              ? "该平台暂无可用的商品数据源。"
+              : "该平台暂无可展示的商品。"}
+        </div>
+      </section>
+    ))}
+  </section>
+
+  <div
+    class="row-actions-menu"
+    role="menu"
+    aria-label="商品操作"
+    data-row-actions-menu
+    hidden
+  >
+    <a
+      role="menuitem"
+      data-action="update-offer"
+      href={offerUpdateHref}
+      target="_blank"
+      rel="noreferrer"
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.8"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M12 20h9"></path>
+        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
+      </svg>
+      更新商品
+    </a>
+    <a
+      role="menuitem"
+      data-action="update-metadata"
+      href={metadataIssueHref}
+      target="_blank"
+      rel="noreferrer"
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.8"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path>
+        <path d="M14 2v6h6"></path>
+        <path d="M8 13h8"></path>
+        <path d="M8 17h8"></path>
+      </svg>
+      更新应用元数据
+    </a>
+    <a
+      role="menuitem"
+      data-action="search"
+      href="#"
+      target="_blank"
+      rel="noreferrer"
+      hidden
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.8"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <circle cx="11" cy="11" r="7"></circle>
+        <path d="m21 21-4.3-4.3"></path>
+      </svg>
+      云市场搜索
+    </a>
+  </div>
+</DashboardLayout>
+
+<script>
+  type SortKey = "title" | "app";
+
+  const sortDatasetKey: Record<SortKey, string> = {
+    title: "sortTitle",
+    app: "sortApp",
+  };
+  const copyTimers = new WeakMap<HTMLButtonElement, number>();
+  const tabs = Array.from(
+    document.querySelectorAll<HTMLButtonElement>("[data-product-tab]"),
+  );
+  const tablist = document.querySelector<HTMLElement>("[data-product-tabs]");
+  const panels = new Map(
+    Array.from(
+      document.querySelectorAll<HTMLElement>("[data-product-panel]"),
+    ).map((panel) => [panel.dataset.productPanel ?? "", panel]),
+  );
+  const initialized = new Set<string>();
+  const actionsMenu = document.querySelector<HTMLElement>(
+    "[data-row-actions-menu]",
+  );
+  let openActionsToggle: HTMLButtonElement | null = null;
+
+  async function copyText(text: string) {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand("copy");
+    textarea.remove();
+  }
+
+  async function copyWithFeedback(button: HTMLButtonElement, text: string) {
+    const previousTimer = copyTimers.get(button);
+    if (previousTimer) window.clearTimeout(previousTimer);
+
+    const isIcon = button.classList.contains("icon-copy-button");
+    const originalLabel = button.getAttribute("aria-label") ?? "";
+    const originalTitle = button.title;
+    const originalHtml = button.innerHTML;
+
+    try {
+      await copyText(text);
+      button.classList.add("copied");
+      if (isIcon) {
+        button.title = "已复制";
+        button.setAttribute("aria-label", "已复制");
+      } else {
+        button.textContent = "已复制";
+      }
+    } catch {
+      button.classList.add("copy-failed");
+      if (isIcon) {
+        button.title = "复制失败";
+        button.setAttribute("aria-label", "复制失败");
+      } else {
+        button.textContent = "复制失败";
+      }
+    }
+
+    const timer = window.setTimeout(() => {
+      button.classList.remove("copied", "copy-failed");
+      if (isIcon) {
+        button.title = originalTitle;
+        button.setAttribute("aria-label", originalLabel);
+      } else {
+        button.innerHTML = originalHtml;
+      }
+    }, 1200);
+    copyTimers.set(button, timer);
+  }
+
+  function escapeMarkdown(value: string) {
+    return value
+      .replace(/\\/g, "\\\\")
+      .replace(/\|/g, "\\|")
+      .replace(/\[/g, "\\[")
+      .replace(/\]/g, "\\]")
+      .replace(/\r?\n/g, " ")
+      .trim();
+  }
+
+  function exportMarkdown(platformKey: string, rows: HTMLTableRowElement[]) {
+    const lines = [
+      "| Product Title | App ID | App Trademark | Product Code |",
+      "| --- | --- | --- | --- |",
+    ];
+
+    for (const row of rows) {
+      const title = escapeMarkdown(row.dataset.exportTitle ?? "");
+      const url = (row.dataset.exportUrl ?? "").replace(/[()]/g, (value) =>
+        value === "(" ? "%28" : "%29",
+      );
+      const appId = escapeMarkdown(row.dataset.appId ?? "");
+      const appName = escapeMarkdown(row.dataset.appName ?? "");
+      const code = escapeMarkdown(row.dataset.code ?? "");
+      const titleCell = url ? `[${title}](${url})` : title;
+      lines.push(`| ${titleCell} | ${appId} | ${appName} | ${code} |`);
+    }
+
+    const blob = new Blob([`${lines.join("\n")}\n`], {
+      type: "text/markdown;charset=utf-8",
+    });
+    const blobUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = blobUrl;
+    link.download = `products-${platformKey || "products"}-${new Date()
+      .toISOString()
+      .slice(0, 10)}.md`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+  }
+
+  function closeActionsMenu(options: { focusToggle?: boolean } = {}) {
+    if (!actionsMenu || !openActionsToggle) return;
+    const toggle = openActionsToggle;
+    openActionsToggle = null;
+    actionsMenu.hidden = true;
+    toggle.setAttribute("aria-expanded", "false");
+    if (options.focusToggle) toggle.focus();
+  }
+
+  function positionActionsMenu(toggle: HTMLButtonElement) {
+    if (!actionsMenu) return;
+    const toggleRect = toggle.getBoundingClientRect();
+    const menuRect = actionsMenu.getBoundingClientRect();
+    let top = toggleRect.bottom + 6;
+    if (top + menuRect.height > window.innerHeight - 8) {
+      top = toggleRect.top - menuRect.height - 6;
+    }
+    const left = Math.max(
+      12,
+      Math.min(
+        toggleRect.right - menuRect.width,
+        window.innerWidth - menuRect.width - 12,
+      ),
+    );
+    actionsMenu.style.top = `${Math.max(12, top)}px`;
+    actionsMenu.style.left = `${left}px`;
+  }
+
+  function openActionsMenu(toggle: HTMLButtonElement) {
+    if (!actionsMenu) return;
+    if (openActionsToggle === toggle) {
+      closeActionsMenu();
+      return;
+    }
+
+    closeActionsMenu();
+    openActionsToggle = toggle;
+
+    const searchLink = actionsMenu.querySelector<HTMLAnchorElement>(
+      '[data-action="search"]',
+    );
+    const searchUrl = toggle.dataset.searchUrl ?? "";
+    if (searchLink) {
+      searchLink.hidden = searchUrl.length === 0;
+      searchLink.href = searchUrl || "#";
+    }
+
+    actionsMenu.hidden = false;
+    toggle.setAttribute("aria-expanded", "true");
+    positionActionsMenu(toggle);
+    actionsMenu
+      .querySelector<HTMLAnchorElement>('a[role="menuitem"]:not([hidden])')
+      ?.focus();
+  }
+
+  function debounce(fn: () => void, wait: number): () => void {
+    let timer: number | undefined;
+    return () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(fn, wait);
+    };
+  }
+
+  function setupPanel(panel: HTMLElement) {
+    const table = panel.querySelector<HTMLTableElement>("[data-product-table]");
+    const tbody = table?.tBodies[0];
+    if (!tbody) return;
+    const body = tbody;
+
+    const rows = Array.from(body.rows);
+    const search = panel.querySelector<HTMLInputElement>("[data-product-search]");
+    const status = panel.querySelector<HTMLSelectElement>("[data-product-status]");
+    const visibleCount = panel.querySelector<HTMLElement>("[data-visible-count]");
+    const empty = panel.querySelector<HTMLElement>("[data-product-empty]");
+    const exportButton = panel.querySelector<HTMLButtonElement>(
+      "[data-export-markdown]",
+    );
+    const headers = Array.from(
+      panel.querySelectorAll<HTMLTableCellElement>("th[data-sort-header]"),
+    );
+    let sortKey: SortKey = "title";
+    let sortDir: "asc" | "desc" = "asc";
+
+    function updateHeaders() {
+      for (const header of headers) {
+        const key = header.dataset.sortHeader as SortKey | undefined;
+        const active = key === sortKey;
+        header.setAttribute(
+          "aria-sort",
+          active ? (sortDir === "asc" ? "ascending" : "descending") : "none",
+        );
+        const indicator = header.querySelector<HTMLElement>(
+          "[data-sort-indicator]",
+        );
+        if (indicator) {
+          indicator.textContent = active ? (sortDir === "asc" ? "↑" : "↓") : "↕";
+        }
+      }
+    }
+
+    function apply() {
+      const term = (search?.value ?? "").trim().toLowerCase();
+      const match = status?.value ?? "all";
+      const datasetKey = sortDatasetKey[sortKey];
+      const sorted = rows.slice().sort((a, b) => {
+        const aValue = a.dataset[datasetKey] ?? "";
+        const bValue = b.dataset[datasetKey] ?? "";
+        if (!aValue && bValue) return 1;
+        if (aValue && !bValue) return -1;
+
+        const compared = aValue.localeCompare(bValue, "zh-CN", {
+          numeric: true,
+          sensitivity: "base",
+        });
+        if (compared !== 0) {
+          return sortDir === "asc" ? compared : -compared;
+        }
+        const aIndex = Number(a.dataset.index ?? 0);
+        const bIndex = Number(b.dataset.index ?? 0);
+        return sortDir === "asc" ? aIndex - bIndex : bIndex - aIndex;
+      });
+
+      const fragment = document.createDocumentFragment();
+      let visible = 0;
+
+      for (const row of sorted) {
+        const matchesSearch =
+          term.length === 0 || (row.dataset.search ?? "").includes(term);
+        const matchesStatus =
+          match === "all" ||
+          (match === "matched"
+            ? row.dataset.match !== "unmatched"
+            : row.dataset.match === "unmatched");
+        const show = matchesSearch && matchesStatus;
+        row.hidden = !show;
+        if (show) visible += 1;
+        fragment.appendChild(row);
+      }
+
+      body.appendChild(fragment);
+      if (visibleCount) visibleCount.textContent = String(visible);
+      if (empty) empty.hidden = visible !== 0;
+      if (exportButton) exportButton.disabled = rows.length === 0;
+    }
+
+    headers.forEach((header) => {
+      const key = header.dataset.sortHeader as SortKey | undefined;
+      if (!key || !(key in sortDatasetKey)) return;
+      header
+        .querySelector<HTMLButtonElement>("[data-sort-key]")
+        ?.addEventListener("click", () => {
+          if (sortKey === key) {
+            sortDir = sortDir === "asc" ? "desc" : "asc";
+          } else {
+            sortKey = key;
+            sortDir = "asc";
+          }
+          updateHeaders();
+          apply();
+        });
+    });
+
+    search?.addEventListener("input", debounce(apply, 120));
+    status?.addEventListener("change", apply);
+    exportButton?.addEventListener("click", () => {
+      if (rows.length > 0) {
+        exportMarkdown(panel.dataset.productPanel ?? "", rows);
+      }
+    });
+
+    updateHeaders();
+    apply();
+  }
+
+  function ensurePanel(key: string | undefined) {
+    if (!key || initialized.has(key)) return;
+    initialized.add(key);
+    const panel = panels.get(key);
+    if (panel) setupPanel(panel);
+  }
+
+  function activate(
+    key: string | undefined,
+    options: { focus?: boolean; updateHash?: boolean; scroll?: boolean } = {},
+  ) {
+    const tab = tabs.find((item) => item.dataset.productTab === key) ?? tabs[0];
+    const nextKey = tab?.dataset.productTab;
+    if (!tab || !nextKey) return;
+
+    for (const candidate of tabs) {
+      const selected = candidate === tab;
+      candidate.setAttribute("aria-selected", selected ? "true" : "false");
+      candidate.tabIndex = selected ? 0 : -1;
+      candidate.classList.toggle("active", selected);
+    }
+
+    for (const [panelKey, panel] of panels) {
+      panel.hidden = panelKey !== nextKey;
+    }
+
+    ensurePanel(nextKey);
+
+    if (options.focus) tab.focus();
+    if (options.scroll) {
+      tab.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+    if (options.updateHash) {
+      const hash = `#${encodeURIComponent(nextKey)}`;
+      if (location.hash !== hash) {
+        history.replaceState(null, "", hash);
+      }
+    }
+  }
+
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      activate(tab.dataset.productTab, { updateHash: true });
+    });
+  });
+
+  tablist?.addEventListener("keydown", (event) => {
+    if (!(event.target instanceof Element)) return;
+    const current = event.target.closest<HTMLButtonElement>("[data-product-tab]");
+    if (!current) return;
+    const index = tabs.indexOf(current);
+    if (index < 0) return;
+
+    let nextIndex: number | undefined;
+    if (event.key === "ArrowRight") nextIndex = (index + 1) % tabs.length;
+    else if (event.key === "ArrowLeft") {
+      nextIndex = (index - 1 + tabs.length) % tabs.length;
+    } else if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = tabs.length - 1;
+
+    if (nextIndex !== undefined) {
+      event.preventDefault();
+      activate(tabs[nextIndex]?.dataset.productTab, {
+        focus: true,
+        updateHash: true,
+        scroll: true,
+      });
+    }
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!(event.target instanceof Element)) return;
+    const button = event.target.closest<HTMLButtonElement>("[data-copy]");
+    const code = button?.dataset.copy;
+    if (!button || !code) return;
+    void copyWithFeedback(button, code);
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!(event.target instanceof Element)) return;
+    const toggle = event.target.closest<HTMLButtonElement>(
+      "[data-actions-toggle]",
+    );
+    if (toggle) {
+      event.preventDefault();
+      openActionsMenu(toggle);
+      return;
+    }
+    if (!event.target.closest("[data-row-actions-menu]")) {
+      closeActionsMenu();
+    }
+  });
+
+  actionsMenu?.addEventListener("click", (event) => {
+    if (event.target instanceof Element && event.target.closest("a")) {
+      closeActionsMenu();
+    }
+  });
+
+  actionsMenu?.addEventListener("keydown", (event) => {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    const items = Array.from(
+      actionsMenu.querySelectorAll<HTMLAnchorElement>(
+        'a[role="menuitem"]:not([hidden])',
+      ),
+    );
+    if (items.length === 0) return;
+
+    const current =
+      document.activeElement instanceof HTMLAnchorElement
+        ? items.indexOf(document.activeElement)
+        : -1;
+    const step = event.key === "ArrowDown" ? 1 : -1;
+    const next =
+      current < 0
+        ? 0
+        : (current + step + items.length) % items.length;
+    event.preventDefault();
+    items[next]?.focus();
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && openActionsToggle) {
+      event.preventDefault();
+      closeActionsMenu({ focusToggle: true });
+    }
+  });
+
+  window.addEventListener("scroll", () => closeActionsMenu(), true);
+  window.addEventListener("resize", () => closeActionsMenu());
+
+  const initialKey = decodeURIComponent(location.hash.replace(/^#/, ""));
+  activate(initialKey || tabs[0]?.dataset.productTab);
+
+  window.addEventListener("hashchange", () => {
+    const key = decodeURIComponent(location.hash.replace(/^#/, ""));
+    activate(key, { scroll: true });
+  });
+</script>

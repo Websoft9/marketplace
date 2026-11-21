@@ -405,8 +405,9 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("Configure AWS credentials", site)
         self.assertNotIn("Configure Aliyun credentials", site)
 
-        app_config = json.loads((root / "config/app.json").read_text())
-        self.assertTrue(app_config["sources"]["offer-codes"].startswith("https://"))
+        sources_config = json.loads((root / "config/sources.json").read_text())
+        self.assertTrue(sources_config["sources"]["offer-codes"]["url"].startswith("https://"))
+        self.assertIn('"config/sources.json"', site)
 
 
 class SkillContractTests(unittest.TestCase):

@@ -8,7 +8,7 @@ application version baseline. Uses the page snapshot already fetched by
 
 - Marketplace versions: version text in the listing title, summary, or version
   field, extracted per `specs/marketplace-version-extraction.md`.
-- Baseline: `config/app.json` `sources.versions` (`apps-verson.json`), a list of
+- Baseline: `config/sources.json` `sources.versions.url` (`apps-verson.json`), a list of
   `{ "id": "<app>", "version": ["20.0", "19.0", "latest"] }`. A local snapshot
   is allowed.
 - Comparison tool: `python3 ci/scripts/marketplace_ops_version.py`.

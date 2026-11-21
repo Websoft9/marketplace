@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "start": "node scripts/start.mjs",
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",

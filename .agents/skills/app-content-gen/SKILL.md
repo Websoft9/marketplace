@@ -157,7 +157,7 @@ mechanical constraints (including summary's 10-word maximum, overview's
   command (`--output` for pull, `--input` for verify/apply). Keep scratch data,
   candidates, snapshots, CLI backup files and reports out of git.
 - When `relatedApps` is selected, fetch the store catalog once to
-  `<run>/product_en.json` from `sources.catalog` in `config/app.json`, and pass
+  `<run>/product_en.json` from `sources.catalog.url` in `config/sources.json`, and pass
   `--reference <run>/product_en.json` to verify/apply. Do not use the staging
   file as the authoritative candidate list; it may be partial.
 - Validate `batch-size` as a positive integer and `refresh` as a Boolean before

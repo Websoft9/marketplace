@@ -17,11 +17,20 @@ class ConfigTests(unittest.TestCase):
         config = app_list.CONFIG
         self.assertNotIn("sources", config)
 
-        app_config = app_list.APP_CONFIG
-        self.assertTrue(app_config["sources"]["catalog"].startswith("https://"))
-        self.assertTrue(app_config["sources"]["versions"].startswith("https://"))
-        self.assertEqual(app_list.OFFER_SOURCE, app_config["sources"]["offer-codes"])
-        self.assertNotIn("multi_version_apps", app_config)
+        sources_config = app_list.SOURCES_CONFIG
+        sources = sources_config["sources"]
+        self.assertEqual(set(sources), {"catalog", "versions", "category", "offer-codes"})
+        for key, source in sources.items():
+            with self.subTest(source=key):
+                self.assertEqual(set(source), {"summary", "url"})
+                self.assertIsInstance(source["summary"], str)
+                self.assertTrue(source["summary"].strip())
+                self.assertTrue(source["url"].startswith("https://"))
+        self.assertEqual(app_list.CATALOG_URL, sources["catalog"]["url"])
+        self.assertEqual(app_list.VERSIONS_URL, sources["versions"]["url"])
+        self.assertEqual(app_list.OFFER_SOURCE, sources["offer-codes"]["url"])
+        self.assertEqual(app_list.SOURCES_CONFIG_PATH, ROOT / "config/sources.json")
+        self.assertNotIn("multi_version_apps", sources_config)
 
         product_platforms = tuple(
             item["key"] for item in config["platforms"] if item.get("urlTemplate")

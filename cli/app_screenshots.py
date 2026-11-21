@@ -18,6 +18,45 @@ from .asset_storage import BUCKET, REGION, OWNER, PUBLIC_BASE
 
 VIEWPORT = {"width": 1920, "height": 1040}
 APP_ID = re.compile(r"[a-z0-9][a-z0-9_-]{0,99}\Z", re.ASCII)
+
+
+@dataclass(frozen=True)
+class Language:
+    """Supported AppStore UI language and its localized storefront labels."""
+
+    id: str
+    search_placeholder: str
+    loading_placeholder: str
+    empty_results: str
+    install_label: str
+    close_label: str
+
+    @property
+    def filename_suffix(self) -> str:
+        # English keeps the historical name so existing offer assets still resolve.
+        return "" if self.id == "en" else f"-{self.id}"
+
+
+LANGUAGES = {
+    "en": Language(
+        id="en",
+        search_placeholder="Enter an app name to search, such as WordPress, MySQL, GitLab ...",
+        loading_placeholder="Loading App Store data...",
+        empty_results="No apps match the current filters",
+        install_label="Install",
+        close_label="Close",
+    ),
+    "zh-CN": Language(
+        id="zh-CN",
+        search_placeholder="请输入要搜索的应用名称,例如:WordPress,MySQL,GitLab ...",
+        loading_placeholder="正在加载应用商店数据……",
+        empty_results="当前筛选条件下没有匹配应用",
+        install_label="安装",
+        close_label="关闭",
+    ),
+}
+LANGUAGE_ALIASES = {"en": "en", "en-us": "en", "zh": "zh-CN", "zh-cn": "zh-CN"}
+DEFAULT_LANGUAGE = LANGUAGES["en"]
 ERROR_DESCRIPTIONS = {
     "no_search_results": "AppStore explicitly reported no matching applications.",
     "exact_id_not_found": "Multiple results were returned, but none had the exact requested application ID.",
@@ -28,7 +67,18 @@ ERROR_DESCRIPTIONS = {
     "network_error": "The page or a required request failed with a temporary network/server error.",
     "detail_loading_timeout": "The application details or visible images did not finish loading in time.",
     "detail_image_failed": "A visible detail image finished loading with an error.",
+    "language_not_applied": "The AppStore did not render in the requested language.",
 }
+
+
+def resolve_language(value: str | Language | None) -> Language:
+    if isinstance(value, Language):
+        return value
+    key = str(value or "").strip()
+    language_id = LANGUAGE_ALIASES.get(key.lower())
+    if not language_id:
+        raise ScreenshotError("Unsupported language; use en or zh-CN.")
+    return LANGUAGES[language_id]
 
 
 class ScreenshotError(ValueError):
@@ -95,8 +145,8 @@ def create_s3_client(profile: str | None = None):
         raise ScreenshotError(str(error)) from None
 
 
-def upload_screenshot(client, appid: str, image: bytes) -> str:
-    key = f"offers/{appid}-installation.png"
+def upload_screenshot(client, appid: str, image: bytes, language: Language = DEFAULT_LANGUAGE) -> str:
+    key = f"offers/{appid}-installation{language.filename_suffix}.png"
     try:
         client.put_object(
             Bucket=BUCKET, Key=key, Body=image, ContentType="image/png",
@@ -122,14 +172,16 @@ def upload_screenshot(client, appid: str, image: bytes) -> str:
 def run_screenshots(
     applications: list[dict[str, str]], *, credentials: Credentials, output_dir: Path,
     upload: bool = True, profile: str | None = None, timeout: int = 3,
+    language: str | Language = DEFAULT_LANGUAGE,
     progress: Callable[[str], None] = lambda message: None,
 ) -> dict:
     from .appstore_browser import AppStoreBrowser
 
+    language = resolve_language(language)
     output_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     report = {
         "startedAt": datetime.now(timezone.utc).isoformat(),
-        "viewport": dict(VIEWPORT), "upload": upload, "results": [],
+        "viewport": dict(VIEWPORT), "language": language.id, "upload": upload, "results": [],
         "succeeded": 0, "failed": 0,
     }
 
@@ -142,7 +194,7 @@ def run_screenshots(
     save_report()
     try:
         client = create_s3_client(profile) if upload else None
-        with AppStoreBrowser(credentials, timeout=timeout) as browser:
+        with AppStoreBrowser(credentials, timeout=timeout, language=language) as browser:
             for index, app in enumerate(applications, 1):
                 appid = app["id"]
                 result = {"appid": appid, "status": "failed"}
@@ -150,13 +202,13 @@ def run_screenshots(
                 try:
                     image = browser.capture(app)
                     validate_png(image)
-                    filename = f"{appid}-installation.png"
+                    filename = f"{appid}-installation{language.filename_suffix}.png"
                     phase = "local_write_failed"
                     (output_dir / filename).write_bytes(image)
                     result["file"] = filename
                     if upload:
                         phase = "upload_failed"
-                        result["url"] = upload_screenshot(client, appid, image)
+                        result["url"] = upload_screenshot(client, appid, image, language)
                     result["status"] = "success"
                 except ScreenshotError as error:
                     result["error"] = str(error)
@@ -186,7 +238,8 @@ def run_screenshots(
 def render_summary(report: dict) -> str:
     failed = [item["appid"] for item in report["results"] if item["status"] == "failed"]
     lines = ["## AppStore screenshots", "",
-             f"{report['succeeded']} succeeded, {report['failed']} failed. Viewport: 1920 × 1040.",
+             f"{report['succeeded']} succeeded, {report['failed']} failed. "
+             f"Viewport: 1920 × 1040. Language: {report.get('language', 'en')}.",
              "", f"Failed list: {', '.join(failed) if failed else 'none'}",
              "", "| Application | Status | Result |", "| --- | --- | --- |"]
     for item in report["results"]:

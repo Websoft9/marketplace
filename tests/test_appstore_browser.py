@@ -12,7 +12,7 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit, parse_qs
 
-from cli.app_screenshots import Credentials, ScreenshotError, validate_png
+from cli.app_screenshots import Credentials, LANGUAGES, ScreenshotError, validate_png
 from cli.appstore_browser import AppStoreBrowser, SEARCH_PLACEHOLDER
 
 
@@ -30,7 +30,7 @@ async function signIn() {
 </body></html>"""
 HOME = '<!doctype html><html><body><a href="/appstore">App Store</a></body></html>'
 STORE = """<!doctype html><html lang="en"><body>
-<input placeholder="SEARCH_PLACEHOLDER" oninput="search(this.value)">
+<input placeholder="__SEARCH__" oninput="search(this.value)">
 <div id="results"></div><div id="details"></div>
 <script>
 const titles={n8n:'n8n',mysql:'MySQL',ffmpeg:'FFmpeg',wrong:'Wrong',broken:'Broken',
@@ -45,7 +45,7 @@ function search(id) {
     return;
   }
   if(id==='loading') {
-    document.querySelector('#results').innerHTML='<div class="MuiCard-root">Loading App Store data...</div>';
+    document.querySelector('#results').innerHTML='<div class="MuiCard-root">__LOADING__</div>';
     return;
   }
   if(id==='blank') {
@@ -54,12 +54,12 @@ function search(id) {
   }
   const title=titles[id];
   if(!title) {
-    document.querySelector('#results').innerHTML='<div class="MuiCard-root">No apps match the current filters</div>';
+    document.querySelector('#results').innerHTML='<div class="MuiCard-root">__EMPTY__</div>';
     return;
   }
   const card=title ? `<div class="MuiCard-root" onclick="detail('${id}')"><p>${title}</p></div>` : '';
   if(id==='ffmpeg') {
-    document.querySelector('#results').innerHTML='<div class="MuiCard-root">Loading App Store data...</div>';
+    document.querySelector('#results').innerHTML='<div class="MuiCard-root">__LOADING__</div>';
     setTimeout(()=>{ document.querySelector('#results').innerHTML=card; },150);
     return;
   }
@@ -73,10 +73,18 @@ function detail(id) {
     <h2><p>${titles[id]}</p></h2>
     <a aria-label="GitHub" href="https://github.com/Websoft9/docker-library/tree/main/apps/${target}">GitHub</a>
     <img width="100" height="100" src="${image}">
-    <button onclick="document.querySelector('#details').innerHTML=''">Close</button>
-    <button>Install</button></div>`;
+    <button onclick="document.querySelector('#details').innerHTML=''">__CLOSE__</button>
+    <button>__INSTALL__</button></div>`;
 }
-</script></body></html>""".replace("SEARCH_PLACEHOLDER", SEARCH_PLACEHOLDER)
+</script></body></html>"""
+
+
+def store_page(language):
+    return (STORE.replace("__SEARCH__", language.search_placeholder)
+                 .replace("__LOADING__", language.loading_placeholder)
+                 .replace("__EMPTY__", language.empty_results)
+                 .replace("__INSTALL__", language.install_label)
+                 .replace("__CLOSE__", language.close_label))
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -95,7 +103,7 @@ class Handler(BaseHTTPRequestHandler):
                        "/rate-limited": "rate-limited", "/unauthenticated": "unauthenticated",
                        "/unavailable": "unavailable"}
         mode = login_modes.get(self.path)
-        content = {"/home": HOME, "/appstore": STORE}.get(self.path)
+        content = {"/home": HOME, "/appstore": store_page(self.server.language)}.get(self.path)
         if mode:
             content = (HOME if mode == "stalled" and "fixture_session=1" in self.headers.get("Cookie", "")
                        else LOGIN.replace("MODE", mode))
@@ -132,6 +140,7 @@ class BrowserFixtureTests(unittest.TestCase):
         cls.server.login_posts = 0
         cls.server.transient_store_failures = 0
         cls.server.transient_login_page_failures = 0
+        cls.server.language = LANGUAGES["en"]
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
         cls.credentials = Credentials(f"http://127.0.0.1:{cls.server.server_port}/", "fixture-user", "fixture-password")
@@ -147,6 +156,16 @@ class BrowserFixtureTests(unittest.TestCase):
             for app in ({"id": "n8n", "trademark": "n8n"}, {"id": "mysql", "trademark": "MySQL"}):
                 validate_png(browser.capture(app))
             self.assertEqual(browser.context.pages, [])
+
+    def test_localized_capture_uses_requested_language_labels(self):
+        self.server.language = LANGUAGES["zh-CN"]
+        self.addCleanup(setattr, self.server, "language", LANGUAGES["en"])
+        with AppStoreBrowser(self.credentials, timeout=1, language="zh-CN") as browser:
+            self.assertEqual(browser.language.id, "zh-CN")
+            validate_png(browser.capture({"id": "n8n", "trademark": "n8n"}))
+            with self.assertRaises(ScreenshotError) as raised:
+                browser.capture({"id": "missing", "trademark": ""})
+            self.assertEqual(str(raised.exception), "no_search_results")
 
     def test_authenticated_stalled_redirect_recovers_without_second_login(self):
         credentials = Credentials(self.credentials.url + "stalled", "fixture-user", "fixture-password")

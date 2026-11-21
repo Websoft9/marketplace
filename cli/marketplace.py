@@ -37,21 +37,16 @@ def catalog_default_path() -> Path:
     directory = Path(configured) if configured else REPO_ROOT / "data" / ".work"
     return directory / "catalog.json"
 
-APP_CONFIG_PATH = CONFIG_PATH.parent / "app.json"
-APP_CONFIG = (
-    json.loads(APP_CONFIG_PATH.read_text(encoding="utf-8"))
-    if APP_CONFIG_PATH.is_file()
-    else {}
-)
-
-APP_SOURCES = APP_CONFIG["sources"]
+SOURCES_CONFIG_PATH = CONFIG_PATH.parent / "sources.json"
+SOURCES_CONFIG = json.loads(SOURCES_CONFIG_PATH.read_text(encoding="utf-8"))
+SOURCES = SOURCES_CONFIG["sources"]
 OFFER_SOURCE = (
     os.environ.get("MK_OFFER_SOURCE")
     or os.environ.get("MK_OFFER_URL")
-    or APP_SOURCES["offer-codes"]
+    or SOURCES["offer-codes"]["url"]
 )
-CATALOG_URL = os.environ.get("MK_CATALOG_URL", APP_SOURCES["catalog"])
-VERSIONS_URL = os.environ.get("MK_VERSIONS_URL", APP_SOURCES["versions"])
+CATALOG_URL = os.environ.get("MK_CATALOG_URL", SOURCES["catalog"]["url"])
+VERSIONS_URL = os.environ.get("MK_VERSIONS_URL", SOURCES["versions"]["url"])
 
 ALL_PLATFORM_CONFIGS = tuple(CONFIG["platforms"])
 CONFIGURED_PLATFORMS = tuple(str(item["key"]) for item in ALL_PLATFORM_CONFIGS)
@@ -194,7 +189,7 @@ def offer_variants_by_app(source: str, timeout: float = 30) -> dict[str, dict[st
 def read_offers(source: str, timeout: float = 30) -> list[dict]:
     """Read offer codes from the configured artifact, a local JSON file or directory.
 
-    The default source is the published URL in ``config/app.json``. Local
+    The default source is ``sources.offer-codes.url`` in ``config/sources.json``. Local
     directories are read in sorted filename order and merged by application id.
     """
     resolved = resolve_source(source)

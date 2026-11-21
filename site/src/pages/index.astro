@@ -104,7 +104,7 @@ const generatedLabel = new Intl.DateTimeFormat("zh-CN", {
         </a>
       </div>
       <p class="source-note">
-        商品编码在构建时从 `config/app.json` 配置的 offer-codes 制品读取；应用目录从 product_en.json 抓取。
+        商品编码在构建时从 `config/sources.json` 的 `sources.offer-codes.url` 制品读取；应用目录从 `sources.catalog.url` 抓取。
       </p>
     </article>
   </section>

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+import json
 import sys
 import unittest
 from unittest import mock
@@ -10,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "ci/scripts"))
 
-from marketplace_ops_codes import analyze, load_matrix  # noqa: E402
+from marketplace_ops_codes import analyze, load_matrix, main  # noqa: E402
 
 PLATFORMS = {
     "aws": {"urlTemplate": "https://aws.test/{code}"},
@@ -94,6 +95,14 @@ class AnalyzeTests(unittest.TestCase):
 
 
 class MatrixSourceTests(unittest.TestCase):
+    def test_main_reads_url_from_default_sources_config(self) -> None:
+        config = json.loads((ROOT / "config/sources.json").read_text(encoding="utf-8"))
+        with mock.patch.object(sys, "argv", ["codes", "--app", "odoo", "--platform", "aws", "--json"]):
+            with mock.patch("marketplace_ops_codes.load_matrix", return_value=MATRIX) as load:
+                with mock.patch("builtins.print"):
+                    main()
+        load.assert_called_once_with(config["sources"]["offer-codes"]["url"], ROOT)
+
     def test_loads_configured_remote_artifact(self) -> None:
         payload = b'[{"id":"odoo","productID":{"aws":[]}}]'
         with mock.patch("marketplace_ops_codes.urlopen", return_value=BytesIO(payload)) as fetch:

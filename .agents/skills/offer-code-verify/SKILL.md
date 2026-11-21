@@ -40,7 +40,7 @@ interactive questions.
 - Run commands from the repository root.
 - `mk` is usually not on `PATH`. Use `make cli ARGS="..."` or
   `.venv/bin/mk`.
-- Read the source configured as `sources.offer-codes` in `config/app.json`, or
+- Read the source configured as `sources.offer-codes.url` in `config/sources.json`, or
   the source named by `MK_OFFER_SOURCE`. Do not edit it.
 - The configured source is the published artifact. For a local staging matrix,
   pass `data/.work/offer-codes/matrix.json` explicitly; because this skill is
@@ -183,7 +183,7 @@ Start with the CLI result, then add the evidence.
 ```markdown
 ## Offer code check
 
-- Source: configured published artifact (`config/app.json`)
+- Source: configured published artifact (`config/sources.json`, `sources.offer-codes.url`)
 - Selection: django, laravel (2 of 108 entries)
 - CLI: 0 error(s), N warning(s)
 - Backend: disabled / N checked, M unverified (skipped, unsupported, errors or limit)

@@ -65,7 +65,7 @@ namespace-qualified paths that map directly to source fields:
   `{vendor.highlights[0]}`
 
 Actual source locations remain in `config/marketplace.json` (offer) and
-`config/app.json` (catalog and versions), or in command options;
+`config/sources.json` (`sources.catalog.url` and `sources.versions.url`), or in command options;
 the template only names logical namespaces. A whole field can use an array
 placeholder, for example `"SearchKeywords": "{catalog.keywords}"`. Arrays
 interpolated into text use an explicit filter such as
@@ -351,8 +351,8 @@ mk offer plan --app odoo --all-codes --profile marketplace-seller
 
 `preflight` validates the application id against `product_en.json`
 (`--product-catalog`, also accepted as `--catalog-source`) and every requested
-offer code against the published matrix configured by `sources.offer-codes` in
-`config/app.json` (`--offer`, also accepted as `--offer-source`), without calling
+offer code against the published matrix configured by `sources.offer-codes.url` in
+`config/sources.json` (`--offer`, also accepted as `--offer-source`), without calling
 Contentful or AWS. It reports lowercase and
 close-match suggestions. `--skip-code-check` validates only the application id,
 which is the mode used before live resolution. `--allow-unlisted-codes` makes

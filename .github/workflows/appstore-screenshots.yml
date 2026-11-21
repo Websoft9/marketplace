@@ -1,5 +1,5 @@
 name: AppStore Screenshots
-run-name: "AppStore screenshots (${{ inputs.apps || 'all applications' }})"
+run-name: "AppStore screenshots (${{ inputs.language || 'en' }}, ${{ inputs.apps || 'all applications' }})"
 
 on:
   workflow_dispatch:
@@ -8,6 +8,14 @@ on:
         description: "Application IDs, comma-separated; leave empty for all"
         required: false
         type: string
+      language:
+        description: "AppStore UI language"
+        required: false
+        default: "en"
+        type: choice
+        options:
+          - en
+          - zh-CN
       no_upload:
         description: "Validate capture without uploading to S3"
         default: false
@@ -16,7 +24,7 @@ on:
 permissions:
   contents: read
 
-# All runs write the same S3 keys, including overlapping application selections.
+# Runs with an overlapping language write the same S3 keys, so keep all runs serialized.
 concurrency:
   group: appstore-screenshots
   cancel-in-progress: false
@@ -62,9 +70,10 @@ jobs:
           WEBSOFT9_USER: ${{ secrets.WEBSOFT9_USER }}
           WEBSOFT9_PASSWORD: ${{ secrets.WEBSOFT9_PASSWORD }}
           APPS: ${{ inputs.apps }}
+          APPSTORE_LANG: ${{ inputs.language || 'en' }}
           NO_UPLOAD: ${{ inputs.no_upload }}
         run: |
-          args=(--output-dir "$RUNNER_TEMP/$SCREENSHOTS_SUBDIR" --summary "$GITHUB_STEP_SUMMARY" --allow-app-failures)
+          args=(--output-dir "$RUNNER_TEMP/$SCREENSHOTS_SUBDIR" --summary "$GITHUB_STEP_SUMMARY" --allow-app-failures --lang "$APPSTORE_LANG")
           if [[ -n "$APPS" ]]; then args+=("--apps=$APPS"); fi
           if [[ "$NO_UPLOAD" == "true" ]]; then args+=(--no-upload); fi
           mk asset screenshots "${args[@]}"
@@ -86,5 +95,5 @@ jobs:
           import os
           from pathlib import Path
           directory = Path(os.environ["RUNNER_TEMP"]) / os.environ["SCREENSHOTS_SUBDIR"]
-          for image in directory.glob("*-installation.png"):
+          for image in directory.glob("*-installation*.png"):
               image.unlink()

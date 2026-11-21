@@ -135,6 +135,33 @@ class ScreenshotTests(unittest.TestCase):
         self.assertNotIn("IfNoneMatch", request)
         self.assertEqual(url, screenshots.PUBLIC_BASE + "/offers/n8n-installation.png")
 
+    def test_language_aliases_normalize_and_unsupported_values_fail(self):
+        for value, expected in (("EN", "en"), ("en-US", "en"), ("zh", "zh-CN"), ("ZH-cn", "zh-CN")):
+            with self.subTest(value=value):
+                self.assertEqual(screenshots.resolve_language(value).id, expected)
+        for value in ("", "fr", "zh-TW", None):
+            with self.subTest(value=value), self.assertRaises(screenshots.ScreenshotError) as raised:
+                screenshots.resolve_language(value)
+            self.assertNotIn("fr", str(raised.exception))
+
+    def test_english_keeps_historical_name_and_other_languages_add_suffix(self):
+        self.assertEqual(screenshots.DEFAULT_LANGUAGE.filename_suffix, "")
+        self.assertEqual(screenshots.LANGUAGES["zh-CN"].filename_suffix, "-zh-CN")
+
+    def test_non_english_run_suffixes_local_file_and_upload_key(self):
+        browser = mock.MagicMock()
+        browser.capture.return_value = png()
+        client = mock.Mock()
+        with mock.patch.object(screenshots, "create_s3_client", return_value=client):
+            report = self.run_batch(browser, language="zh-CN")
+        self.assertEqual(report["language"], "zh-CN")
+        self.assertEqual(report["results"][0]["file"], "n8n-installation-zh-CN.png")
+        self.assertTrue((self.directory / "output/n8n-installation-zh-CN.png").is_file())
+        self.assertEqual(client.put_object.call_args_list[0].kwargs["Key"],
+                         "offers/n8n-installation-zh-CN.png")
+        self.assertEqual(report["results"][0]["url"],
+                         screenshots.PUBLIC_BASE + "/offers/n8n-installation-zh-CN.png")
+
     def test_failed_identity_never_uploads_and_next_app_continues(self):
         browser = mock.MagicMock()
         browser.capture.side_effect = [screenshots.ScreenshotError("detail_identity_failed"), png()]
@@ -208,6 +235,7 @@ class ScreenshotTests(unittest.TestCase):
         ]}
         text = screenshots.render_summary(report)
         self.assertIn("1 succeeded, 2 failed", text)
+        self.assertIn("Language: en", text)
         self.assertIn("\nFailed list: moodle, jitsi\n", text)
         self.assertIn("| Application | Status | Result |", text)
         self.assertIn("| wordpress | success | Local only |", text)
@@ -219,6 +247,12 @@ class ScreenshotTests(unittest.TestCase):
             {"appid": "wordpress", "status": "success"},
         ]})
         self.assertIn("\nFailed list: none\n", text)
+
+    def test_summary_reports_selected_language(self):
+        text = screenshots.render_summary({"succeeded": 1, "failed": 0, "language": "zh-CN", "results": [
+            {"appid": "wordpress", "status": "success"},
+        ]})
+        self.assertIn("Language: zh-CN", text)
 
 
 class ScreenshotCommandTests(unittest.TestCase):
@@ -269,6 +303,7 @@ class ScreenshotCommandTests(unittest.TestCase):
         result = CliRunner().invoke(cli, ["asset", "screenshots", "--help"])
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("--no-upload", result.output)
+        self.assertIn("--lang", result.output)
         self.assertIn("1920x1040", result.output)
 
     def invoke_batch(self, report, *args):
@@ -283,6 +318,16 @@ class ScreenshotCommandTests(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertFalse(run.call_args.kwargs["upload"])
         self.assertEqual(run.call_args.kwargs["timeout"], 3)
+        self.assertEqual(run.call_args.kwargs["language"], screenshots.LANGUAGES["en"])
+
+    def test_cli_normalizes_language_and_rejects_unsupported_values(self):
+        result, run = self.invoke_batch({"succeeded": 1, "failed": 0}, "--no-upload", "--lang", "zh")
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(run.call_args.kwargs["language"].id, "zh-CN")
+        for value in ("fr", "zh-TW"):
+            with self.subTest(value=value):
+                result = CliRunner().invoke(cli, ["asset", "screenshots", "--lang", value])
+                self.assertEqual(result.exit_code, 2, result.output)
 
     def test_timeout_cannot_exceed_three_seconds(self):
         result = CliRunner().invoke(cli, ["asset", "screenshots", "--timeout", "4"])
@@ -375,6 +420,45 @@ class BrowserRetryTests(unittest.TestCase):
             self.assertEqual(browser.last_attempts, 1)
 
 
+class BrowserLanguageTests(unittest.TestCase):
+    def setUp(self):
+        self.browser = AppStoreBrowser(screenshots.Credentials("https://example.test/", "fixture", "fixture"),
+                                       language="zh-CN")
+
+    def test_auth_status_is_localized_without_touching_the_account(self):
+        response = mock.Mock()
+        response.json.return_value = {"authenticated": True,
+                                      "current_user": {"id": "user-1", "locale": "en"}}
+        route = mock.Mock()
+        route.fetch.return_value = response
+        self.browser._localize_status(route, mock.Mock())
+        route.fulfill.assert_called_once()
+        self.assertEqual(route.fulfill.call_args.kwargs["response"], response)
+        self.assertEqual(route.fulfill.call_args.kwargs["json"]["current_user"]["locale"], "zh-CN")
+
+    def test_payloads_without_a_user_or_json_are_forwarded_unchanged(self):
+        response = mock.Mock()
+        response.json.return_value = {"authenticated": False}
+        route = mock.Mock()
+        route.fetch.return_value = response
+        self.browser._localize_status(route, mock.Mock())
+        route.fulfill.assert_called_once_with(response=response)
+
+        response = mock.Mock()
+        response.json.side_effect = ValueError("not json")
+        route = mock.Mock()
+        route.fetch.return_value = response
+        self.browser._localize_status(route, mock.Mock())
+        route.fulfill.assert_called_once_with(response=response)
+
+    def test_failed_fetch_falls_back_to_the_browser_request(self):
+        route = mock.Mock()
+        route.fetch.side_effect = RuntimeError("fixture")
+        self.browser._localize_status(route, mock.Mock())
+        route.continue_.assert_called_once()
+        route.fulfill.assert_not_called()
+
+
 class BrowserInstallCommandTests(unittest.TestCase):
     def test_installs_chromium_using_the_current_mk_interpreter(self):
         completed = subprocess.CompletedProcess(args=[], returncode=0)
@@ -446,6 +530,9 @@ class ScreenshotWorkflowTests(unittest.TestCase):
         self.assertIn("group: appstore-screenshots", text)
         self.assertIn("cancel-in-progress: false", text)
         self.assertIn('"--apps=$APPS"', text)
+        self.assertIn('--lang "$APPSTORE_LANG"', text)
+        self.assertIn("language:", text)
+        self.assertIn('*-installation*.png', text)
         self.assertNotIn("${{ inputs.apps }}", text.split("        run: |")[-1])
         self.assertIn("path: ${{ runner.temp }}/${{ env.SCREENSHOTS_SUBDIR }}/report.json", text)
         self.assertNotIn(".secrets/", text)

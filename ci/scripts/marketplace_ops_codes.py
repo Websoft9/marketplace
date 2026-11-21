@@ -118,15 +118,15 @@ def main() -> None:
     root = Path(__file__).resolve().parents[2]
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=root)
-    parser.add_argument("--matrix", help="matrix URL or local JSON file (defaults to config/app.json)")
+    parser.add_argument("--matrix", help="matrix URL or local JSON file (defaults to config/sources.json sources.offer-codes.url)")
     parser.add_argument("--app", action="append", default=None, help="repeatable; default all")
     parser.add_argument("--platform", action="append", default=None, help="repeatable; default all")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
     base = args.root.resolve()
-    app_config = load_json(base / "config/app.json")
-    matrix_source = args.matrix or app_config["sources"]["offer-codes"]
+    sources_config = load_json(base / "config/sources.json")
+    matrix_source = args.matrix or sources_config["sources"]["offer-codes"]["url"]
     matrix = load_matrix(matrix_source, base)
     config = load_json(base / "config/marketplace.json")
     platforms = {item["key"]: item for item in config["platforms"]}

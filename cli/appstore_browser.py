@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from urllib.parse import urlsplit
 
-from .app_screenshots import Credentials, ScreenshotError, VIEWPORT
+from .app_screenshots import (
+    DEFAULT_LANGUAGE, LANGUAGES, Credentials, Language, ScreenshotError, VIEWPORT,
+    resolve_language,
+)
 
-SEARCH_PLACEHOLDER = "Enter an app name to search, such as WordPress, MySQL, GitLab ..."
-LOADING_PLACEHOLDER = "Loading App Store data..."
-EMPTY_RESULTS_PLACEHOLDER = "No apps match the current filters"
+SEARCH_PLACEHOLDER = LANGUAGES["en"].search_placeholder
+LOADING_PLACEHOLDER = LANGUAGES["en"].loading_placeholder
+EMPTY_RESULTS_PLACEHOLDER = LANGUAGES["en"].empty_results
 GITHUB_APP_BASE = "https://github.com/Websoft9/docker-library/tree/main/apps/"
 RETRYABLE_FAILURES = frozenset({
     "page_load_timeout", "network_error", "search_loading_timeout",
@@ -17,12 +20,32 @@ RETRYABLE_FAILURES = frozenset({
 
 
 class AppStoreBrowser:
-    def __init__(self, credentials: Credentials, *, timeout: int = 3):
+    def __init__(self, credentials: Credentials, *, timeout: int = 3,
+                 language: str | Language = DEFAULT_LANGUAGE):
         self.credentials = credentials
+        self.language = resolve_language(language)
         self.timeout_ms = max(1, min(timeout, 3)) * 1000
         self.last_attempts = 0
         self.playwright = None
         self.browser = None
+
+    def _localize_status(self, route, _request):
+        """Render the requested UI language without changing the stored account locale."""
+        try:
+            response = route.fetch()
+        except Exception:
+            route.continue_()
+            return
+        try:
+            payload = response.json()
+        except Exception:
+            route.fulfill(response=response)
+            return
+        if isinstance(payload, dict) and isinstance(payload.get("current_user"), dict):
+            payload["current_user"]["locale"] = self.language.id
+            route.fulfill(response=response, json=payload)
+        else:
+            route.fulfill(response=response)
 
     def __enter__(self):
         try:
@@ -40,6 +63,10 @@ class AppStoreBrowser:
             )
             self.context.set_default_timeout(self.timeout_ms)
             self.context.set_default_navigation_timeout(self.timeout_ms)
+            # The product stores the UI language per operator and applies it after
+            # login. Overlay the requested locale on the read-only status payload
+            # so localized screenshots never mutate the shared account.
+            self.context.route("**/auth/status", self._localize_status)
             phase = "login_page_load_timeout"
             page = self.context.new_page()
             # Retry a failed login-page GET once, never a credential submission.
@@ -79,7 +106,8 @@ class AppStoreBrowser:
             if authenticated is False:
                 raise ScreenshotError("login_not_authenticated")
             phase = "appstore_navigation_failed"
-            appstore_link = page.get_by_role("link", name="App Store", exact=True)
+            # Route-based lookup keeps this independent of the current UI language.
+            appstore_link = page.locator('a[href="/appstore"], a[href$="/appstore"]').first
             try:
                 appstore_link.wait_for(state="visible")
             except BrowserTimeout:
@@ -90,7 +118,17 @@ class AppStoreBrowser:
                 page.reload(wait_until="domcontentloaded")
                 appstore_link.wait_for(state="visible")
             appstore_link.click()
-            page.get_by_placeholder(SEARCH_PLACEHOLDER, exact=True).wait_for()
+            page.wait_for_url("**/appstore*")
+            # A full load re-reads the localized status payload and applies it
+            # before readiness checks and every subsequent capture.
+            page.goto(page.url, wait_until="domcontentloaded")
+            try:
+                page.get_by_placeholder(self.language.search_placeholder, exact=True).wait_for()
+            except BrowserTimeout:
+                other = LANGUAGES["zh-CN"] if self.language.id == "en" else LANGUAGES["en"]
+                if page.get_by_placeholder(other.search_placeholder, exact=True).is_visible():
+                    raise ScreenshotError("language_not_applied") from None
+                raise
             self.store_url = page.url
             page.close()
             return self
@@ -139,7 +177,7 @@ class AppStoreBrowser:
                     return dialog
             else:
                 unverified = True
-            dialog.get_by_role("button", name="Close", exact=True).click()
+            dialog.get_by_role("button", name=self.language.close_label, exact=True).click()
             self.expect(dialog).to_have_count(0, timeout=self.timeout_ms)
         raise ScreenshotError("result_id_unavailable" if unverified else "exact_id_not_found")
 
@@ -156,15 +194,15 @@ class AppStoreBrowser:
                 raise ScreenshotError("session_unauthorized")
             if response is not None and response.status >= 500:
                 raise ScreenshotError("network_error")
-            search = page.get_by_placeholder(SEARCH_PLACEHOLDER, exact=True)
+            search = page.get_by_placeholder(self.language.search_placeholder, exact=True)
             search.fill(app["id"])
             search.press("Enter")
             phase = "search_results_timeout"
             # MUI's stable component class, not its generated css-* classes.
             results = (page.locator(".MuiCard-root")
-                       .filter(has_not_text=LOADING_PLACEHOLDER)
-                       .filter(has_not_text=EMPTY_RESULTS_PLACEHOLDER))
-            empty = page.get_by_text(EMPTY_RESULTS_PLACEHOLDER, exact=True)
+                       .filter(has_not_text=self.language.loading_placeholder)
+                       .filter(has_not_text=self.language.empty_results))
+            empty = page.get_by_text(self.language.empty_results, exact=True)
             try:
                 # Wait for either usable candidates or an explicit empty state;
                 # don't conflate a still-loading store with a nonexistent app.
@@ -172,14 +210,15 @@ class AppStoreBrowser:
                 if empty.is_visible():
                     raise ScreenshotError("no_search_results")
             except AssertionError:
-                if page.get_by_text(LOADING_PLACEHOLDER, exact=True).is_visible():
+                if page.get_by_text(self.language.loading_placeholder, exact=True).is_visible():
                     raise ScreenshotError("search_loading_timeout") from None
                 if empty.is_visible():
                     raise ScreenshotError("no_search_results") from None
                 raise ScreenshotError("search_results_timeout") from None
             phase = "detail_loading_timeout"
             dialog = self._select_result(page, results, app["id"])
-            self.expect(dialog.get_by_role("button", name="Install", exact=True)).to_be_visible(timeout=self.timeout_ms)
+            install_button = dialog.get_by_role("button", name=self.language.install_label, exact=True)
+            self.expect(install_button).to_be_visible(timeout=self.timeout_ms)
             self.expect(dialog.locator(".MuiSkeleton-root")).to_have_count(0, timeout=self.timeout_ms)
             page.wait_for_function("""() => {
                 const dialog = document.querySelector('[role="dialog"]');

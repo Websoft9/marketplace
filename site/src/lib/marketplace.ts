@@ -25,17 +25,19 @@ interface SupplierConfig {
   uid?: string;
 }
 
-interface PlatformConfig {
+export interface PlatformConfig {
   key: string;
   label: string;
   description: string;
   urlTemplate?: string;
+  searchUrlPrefix?: string;
   stores?: StoreConfig[];
+  productsArtifact?: string;
   supplier?: SupplierConfig;
   overviewKey?: string;
 }
 
-interface ProductPlatformConfig extends PlatformConfig {
+export interface ProductPlatformConfig extends PlatformConfig {
   key: PlatformKey;
   urlTemplate: string;
 }
@@ -56,11 +58,17 @@ interface MarketplaceConfig {
   routing: Record<string, PlatformRoute>;
 }
 
-interface AppConfig {
+interface SourceConfig {
+  summary: string;
+  url: string;
+}
+
+interface SourcesConfig {
   sources: {
-    catalog: string;
-    versions?: string;
-    "offer-codes": string;
+    catalog: SourceConfig;
+    versions: SourceConfig;
+    category: SourceConfig;
+    "offer-codes": SourceConfig;
   };
 }
 
@@ -92,6 +100,13 @@ export interface MarketplaceStats {
   unlisted: number;
   outside: number;
   platformCounts: PlatformCount[];
+}
+
+export interface MarketplaceData {
+  rows: AppRow[];
+  stats: MarketplaceStats;
+  generatedAt: Date;
+  catalog: CatalogProduct[];
 }
 
 interface Offer {
@@ -146,9 +161,9 @@ const CONFIG_PATH =
   findRepoFile(process.cwd(), join("config", "marketplace.json"));
 const CONFIG = JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as MarketplaceConfig;
 
-const APP_CONFIG_PATH =
-  process.env.MK_APP_CONFIG_PATH ?? join(dirname(CONFIG_PATH), "app.json");
-const APP_CONFIG = JSON.parse(readFileSync(APP_CONFIG_PATH, "utf8")) as AppConfig;
+const SOURCES_CONFIG_PATH =
+  process.env.MK_SOURCES_CONFIG_PATH ?? join(dirname(CONFIG_PATH), "sources.json");
+const SOURCES_CONFIG = JSON.parse(readFileSync(SOURCES_CONFIG_PATH, "utf8")) as SourcesConfig;
 
 function isProductPlatform(platform: PlatformConfig): platform is ProductPlatformConfig {
   return (
@@ -163,6 +178,12 @@ for (const platform of CONFIG.platforms) {
   }
   if (platform.urlTemplate && !platform.urlTemplate.includes("{code}")) {
     throw new Error(`Platform ${platform.key} URL template must include {code}`);
+  }
+  if (platform.productsArtifact && !platform.productsArtifact.startsWith("https://")) {
+    throw new Error(`Platform ${platform.key} product artifact must use HTTPS`);
+  }
+  if (platform.searchUrlPrefix && !platform.searchUrlPrefix.startsWith("https://")) {
+    throw new Error(`Platform ${platform.key} search URL prefix must use HTTPS`);
   }
   for (const store of platform.stores ?? []) {
     if (!store.url.startsWith("https://")) {
@@ -188,9 +209,9 @@ const ENV = (
 ).process?.env;
 
 export const OFFER_SOURCE =
-  ENV?.MK_OFFER_SOURCE ?? ENV?.MK_OFFER_URL ?? APP_CONFIG.sources["offer-codes"];
+  ENV?.MK_OFFER_SOURCE ?? ENV?.MK_OFFER_URL ?? SOURCES_CONFIG.sources["offer-codes"].url;
 export const OFFER_SOURCE_IS_URL = /^https?:\/\//.test(OFFER_SOURCE);
-export const CATALOG_URL = ENV?.MK_CATALOG_URL ?? APP_CONFIG.sources.catalog;
+export const CATALOG_URL = ENV?.MK_CATALOG_URL ?? SOURCES_CONFIG.sources.catalog.url;
 const REPO_ROOT = dirname(dirname(CONFIG_PATH));
 
 function mergeOffers(entries: Offer[]): Offer[] {
@@ -271,6 +292,7 @@ const OVERVIEW_PLATFORMS = CONFIG.platforms.filter(
 );
 
 export const PLATFORMS = PRODUCT_PLATFORMS;
+export const ALL_PLATFORMS = CONFIG.platforms;
 const PLATFORM_URL_TEMPLATES = Object.fromEntries(
   PRODUCT_PLATFORMS.map((platform) => [platform.key, platform.urlTemplate]),
 ) as Record<PlatformKey, string>;
@@ -395,7 +417,7 @@ export function calculateStats(rows: AppRow[]): MarketplaceStats {
   };
 }
 
-async function fetchJson<T>(url: string): Promise<T> {
+export async function fetchJson<T>(url: string): Promise<T> {
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -424,12 +446,9 @@ async function fetchJson<T>(url: string): Promise<T> {
     : new Error(`Failed to load ${url}`);
 }
 
-export async function loadMarketplaceData(): Promise<{
-  rows: AppRow[];
-  stats: MarketplaceStats;
-  generatedAt: Date;
-  catalog: CatalogProduct[];
-}> {
+let marketplaceDataPromise: Promise<MarketplaceData> | undefined;
+
+async function buildMarketplaceData(): Promise<MarketplaceData> {
   const [offers, catalog] = await Promise.all([
     loadOffers(),
     loadCatalogProducts(),
@@ -442,10 +461,20 @@ export async function loadMarketplaceData(): Promise<{
   return { rows, stats: calculateStats(rows), generatedAt: new Date(), catalog };
 }
 
-export async function loadCatalogProducts(): Promise<CatalogProduct[]> {
+export function loadMarketplaceData(): Promise<MarketplaceData> {
+  return (marketplaceDataPromise ??= buildMarketplaceData());
+}
+
+let catalogProductsPromise: Promise<CatalogProduct[]> | undefined;
+
+async function fetchCatalogProducts(): Promise<CatalogProduct[]> {
   const catalog = await fetchJson<CatalogProduct[]>(CATALOG_URL);
   if (!Array.isArray(catalog)) {
     throw new Error("The product catalog must return a JSON array");
   }
   return catalog.filter((product) => Boolean(product.key));
+}
+
+export function loadCatalogProducts(): Promise<CatalogProduct[]> {
+  return (catalogProductsPromise ??= fetchCatalogProducts());
 }

@@ -1,0 +1,20 @@
+{
+  "sources": {
+    "catalog": {
+      "summary": "Websoft9 English application catalog, including app identifiers, product content, and related metadata.",
+      "url": "https://artifact.websoft9.com/appstore/release/catalog/product_en.json"
+    },
+    "versions": {
+      "summary": "Websoft9 application version baseline for comparison with marketplace product versions.",
+      "url": "https://artifact.websoft9.com/appstore/dev/library/apps-verson.json"
+    },
+    "category": {
+      "summary": "Websoft9 English application category catalog.",
+      "url": "https://artifact.websoft9.com/appstore/release/catalog/catalog_en.json"
+    },
+    "offer-codes": {
+      "summary": "Mapping matrix between cloud marketplace product codes and Websoft9 applications.",
+      "url": "https://artifact.websoft9.com/cloud_data/matrix/matrix.json"
+    }
+  }
+}

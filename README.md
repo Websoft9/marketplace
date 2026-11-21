@@ -29,4 +29,5 @@ A Websoft9 automated operations project for mainstream cloud marketplaces. It ma
 ## For Developer
 
 - `make help` — list development commands.
+- `make site` — start the Astro site in the foreground; if port 9001 is busy it automatically picks the next free port (equivalent to `cd site && npm start`).
 - `make cli` — enter business commands in an isolated `.venv` (`mk help`).
