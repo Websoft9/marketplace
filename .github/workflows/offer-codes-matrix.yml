@@ -321,6 +321,14 @@ jobs:
               summary.write("\n".join(lines) + "\n")
           PY
 
+      - name: Remove matrix work backups
+        if: always()
+        run: |
+          if [[ -d "$MATRIX_DIR" ]]; then
+            find "$MATRIX_DIR" -maxdepth 1 -type f \
+              \( -name '.*.bak' -o -name '.*.tmp' \) -delete
+          fi
+
       - name: Upload offer-code matrix
         if: always()
         uses: actions/upload-artifact@v7
@@ -357,13 +365,14 @@ jobs:
 
           endpoint="https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
           if [[ "$PLATFORM" == "all" ]]; then
-            destination="s3://artifact/cloud_data/matrix/matrix.json"
+            destination="s3://artifact/cloud_data/matrix/"
           else
-            destination="s3://artifact/cloud_data/matrix/${PLATFORM}/matrix.json"
+            destination="s3://artifact/cloud_data/matrix/${PLATFORM}/"
           fi
 
-          aws s3 cp "$MATRIX_FILE" "$destination" \
+          aws s3 cp "$MATRIX_DIR" "$destination" \
+            --recursive \
+            --exclude ".*" \
             --endpoint-url "$endpoint" \
-            --content-type application/json \
             --cache-control "public, max-age=300"
-          echo "Published $MATRIX_FILE to $destination"
+          echo "Published $MATRIX_DIR to $destination"
