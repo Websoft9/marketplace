@@ -78,7 +78,7 @@ def _generation_report(report, *, as_json=False, err=False):
 def gen_command(platform, codes, product_catalog, profile, inventory_path, output, dry_run, as_json):
     """Generate matrix.json from live inventory, never from matrix-history.json.
 
-    Without --code, replace this cloud's mappings after a complete enumeration.
+    Without --code, replace this cloud/publisher's mappings after complete enumeration.
     With --code, change only those mappings and preserve everything else.
     """
     if platform not in offer_generate.PLATFORMS:

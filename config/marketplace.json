@@ -16,7 +16,12 @@
           "label": "vmlabinc 店铺",
           "url": "https://azuremarketplace.microsoft.com/en-us/marketplace/apps?search=vmlabinc1613642184700"
         }
-      ]
+      ],
+      "productsArtifact": "https://artifact.websoft9.com/cloud_data/matrix/generation-azure.json",
+      "supplier": {
+        "id": "websoft9inc",
+        "name": "Websoft9"
+      }
     },
     {
       "key": "azure-vmlab",
@@ -24,7 +29,12 @@
       "description": "Azure Marketplace by VMLab",
       "urlTemplate": "https://azuremarketplace.microsoft.com/en-us/marketplace/apps/{code}",
       "searchUrlPrefix": "https://azuremarketplace.microsoft.com/en-us/marketplace/apps?search=",
-      "overviewKey": "azure"
+      "overviewKey": "azure",
+      "productsArtifact": "https://artifact.websoft9.com/cloud_data/matrix/generation-azure-vmlab.json",
+      "supplier": {
+        "id": "vmlabinc1613642184700",
+        "name": "VMLAB INC."
+      }
     },
     {
       "key": "aws",

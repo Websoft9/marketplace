@@ -55,14 +55,16 @@ AWS_DEFAULT_REGION=us-east-1
     ),
     "azure": """\
 # --- Azure Marketplace Partner Center ---
-# Backend listing adapter is not implemented yet.
+# websoft9inc: read-only Product Ingestion VM inventory + public Catalog verification.
+# Associate this Entra app with the Websoft9 Partner Center publisher account.
 AZURE_TENANT_ID=
 AZURE_CLIENT_ID=
 AZURE_CLIENT_SECRET=
 """,
     "azure-vmlab": """\
 # --- Azure Marketplace Partner Center (VMLab seller) ---
-# Backend listing adapter is not implemented yet.
+# Read-only VM inventory + Code matrix for vmlabinc1613642184700.
+# mk --env-file azure-vmlab.env maps these local keys to AZURE_VMLAB_*.
 AZURE_TENANT_ID=
 AZURE_CLIENT_ID=
 AZURE_CLIENT_SECRET=

@@ -55,7 +55,12 @@ def cli(env_file_path: Path | None) -> None:
     """Websoft9 marketplace business CLI."""
     if env_file_path is not None:
         try:
-            loaded = env_file.load(env_file_path)
+            # Conventional per-account file keeps the same local AZURE_* template,
+            # but loads VMLab into its own namespace even in an all-cloud invocation.
+            key_map = ({f"AZURE_{suffix}": f"AZURE_VMLAB_{suffix}"
+                        for suffix in ("TENANT_ID", "CLIENT_ID", "CLIENT_SECRET")}
+                       if env_file_path.stem == "azure-vmlab" else None)
+            loaded = env_file.load(env_file_path, key_map=key_map)
         except ValueError as error:
             raise click.ClickException(str(error)) from None
         if not loaded:

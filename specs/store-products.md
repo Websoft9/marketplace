@@ -15,6 +15,8 @@ mk --env-file .secrets/aliyun.env store products --platform aliyun
 # JSON inventory for workflows or artifacts.
 mk --env-file .secrets/aws.env store products --platform aws --json
 mk --env-file .secrets/alibabacloud.env store products --platform alibabacloud --json
+mk --env-file .secrets/azure.env store products --platform azure --json
+mk --env-file .secrets/azure-vmlab.env store products --platform azure-vmlab --json
 
 # Multiple selections are repeatable; platform order is preserved and duplicates removed.
 # Configure the selected clouds' credentials in the process environment beforehand.
@@ -24,7 +26,7 @@ mk store products --platform all --json
 mk store products --platform aws --visibility public --json
 ```
 
-`all` means the **implemented adapters**: `aws`, `aliyun`, `alibabacloud`, in
+`all` means the **implemented adapters**: `aws`, `aliyun`, `alibabacloud`, `azure`, `azure-vmlab`, in
 that order. It does not claim support for all clouds in `config/marketplace.json`.
 Other platform keys are rejected before network calls. `all` cannot be combined
 with another selection. `--profile NAME` selects an AWS seller profile and is
@@ -44,10 +46,13 @@ delisted products. Absence from the result is not proof of delisting.
 | `aws` | Authenticated seller, Catalog `OwnershipType=SELF` (API default) | AMI `Description.ProductCode`, `ProductTitle`, `ShortDescription` | `Visibility == Public`, filtered before batch detail reads and rechecked afterwards |
 | `aliyun` | 长沙网久软件有限公司, store `228399`, supplier UID `1904996544835414` | `DescribeProducts` `Code`, `Name`, `ShortDescription` | Intersection with the supplier's public store image codes and `hiddenForCloudMarket == 0` |
 | `alibabacloud` | Websoft9, store `2116499` | `DescribeProducts` `Code`, `Name`, `ShortDescription` | Intersection with the publisher's public store image codes and `deliveryMethod == Image` |
+| `azure` | Websoft9, publisher `websoft9inc` only | Product Ingestion VM `identity.externalId` and durable `id`; live English `listing.title/shortDescription` | Intersection with public Catalog VM offers, live generally-available submission and at least one visible public plan |
+| `azure-vmlab` | VMLAB INC., publisher `vmlabinc1613642184700` only | Same Product Ingestion/live VM facts using the VMLab account | Same public Catalog/live checks scoped to the VMLab publisher |
 
 Platform supplier IDs, names and the Aliyun supplier UID are maintained in
 `config/marketplace.json` under each platform's `supplier` object. The Aliyun and
 Alibaba Cloud International adapters validate that metadata before querying.
+Azure also validates its configured `supplier.id/name` before querying.
 
 AWS `SELF` is a scope, not a seller profile ID. The command does **not** assume
 that arbitrary AWS credentials belong to the configured Websoft9 seller profile.
@@ -77,6 +82,60 @@ calls are made.
 `StoreVisible` is an evidence label, **not an invented OpenAPI publication
 status**. Both Alibaba storefront endpoints are unversioned website interfaces;
 schema changes, blocking or unverified ownership/visibility fail closed.
+
+### Azure (Websoft9 and VMLab)
+
+`cli/azure_market.py` uses Product Ingestion API `$version=2026-11-01` at
+`https://graph.microsoft.com/rp/product-ingestion`. It enumerates all seller
+pages with `type=azureVirtualMachine`, following `@nextLink`. Product identities
+are account-scoped, not proof of the configured publisher on their own.
+
+Publisher and public visibility are independently checked using the public
+storefront Catalog interface `https://catalogapi.azure.com/offers`,
+`api-version=2018-08-01-beta`, `$filter=publisherId eq '<selected publisher>'`, following
+`nextPageLink`. It verifies `publisherId`, `publisherDisplayName`,
+`id == publisherId + '.' + offerId`, `offerType == VirtualMachine` and explicit
+boolean false values for `isPreview`, `isPrivate`, `isStopSell` and
+`isExcludedFromSearch`. This older website interface was live-verified on
+2026-11-22; it is not the newer API-key-protected `/products` REST API and is
+not assumed to have that API's schema or support guarantees. Missing flags,
+schema changes or access errors fail closed; there is no fallback to draft facts.
+
+Every visible VM must exist in the complete authenticated seller inventory.
+Only these public candidates need live `resource-tree/product/<id>` requests
+(`targetType=live`), with up to four concurrent reads. Each tree must have the
+requested root, target, identical VM identity and one live submission with
+`status=completed`, `result=succeeded`, `lifecycleState=generallyAvailable`.
+Deprecated submissions are excluded, as are products with no active visible
+public plan (`audience=public`, `visibility=visible`). Unknown statuses or
+missing plan evidence fail the inventory. Plan lifecycle absence uses the
+documented `generallyAvailable` default; explicit deprecated/deleted plans
+are not public candidates. The unique `en-us`, `kind=azureVM` listing supplies
+title/summary; draft aliases and public catalog wording never override it.
+
+The public code is `<selected publisher>.<identity.externalId>`; `entityId` retains the
+separate `product/<UUID>` durable ID. Contacts, private audiences, image URLs,
+tokens and raw resource trees are never emitted or saved. Requests do not follow
+redirects; pagination must stay on the same HTTPS host/path and retain the query
+scope. Repeated/malformed pages, duplicate identities and any failed detail read
+block a complete inventory. No additional SDK or Catalog API key is needed for
+this implementation. Credentials are documented in [cloud-connector.md](cloud-connector.md).
+
+`azure` selects `websoft9inc` / `Websoft9`; `azure-vmlab` selects
+`vmlabinc1613642184700` / `VMLAB INC.`. Both read their own supplier metadata
+from `config/marketplace.json` and retain the selected platform in snapshots.
+Snapshots for one account cannot be used as facts for the other account.
+The shared adapter takes publisher scope as a parameter; it never mutates global
+supplier values or swaps process credentials during concurrent queries.
+
+In the process environment, `AZURE_*` belongs exclusively to Websoft9 and
+`AZURE_VMLAB_*` exclusively to VMLab. A missing or partial VMLab set fails rather
+than falling back to Websoft9 credentials. The CLI maps generic `AZURE_*` keys
+in a file named `azure-vmlab.env` into `AZURE_VMLAB_*` before loading it, without
+overwriting the default account. For arbitrary filenames, use the namespaced
+keys explicitly. See [cloud-connector.md](cloud-connector.md) for local and
+simultaneous-account usage. Matrix generation for either account uses the shared
+`productID.azure` column, not a new `productID.azure-vmlab` column.
 
 AWS, Aliyun and Alibaba Cloud International use the existing optional
 dependencies and environment variables documented in

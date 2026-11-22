@@ -9,10 +9,10 @@ import tempfile
 from collections import Counter
 from pathlib import Path
 
-from . import offer_codes, offer_resolve
+from . import azure_market, offer_codes, offer_resolve
 
 
-PLATFORMS = {"aws": "AWS", "aliyun": "Aliyun", "alibabacloud": "Alibaba Cloud"}
+PLATFORMS = {"aws": "AWS", "aliyun": "Aliyun", "alibabacloud": "Alibaba Cloud", "azure": "Azure", "azure-vmlab": "Azure (VMLab)"}
 
 
 def generate(products, identities, previous, *, platform="aws", codes=None):
@@ -24,7 +24,12 @@ def generate(products, identities, previous, *, platform="aws", codes=None):
     if platform not in PLATFORMS:
         raise ValueError(f"generation is not supported for {platform!r}; implemented: {', '.join(PLATFORMS)}")
     cloud = PLATFORMS[platform]
+    matrix_platform = "azure" if platform in azure_market.PLATFORMS else platform
     products = list(products)
+    if platform in azure_market.PLATFORMS:
+        azure_market._require_supplier(platform)
+        if any(not azure_market.valid_identity(p.code, p.entity_id, platform) for p in products):
+            raise ValueError("Azure generation requires valid configured-publisher product identities")
     selected = list(products)
     unresolved = []
     if codes:
@@ -101,9 +106,12 @@ def generate(products, identities, previous, *, platform="aws", codes=None):
         for value in (product.code, product.alternate_code, product.entity_id) if value
     }
     for entry in by_id.values():
-        values = entry["productID"][platform]
+        values = entry["productID"][matrix_platform]
         touched = selected_aliases if codes else set(values)
-        entry["productID"][platform] = [code for code in values if code not in touched]
+        if platform in azure_market.PLATFORMS:
+            # Both publishers share one column, but regeneration replaces only its own scope.
+            touched = {code for code in touched if azure_market.owns_code(code, platform)}
+        entry["productID"][matrix_platform] = [code for code in values if code not in touched]
         # Variants are no longer maintained. Keep no stale per-code labels.
         entry.pop("variants", None)
     for code, app in sorted(assignments.items()):
@@ -111,7 +119,7 @@ def generate(products, identities, previous, *, platform="aws", codes=None):
             "id": app, "productID": {key: [] for key in offer_codes.REQUIRED_PLATFORMS},
             "type": "app", "applications": [app],
         })
-        entry["productID"][platform].append(code)
+        entry["productID"][matrix_platform].append(code)
     result = sorted(by_id.values(), key=lambda entry: entry["id"])
     for entry in result:
         for key in entry["productID"]:

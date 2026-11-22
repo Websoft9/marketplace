@@ -7,7 +7,7 @@ from unittest import mock
 
 from click.testing import CliRunner
 
-from cli import alibabacloud_market, aliyun_market, aws_inventory, store
+from cli import alibabacloud_market, aliyun_market, aws_inventory, azure_market, store
 from cli.cli import cli
 from cli.store_models import InventoryError, Product
 from tests.click_support import separated_runner
@@ -48,6 +48,12 @@ class StoreQueryTests(unittest.TestCase):
             kwargs["progress"](f"{platform}: progress")
             if platform == "aliyun":
                 raise InventoryError("Aliyun store query failed; visibility unverified")
+            if platform == "azure":
+                return [Product("websoft9inc.odoo", "product/00000000-0000-0000-0000-000000000001",
+                                "Unknown app", "summary", "StoreVisible")]
+            if platform == "azure-vmlab":
+                return [Product("vmlabinc1613642184700.odoo", "product/00000000-0000-0000-0000-000000000002",
+                                "Unknown app", "summary", "StoreVisible")]
             return [Product("code", "entity", "Unknown app", "summary",
                             "Public" if platform == "aws" else "StoreVisible")]
 
@@ -56,14 +62,14 @@ class StoreQueryTests(unittest.TestCase):
         self.assertEqual(result.exit_code, 1, result.output)
         report = json.loads(result.stdout)
         self.assertFalse(report["complete"])
-        self.assertEqual(report["count"], 2)
+        self.assertEqual(report["count"], 4)
         self.assertEqual([r["platform"] for r in report["results"]], list(store.PLATFORMS))
         failed = report["results"][1]
         self.assertFalse(failed["complete"])
         self.assertEqual(failed["products"], [])
         self.assertEqual(failed["errors"][0]["code"], "InventoryError")
         self.assertIn("visibility unverified", failed["errors"][0]["message"])
-        self.assertEqual(collect.call_count, 3)
+        self.assertEqual(collect.call_count, 5)
         self.assertIn("progress", result.stderr)
 
     def test_unknown_sdk_errors_are_not_stringified(self):
@@ -104,7 +110,7 @@ class StoreQueryTests(unittest.TestCase):
         self.assertEqual(collect.call_count, 2)
 
     def test_invalid_selection_fails_before_network(self):
-        for args in (["--platform", "azure"],
+        for args in (["--platform", "huaweicloud"],
                      ["--platform", "all", "--platform", "aws"],
                      ["--platform", "aliyun", "--profile", "seller"]):
             with mock.patch.object(store, "collect_products") as collect:
@@ -120,6 +126,29 @@ class StoreQueryTests(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("| Product code | Title | Short description |", result.stdout)
         self.assertIn("Unknown \\| title line", result.stdout)
+
+    def test_azure_uses_configured_publisher_and_retains_only_public_facts(self):
+        p = Product("websoft9inc.odoo", "product/00000000-0000-0000-0000-000000000001",
+                    "Odoo", "Live summary", "StoreVisible")
+        with mock.patch.object(azure_market, "list_products", return_value=[p]) as fetch:
+            result = self.runner.invoke(cli, ["store", "products", "--platform", "azure", "--json"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        fetch.assert_called_once()
+        report = json.loads(result.stdout)["results"][0]
+        self.assertEqual(report["store"]["id"], "websoft9inc")
+        self.assertEqual(report["products"][0]["entityId"], p.entity_id)
+        self.assertEqual(report["products"][0]["shortDescription"], "Live summary")
+        self.assertIn("isPreview", report["products"][0]["visibilityEvidence"])
+
+    def test_azure_snapshot_rejects_other_publisher_or_invalid_identity(self):
+        for code, entity_id in (("vmlabinc1613642184700.odoo", "product/00000000-0000-0000-0000-000000000001"),
+                                ("websoft9inc.odoo", "not-a-durable-id")):
+            with mock.patch.object(azure_market, "list_products", return_value=[
+                Product(code, entity_id, "Odoo", visibility="StoreVisible"),
+            ]):
+                report = store.query_platform("azure")
+            self.assertFalse(report["complete"])
+            self.assertEqual(report["products"], [])
 
     def test_real_product_url_is_used_when_adapter_provides_one(self):
         url = "https://marketplace.alibabacloud.com/products/56718003/sgcmjj000.html"

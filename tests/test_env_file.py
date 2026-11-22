@@ -52,6 +52,19 @@ CONTENTFUL_ENVIRONMENT=master
         with self.assertRaisesRegex(ValueError, "cannot read env file"):
             env_file.load(Path("/tmp/opencode/does-not-exist.env"))
 
+    def test_key_mapping_preserves_existing_namespaced_environment(self):
+        with tempfile.TemporaryDirectory() as name:
+            path = Path(name) / "azure-vmlab.env"
+            path.write_text("AZURE_CLIENT_ID=from-file\nAZURE_TENANT_ID=file-tenant\n")
+            path.chmod(0o600)
+            with mock.patch.dict(os.environ, {"AZURE_CLIENT_ID": "websoft9",
+                                             "AZURE_VMLAB_CLIENT_ID": "from-shell"}, clear=True):
+                loaded = env_file.load(path, key_map={"AZURE_CLIENT_ID": "AZURE_VMLAB_CLIENT_ID",
+                                                     "AZURE_TENANT_ID": "AZURE_VMLAB_TENANT_ID"})
+                self.assertEqual(os.environ["AZURE_CLIENT_ID"], "websoft9")
+                self.assertEqual(os.environ["AZURE_VMLAB_CLIENT_ID"], "from-shell")
+                self.assertEqual(loaded, {"AZURE_VMLAB_TENANT_ID": "file-tenant"})
+
 
 class CliOptionTests(unittest.TestCase):
     def setUp(self):
@@ -82,6 +95,19 @@ class CliOptionTests(unittest.TestCase):
         )
         self.assertNotEqual(result.exit_code, 0)
         self.assertIn("cannot read env file", result.output)
+
+    def test_vmlab_file_generic_keys_load_into_separate_namespace(self):
+        path = Path(self.temp.name) / "azure-vmlab.env"
+        path.write_text("AZURE_TENANT_ID=vmlab-tenant\nAZURE_CLIENT_ID=vmlab-client\nAZURE_CLIENT_SECRET=PRIVATE\n")
+        path.chmod(0o600)
+        with mock.patch.dict(os.environ, {"AZURE_CLIENT_ID": "websoft9-client"}, clear=True):
+            result = self.runner.invoke(cli, ["--env-file", str(path), "help"])
+            self.assertEqual(result.exit_code, 0, result.output)
+            self.assertEqual(os.environ["AZURE_CLIENT_ID"], "websoft9-client")
+            self.assertEqual(os.environ["AZURE_VMLAB_CLIENT_ID"], "vmlab-client")
+            self.assertEqual(os.environ["AZURE_VMLAB_CLIENT_SECRET"], "PRIVATE")
+            self.assertNotIn("AZURE_CLIENT_SECRET", os.environ)
+            self.assertNotIn("PRIVATE", result.output)
 
 
 if __name__ == "__main__":

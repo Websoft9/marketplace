@@ -8,11 +8,11 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import alibabacloud_market, aliyun_market, aws_inventory
+from . import alibabacloud_market, aliyun_market, aws_inventory, azure_market
 from .marketplace import PLATFORM_URL_TEMPLATES
 from .store_models import InventoryError, Product
 
-PLATFORMS = ("aws", "aliyun", "alibabacloud")
+PLATFORMS = ("aws", "aliyun", "alibabacloud", "azure", "azure-vmlab")
 VISIBILITIES = ("public",)
 PRODUCT_FACT_FIELDS = (
     "platform", "storeId", "provider", "code", "entityId", "title", "shortDescription",
@@ -36,10 +36,22 @@ def collect_products(platform, *, profile=None, visibility="public", progress=No
         return aws_inventory.list_aws_products(profile, public_only=True, progress=progress)
     if platform == "aliyun":
         return aliyun_market.list_aliyun_products(progress=progress)
+    if platform == "azure":
+        return azure_market.list_products(progress=progress)
+    if platform == "azure-vmlab":
+        return azure_market.list_products(platform=platform, progress=progress)
     return alibabacloud_market.list_products(progress=progress)
 
 
 def _scope(platform):
+    if platform in azure_market.PLATFORMS:
+        supplier_id, supplier_name = azure_market.supplier(platform)
+        return {
+            "id": supplier_id, "provider": supplier_name,
+            "url": "https://azuremarketplace.microsoft.com/en-us/marketplace/apps?search=" + supplier_id,
+            "ownershipEvidence": "Authenticated Product Ingestion VM identities + public Catalog publisherId/offerId",
+        }, [f"Product Ingestion {azure_market.API_VERSION} product + resource-tree targetType=live",
+            f"{azure_market.CATALOG_API} api-version={azure_market.CATALOG_VERSION}"]
     if platform == "aws":
         return {
             # Seller profile IDs and AWS account IDs are not interchangeable.
@@ -64,6 +76,7 @@ def query_platform(platform, *, profile=None, visibility="public", progress=None
     started = time.monotonic()
     store, sources = _scope(platform)
     evidence = ("AWS Description.Visibility or AmiProductSummary.Visibility == Public" if platform == "aws"
+                else azure_market.VISIBILITY_EVIDENCE if platform in azure_market.PLATFORMS
                 else "DescribeProducts intersection with store images, hiddenForCloudMarket == 0"
                 if platform == "aliyun"
                 else "DescribeProducts intersection with store images, deliveryMethod == Image")
@@ -176,6 +189,8 @@ def inventory_products(inventory, platform):
                 or (row.get("url") is not None and not isinstance(row["url"], str))):
             raise InventoryError("inventory contains malformed, nonpublic, duplicate or wrong-store product facts")
         entities.add(row["entityId"])
+        if platform in azure_market.PLATFORMS and not azure_market.valid_identity(row["code"], row["entityId"], platform):
+            raise InventoryError("Azure inventory contains wrong-publisher or malformed product identity")
         products.append(Product(
             code=row["code"], entity_id=row["entityId"], title=row["title"],
             summary=row["shortDescription"], visibility=row["visibility"],

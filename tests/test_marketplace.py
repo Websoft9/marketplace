@@ -58,6 +58,14 @@ class ConfigTests(unittest.TestCase):
             "id": "2116499",
             "name": "Websoft9",
         })
+        self.assertEqual(app_list.PLATFORM_SUPPLIERS["azure"], {
+            "id": "websoft9inc",
+            "name": "Websoft9",
+        })
+        self.assertEqual(app_list.PLATFORM_SUPPLIERS["azure-vmlab"], {
+            "id": "vmlabinc1613642184700",
+            "name": "VMLAB INC.",
+        })
 
 
 class LinkTests(unittest.TestCase):

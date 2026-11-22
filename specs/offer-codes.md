@@ -48,14 +48,24 @@ mk --env-file .secrets/alibabacloud.env offer-codes gen --platform alibabacloud 
 mk --env-file .secrets/alibabacloud.env store products --platform alibabacloud --json > international-inventory.json
 mk offer-codes gen --platform alibabacloud --inventory international-inventory.json --dry-run --json
 # Omit --dry-run only after reviewing the diff to write productID.alibabacloud.
+
+# Azure: websoft9inc public VMs only; preserve VMLab and other publishers.
+mk --env-file .secrets/azure.env store products --platform azure --json > azure-inventory.json
+mk offer-codes gen --platform azure --inventory azure-inventory.json --dry-run --json
+mk --env-file .secrets/azure.env offer-codes gen --platform azure --json
+
+# Azure VMLab: same local key names, independent publisher scope.
+mk --env-file .secrets/azure-vmlab.env store products --platform azure-vmlab --json > vmlab-inventory.json
+mk offer-codes gen --platform azure-vmlab --inventory vmlab-inventory.json --dry-run --json
+mk --env-file .secrets/azure-vmlab.env offer-codes gen --platform azure-vmlab --json
 ```
 
-- AWS (`aws`), Aliyun China (`aliyun`) and Alibaba Cloud International
-  (`alibabacloud`) generation are implemented; other platforms fail before any
+- AWS (`aws`), Aliyun China (`aliyun`), Alibaba Cloud International
+  (`alibabacloud`) and Azure (`azure` for Websoft9, `azure-vmlab` for VMLab) generation are implemented; other platforms fail before any
   network call or write. The generator and CLI share one supported-platform
   registry and one matching/report/write implementation. AWS credentials use
   the normal AWS provider chain. `--profile` applies only to AWS and is rejected
-  for both Alibaba platforms.
+  for all non-AWS platforms.
 - AWS codes come exclusively from `Description.ProductCode` (the public
   marketplace code, typically 24–25 lowercase letters/digits), never `Sku`.
   `Sku` is only a seller-defined alias retained for explicit code lookup and
@@ -86,6 +96,11 @@ mk offer-codes gen --platform alibabacloud --inventory international-inventory.j
   when the title has no hit is the summary before its first `,` or `，` considered.
   Reviewed `titleTrademark` exceptions remain recognized.
 - Full runs enumerate every page before replacing this platform's mappings.
+  Azure is deliberately publisher-scoped: `azure` replaces only `websoft9inc.*`
+  and `azure-vmlab` replaces only `vmlabinc1613642184700.*` in the shared
+  `productID.azure` column. Each preserves the other publisher and any unrelated
+  publisher codes. No `productID.azure-vmlab` column is introduced.
+  Targeted Azure runs likewise only modify successfully resolved configured-publisher codes.
   `--code` is repeatable and accepts one code per occurrence. Targeted runs
   change only those codes, preserving all other mappings.
 - Products with missing codes, ambiguous/unmatched titles, duplicate cloud codes
@@ -124,6 +139,25 @@ mk offer-codes gen --platform alibabacloud --inventory international-inventory.j
   `store.get_inventory` and `inventory_provenance` provide the shared live/snapshot
   selection and metadata used by generation and `offer resolve`; generation
   always requests `visibility="public"` explicitly.
+
+Azure facts come from the authenticated Product Ingestion VM identity list and
+live English listing, independently scoped against the selected publisher's public Catalog.
+Codes are `<publisherId>.<offerId>`; durable resource IDs remain `entityId`, not
+matrix codes. See [store-products.md](store-products.md) for source versions,
+visibility checks and website-interface limitations. Azure inventory snapshots
+must also contain valid configured-publisher codes and `product/<UUID>` IDs.
+No Azure listing update, offer creation or publishing API is implemented.
+
+`.github/workflows/offer-codes-matrix.yml` offers `azure` and `azure-vmlab` and
+includes both in `all`, sequentially merging their separate publisher scopes.
+It uses the Azure Entra credentials described in [cloud-connector.md](cloud-connector.md),
+not `azure/login` or an ARN. `generation-azure.json` and `generation-azure-vmlab.json`
+are included with `matrix.json`,
+the other generation reports and `platforms.txt` in the GitHub artifact and R2 upload.
+All-cloud runs publish to `artifact/cloud_data/matrix/`; Azure-only runs publish
+to `artifact/cloud_data/matrix/azure/`, while VMLab-only runs publish to
+`artifact/cloud_data/matrix/azure-vmlab/`, protecting the combined matrix. The site
+uses each platform's generation report configured by its `productsArtifact`.
 
 ### Fact input and matching report
 

@@ -32,6 +32,10 @@ Fill only the blanks.
   `ALIYUN_SECURITY_TOKEN`.
 - `alibabacloud` writes `ALIBABA_CLOUD_*` and is a separate Alibaba Cloud
   account from Aliyun China; never reuse one site's key for the other.
+- `azure` writes `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`
+  for the Websoft9 Partner Center publisher (`websoft9inc`).
+- `azure-vmlab` writes the same local `AZURE_*` keys to `azure-vmlab.env` for
+  the independent VMLab account; the CLI loads these as `AZURE_VMLAB_*`.
 - Cloud files contain only that cloud's credentials; services are never mixed
   into a cloud file.
 
@@ -65,6 +69,56 @@ or put the CLI option inside `ARGS` as shown above.
 
 ## AWS 
 GitHub Actions authenticates to AWS through GitHub OIDC and assumes a least-privilege IAM role, so no long-lived AWS access keys are stored in the repository. Trust policies must use this repository's immutable subject prefix `repo:Websoft9@36851177/marketplace@326841278` and allow only the intended branch or environment.
+
+## Azure Marketplace (Websoft9 and VMLab)
+
+Associate the Entra application with the Websoft9 Partner Center publisher
+account and grant the Marketplace API permissions/role required by Microsoft's
+[Product Ingestion onboarding](https://learn.microsoft.com/en-us/partner-center/marketplace-offers/product-ingestion-api#getting-started).
+The CLI obtains a token with `client_credentials`, tenant/client ID, client secret
+and `scope=https://graph.microsoft.com/.default`; no Azure subscription ID, ARN,
+`azure/login` or GitHub OIDC configuration is required by this adapter.
+
+Local usage: `mk --env-file .secrets/azure.env store products --platform azure --json`.
+For the Matrix Action configure `AZURE_TENANT_ID` and `AZURE_CLIENT_ID` as Actions
+secrets or variables, and `AZURE_CLIENT_SECRET` as an **Actions secret**. Credentials
+are scoped to the check/generation steps, not passed to third-party OIDC actions.
+No secret/token or raw seller response is printed or written. The public Catalog
+`/offers` interface used for visibility is unauthenticated; the newer `/products`
+API and its API key are not used. See [store-products.md](store-products.md).
+
+Only read-only product queries and local matrix generation are implemented;
+Azure plan/apply remains unsupported for both publishers.
+
+### VMLab account isolation
+
+GitHub uses `AZURE_VMLAB_TENANT_ID` and `AZURE_VMLAB_CLIENT_ID` (secrets or
+variables), and `AZURE_VMLAB_CLIENT_SECRET` (**secret**). These never replace
+the default `AZURE_*` credentials. The Matrix Action adds `azure-vmlab` as a
+selection, checks its own credential set, and includes both Azure accounts in
+`all`. Missing/partial credentials do not fall back to the other account.
+
+Local files may keep the same `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`,
+`AZURE_CLIENT_SECRET` field names. The CLI recognizes the conventional filename
+`azure-vmlab.env` (including `MK_ENV_FILE`) and maps those three keys to the
+VMLab namespace before loading, preserving any Websoft9 credentials already
+in the environment. Existing **namespaced** environment values still win.
+An arbitrary filename does not select an account: use `AZURE_VMLAB_*` keys
+in such a file instead. Neither file is automatically discovered or loaded.
+
+```sh
+mk --env-file .secrets/azure.env store products --platform azure --json
+mk --env-file .secrets/azure-vmlab.env store products --platform azure-vmlab --json
+mk --env-file .secrets/azure-vmlab.env offer-codes gen --platform azure-vmlab --dry-run --json
+```
+
+For simultaneous-account queries, load the Websoft9 `AZURE_*` set and VMLab
+`AZURE_VMLAB_*` set into the environment, or load `.secrets/azure.env` first
+and use `--env-file .secrets/azure-vmlab.env` for the second account:
+`mk --env-file .secrets/azure-vmlab.env store products --platform azure --platform azure-vmlab --json`.
+Do not source both generic-key files directly; the second shell source would
+overwrite the first account's values. The adapter passes each account's token
+as an explicit request argument and keeps concurrent queries independent.
 
 ## Aliyun China Marketplace
 The `aliyun` option in `.github/workflows/offer-listing-check.yml` uses GitHub OIDC to assume a RAM role. Set the `ALIYUN_ROLE_ARN` and `ALIYUN_OIDC_PROVIDER_ARN` GitHub Actions Variables. The workflow lists front-end-visible mirror products from `长沙网久软件有限公司` and extracts the application version from each product summary.

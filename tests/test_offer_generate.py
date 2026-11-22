@@ -10,7 +10,7 @@ from unittest import mock
 
 from click.testing import CliRunner
 
-from cli import alibabacloud_market, aliyun_market, aws_inventory, offer_codes, offer_generate, offer_resolve, store
+from cli import alibabacloud_market, aliyun_market, aws_inventory, azure_market, offer_codes, offer_generate, offer_resolve, store
 from cli.cli import cli
 from tests.click_support import separated_runner
 
@@ -36,6 +36,39 @@ ALIBABA_PLATFORMS = (
 
 class GenerateTests(unittest.TestCase):
     identities = {"odoo": ["Odoo"], "wordpress": ["WordPress"], "drupal": ["Drupal"]}
+
+    def test_both_azure_publishers_share_one_column_and_regenerate_independent_scopes(self):
+        old = [entry("odoo", ["aws-keep"], ["websoft9inc.old", "vmlabinc1613642184700.old", "other.keep"])]
+        before = copy.deepcopy(old)
+        products = {platform: [offer_resolve.Product(publisher + ".odoo",
+                      "product/00000000-0000-0000-0000-000000000001", "Odoo")]
+                    for platform, publisher in (("azure", "websoft9inc"),
+                                                ("azure-vmlab", "vmlabinc1613642184700"))}
+        for order in (("azure", "azure-vmlab"), ("azure-vmlab", "azure")):
+            result = old
+            for platform in order:
+                result, report = offer_generate.generate(products[platform], self.identities, result, platform=platform)
+                self.assertEqual(report["platform"], platform)
+            self.assertEqual(result[0]["productID"]["azure"],
+                             ["other.keep", "vmlabinc1613642184700.odoo", "websoft9inc.odoo"])
+            self.assertNotIn("azure-vmlab", result[0]["productID"])
+            self.assertEqual(result[0]["productID"]["aws"], ["aws-keep"])
+        self.assertEqual(old, before)
+
+    def test_vmlab_targeted_generation_moves_only_selected_publisher_code(self):
+        previous = [entry("odoo", azure=["vmlabinc1613642184700.move", "vmlabinc1613642184700.keep", "websoft9inc.keep"])]
+        result, _ = offer_generate.generate([
+            offer_resolve.Product("vmlabinc1613642184700.move", "product/00000000-0000-0000-0000-000000000001", "Drupal"),
+        ], self.identities, previous, platform="azure-vmlab", codes=["vmlabinc1613642184700.move"])
+        by_id = {r["id"]: r for r in result}
+        self.assertEqual(by_id["odoo"]["productID"]["azure"], ["vmlabinc1613642184700.keep", "websoft9inc.keep"])
+        self.assertEqual(by_id["drupal"]["productID"]["azure"], ["vmlabinc1613642184700.move"])
+
+    def test_vmlab_generation_rejects_default_publisher_identity(self):
+        with self.assertRaisesRegex(ValueError, "configured-publisher"):
+            offer_generate.generate([offer_resolve.Product("websoft9inc.odoo",
+                "product/00000000-0000-0000-0000-000000000001", "Odoo")],
+                self.identities, [], platform="azure-vmlab")
 
     def test_platform_replaces_only_aws_and_does_not_mutate_input(self):
         old = [entry("odoo", ["stale"], ["pub.odoo"])]
@@ -367,9 +400,94 @@ class GenerateCliTests(unittest.TestCase):
                          [entry("odoo", ["bad", "keep", "new"])])
 
     def test_unsupported_cloud_exits_before_fetching(self):
-        result = self.invoke("--platform", "azure")
+        result = self.invoke("--platform", "huaweicloud")
         self.assertNotEqual(result.exit_code, 0)
         self.fetch.assert_not_called()
+
+    def test_azure_live_and_snapshot_generation_preserve_vmlab_and_other_clouds(self):
+        p = offer_resolve.Product("websoft9inc.odoo", "product/00000000-0000-0000-0000-000000000001",
+                                  "Odoo", "Live description", "StoreVisible")
+        old = [entry("odoo", ["aws-keep"], ["websoft9inc.stale", "vmlabinc1613642184700.odoo"])]
+        self.path.write_text(json.dumps(old))
+        with mock.patch.object(azure_market, "list_products", return_value=[p]):
+            result = self.invoke("--platform", "azure", "--json", "--dry-run")
+            inventory = store.query_products(["azure"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["products"][0]["entityId"], p.entity_id)
+        self.assertEqual(report["products"][0]["shortDescription"], p.summary)
+        self.assertFalse(report["written"])
+        self.assertEqual(json.loads(self.path.read_text()), old)
+        snapshot = self.root / "azure-inventory.json"
+        snapshot.write_text(json.dumps(inventory))
+        with mock.patch.object(azure_market, "list_products", side_effect=AssertionError("offline")):
+            result = self.invoke("--platform", "azure", "--inventory", str(snapshot), "--json")
+        self.assertEqual(result.exit_code, 0, result.output)
+        data = json.loads(self.path.read_text())
+        self.assertEqual(data[0]["productID"]["azure"], ["vmlabinc1613642184700.odoo", "websoft9inc.odoo"])
+        self.assertEqual(data[0]["productID"]["aws"], ["aws-keep"])
+        self.assertEqual(offer_codes.verify([("matrix", data)])["errors"], 0)
+
+    def test_azure_targeted_generation_moves_only_selected_code(self):
+        old = [entry("odoo", azure=["websoft9inc.move", "websoft9inc.keep", "vmlabinc1613642184700.odoo"])]
+        self.path.write_text(json.dumps(old))
+        p = offer_resolve.Product("websoft9inc.move", "product/00000000-0000-0000-0000-000000000001",
+                                  "Drupal", visibility="StoreVisible")
+        with mock.patch.object(azure_market, "list_products", return_value=[p]):
+            result = self.invoke("--platform", "azure", "--code", p.code, "--json")
+        self.assertEqual(result.exit_code, 0, result.output)
+        data = {r["id"]: r for r in json.loads(self.path.read_text())}
+        self.assertEqual(data["odoo"]["productID"]["azure"], ["vmlabinc1613642184700.odoo", "websoft9inc.keep"])
+        self.assertEqual(data["drupal"]["productID"]["azure"], [p.code])
+
+    def test_azure_empty_failed_or_unmatched_inventory_cannot_overwrite(self):
+        old = json.dumps([entry("odoo", azure=["websoft9inc.keep"])])
+        self.path.write_text(old)
+        for products in ([], [offer_resolve.Product(
+                "websoft9inc.unknown", "product/00000000-0000-0000-0000-000000000001",
+                "Unknown", visibility="StoreVisible")]):
+            with mock.patch.object(azure_market, "list_products", return_value=products):
+                result = self.invoke("--platform", "azure", "--json")
+            self.assertNotEqual(result.exit_code, 0)
+            self.assertFalse(json.loads(result.stdout)["written"])
+            self.assertEqual(self.path.read_text(), old)
+        with mock.patch.object(azure_market, "list_products", side_effect=store.InventoryError("HTTP 403")):
+            result = self.invoke("--platform", "azure", "--json")
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertFalse(json.loads(result.stdout)["inventory"]["complete"])
+        self.assertEqual(self.path.read_text(), old)
+
+    def test_azure_rejects_profile_before_network(self):
+        with mock.patch.object(azure_market, "list_products") as fetch:
+            result = self.invoke("--platform", "azure", "--profile", "aws-seller")
+        self.assertNotEqual(result.exit_code, 0)
+        fetch.assert_not_called()
+
+    def test_vmlab_snapshot_cli_preserves_default_azure_and_uses_shared_matrix_column(self):
+        products = [offer_resolve.Product("vmlabinc1613642184700.odoo",
+                    "product/00000000-0000-0000-0000-000000000001", "Odoo", "VMLab summary", "StoreVisible")]
+        path, _ = self.snapshot(products, platform="azure-vmlab")
+        self.path.write_text(json.dumps([entry("odoo", ["aws-keep"], ["websoft9inc.keep", "vmlabinc1613642184700.stale"])]))
+        with mock.patch.object(azure_market, "list_products", side_effect=AssertionError("offline")):
+            result = self.invoke("--platform", "azure-vmlab", "--inventory", str(path), "--json")
+        self.assertEqual(result.exit_code, 0, result.output)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["platform"], "azure-vmlab")
+        self.assertEqual(report["products"][0]["platform"], "azure-vmlab")
+        self.assertEqual(report["inventory"]["store"]["id"], "vmlabinc1613642184700")
+        matrix = json.loads(self.path.read_text())
+        self.assertEqual(matrix[0]["productID"]["azure"], ["vmlabinc1613642184700.odoo", "websoft9inc.keep"])
+        self.assertNotIn("azure-vmlab", matrix[0]["productID"])
+
+    def test_vmlab_failed_inventory_cannot_modify_either_publisher(self):
+        old = json.dumps([entry("odoo", azure=["websoft9inc.keep", "vmlabinc1613642184700.keep"])])
+        self.path.write_text(old)
+        with mock.patch.object(azure_market, "list_products", side_effect=store.InventoryError("HTTP 403")) as fetch:
+            result = self.invoke("--platform", "azure-vmlab", "--json")
+        self.assertNotEqual(result.exit_code, 0)
+        fetch.assert_called_once_with(platform="azure-vmlab", progress=mock.ANY)
+        self.assertFalse(json.loads(result.stdout)["written"])
+        self.assertEqual(self.path.read_text(), old)
 
     def test_stale_snapshot_is_not_overwritten(self):
         self.path.write_text("[]\n")

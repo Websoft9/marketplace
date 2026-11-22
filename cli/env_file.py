@@ -47,8 +47,8 @@ def parse(text: str) -> dict[str, str]:
     return values
 
 
-def load(path: Path, *, override: bool = False) -> dict[str, str]:
-    """Load one env file into ``os.environ``; existing values win by default."""
+def load(path: Path, *, override: bool = False, key_map: dict[str, str] | None = None) -> dict[str, str]:
+    """Load one env file; optional key mapping precedes existing-environment checks."""
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as error:
@@ -63,6 +63,7 @@ def load(path: Path, *, override: bool = False) -> dict[str, str]:
     values = parse(text)
     loaded: dict[str, str] = {}
     for key, value in values.items():
+        key = (key_map or {}).get(key, key)
         if not override and key in os.environ:
             continue
         os.environ[key] = value
