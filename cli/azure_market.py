@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 import json
+import errno
+import http.client
 import os
+import random
 import re
+import socket
+import ssl
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 
 from .marketplace import PLATFORM_SUPPLIERS, PLATFORM_URL_TEMPLATES
 from .store_models import InventoryError, Product
@@ -24,6 +32,10 @@ API_VERSION = "2026-11-01"
 CATALOG_API = "https://catalogapi.azure.com/offers"
 CATALOG_VERSION = "2018-08-01-beta"
 PRODUCT_TYPE = "azureVirtualMachine"
+REQUEST_TIMEOUT = 60
+MAX_ATTEMPTS = 3  # Initial request plus at most two retries; never retry the whole inventory.
+MAX_RETRY_DELAY = 60
+RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
 VISIBILITY_EVIDENCE = (
     "Product Ingestion live VM intersected with public Catalog offers; "
     "isPreview/isPrivate/isStopSell/isExcludedFromSearch == false; "
@@ -66,26 +78,69 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def _request_json(url, *, timeout, token=None, data=None):
+def _transient_network_error(error):
+    reason = error.reason if isinstance(error, urllib.error.URLError) else error
+    if isinstance(reason, ssl.SSLError):
+        return False  # Never hide certificate or protocol failures behind retries.
+    return (isinstance(reason, (TimeoutError, ConnectionError, http.client.IncompleteRead,
+                                http.client.RemoteDisconnected))
+            or isinstance(reason, socket.gaierror) and reason.errno == socket.EAI_AGAIN
+            or isinstance(reason, OSError) and reason.errno in {
+                errno.ETIMEDOUT, errno.ECONNRESET, errno.ECONNREFUSED,
+                errno.ECONNABORTED, errno.EPIPE, errno.ENETUNREACH, errno.EHOSTUNREACH,
+            })
+
+
+def _retry_delay(attempt, retry_after=None):
+    delay = 2 ** attempt + random.uniform(0, 1)
+    if retry_after:
+        try:
+            text = retry_after.strip()
+            # Retry-After allows seconds or an HTTP date; ignore invalid headers.
+            seconds = (int(text) if text.isdecimal() and len(text) <= 10 else
+                       (parsedate_to_datetime(text) - datetime.now(timezone.utc)).total_seconds())
+            delay = max(delay, seconds)
+        except (ValueError, TypeError, OverflowError, AttributeError):
+            pass
+    return min(MAX_RETRY_DELAY, delay)
+
+
+def _request_json(url, *, timeout, token=None, data=None, context="Azure inventory", progress=None):
     headers = {"Accept": "application/json", "User-Agent": "websoft9-marketplace-cli"}
     if token:
         headers["Authorization"] = "Bearer " + token
     if data is not None:
         headers["Content-Type"] = "application/x-www-form-urlencoded"
     request = urllib.request.Request(url, headers=headers, data=data)
-    try:
-        with urllib.request.build_opener(_NoRedirect()).open(request, timeout=timeout) as response:
-            result = json.load(response)
-    except urllib.error.HTTPError as error:
-        raise InventoryError(f"Azure inventory request failed (HTTP {error.code})") from None
-    except Exception as error:
-        raise InventoryError(f"Azure inventory request failed ({type(error).__name__})") from None
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        retry_after = None
+        try:
+            with urllib.request.build_opener(_NoRedirect()).open(request, timeout=timeout) as response:
+                result = json.load(response)
+            break
+        except urllib.error.HTTPError as error:
+            reason = f"HTTP {error.code}"
+            retryable = error.code in RETRYABLE_STATUS
+            retry_after = error.headers.get("Retry-After") if error.headers else None
+            error.close()
+        except Exception as error:
+            reason = type(error).__name__
+            retryable = _transient_network_error(error)
+        if not retryable or attempt == MAX_ATTEMPTS:
+            raise InventoryError(
+                f"{context}: request failed ({reason}; attempts={attempt}/{MAX_ATTEMPTS})"
+            ) from None
+        delay = _retry_delay(attempt, retry_after)
+        if progress:
+            # Contexts are authored stages/public codes; never log URLs, tokens or response bodies.
+            progress(f"{context}: {reason}; retry {attempt + 1}/{MAX_ATTEMPTS} in {delay:.1f}s")
+        time.sleep(delay)
     if not isinstance(result, dict) or "error" in result or result.get("errors"):
-        raise InventoryError("Azure inventory returned an invalid or unsuccessful JSON response")
+        raise InventoryError(f"{context}: invalid or unsuccessful JSON response")
     return result
 
 
-def _access_token(timeout, platform="azure"):
+def _access_token(timeout, platform="azure", progress=None):
     # No generic fallback for VMLab: an absent/partial set must never borrow Websoft9 credentials.
     prefix = "AZURE_VMLAB" if platform == "azure-vmlab" else "AZURE"
     keys = tuple(f"{prefix}_{suffix}" for suffix in ("TENANT_ID", "CLIENT_ID", "CLIENT_SECRET"))
@@ -103,7 +158,7 @@ def _access_token(timeout, platform="azure"):
     }).encode()
     response = _request_json(
         f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
-        timeout=timeout, data=data,
+        timeout=timeout, data=data, context=f"{platform} authentication", progress=progress,
     )
     token = response.get("access_token")
     if not isinstance(token, str) or not token:
@@ -111,7 +166,7 @@ def _access_token(timeout, platform="azure"):
     return token
 
 
-def _pages(base, params, rows_key, next_key, *, timeout, token=None, progress=None):
+def _pages(base, params, rows_key, next_key, *, timeout, token=None, progress=None, context="Azure inventory"):
     url = base + "?" + urllib.parse.urlencode(params)
     seen = set()
     rows = []
@@ -119,13 +174,14 @@ def _pages(base, params, rows_key, next_key, *, timeout, token=None, progress=No
         if url in seen:
             raise InventoryError("Azure inventory pagination repeated a page; completeness unverified")
         seen.add(url)
-        response = _request_json(url, timeout=timeout, token=token)
+        response = _request_json(url, timeout=timeout, token=token,
+                                 context=f"{context} page {page}", progress=progress)
         items = response.get(rows_key)
         if not isinstance(items, list) or not all(isinstance(item, dict) for item in items):
             raise InventoryError("Azure inventory returned malformed page items")
         rows.extend(items)
         if progress:
-            progress(f"Azure {'seller' if token else 'public catalog'} page {page}: {len(items)} products")
+            progress(f"{context} page {page}: {len(items)} products")
         link = response.get(next_key)
         if link is None or link == "":
             return rows
@@ -145,7 +201,8 @@ def _pages(base, params, rows_key, next_key, *, timeout, token=None, progress=No
 def _seller_products(token, timeout, progress, platform="azure"):
     supplier_id, _ = supplier(platform)
     rows = _pages(API_BASE + "/product", {"type": PRODUCT_TYPE, "$version": API_VERSION},
-                  "value", "@nextLink", timeout=timeout, token=token, progress=progress)
+                  "value", "@nextLink", timeout=timeout, token=token, progress=progress,
+                  context=f"{platform} seller")
     products = {}
     entity_ids = set()
     for row in rows:
@@ -168,7 +225,8 @@ def _public_codes(timeout, progress, platform="azure"):
     supplier_id, supplier_name = supplier(platform)
     rows = _pages(CATALOG_API, {
         "api-version": CATALOG_VERSION, "$filter": f"publisherId eq '{supplier_id}'",
-    }, "items", "nextPageLink", timeout=timeout, progress=progress)
+    }, "items", "nextPageLink", timeout=timeout, progress=progress,
+       context=f"{platform} public catalog")
     codes = set()
     seen = set()
     for row in rows:
@@ -195,11 +253,11 @@ def _resources(tree, kind, entity_id):
             and (row.get("id") == entity_id if kind == "product" else row.get("product") == entity_id)]
 
 
-def _live_product(code, seller, token, timeout, platform="azure"):
+def _live_product(code, seller, token, timeout, platform="azure", progress=None):
     entity_id = seller["id"]
     tree = _request_json(API_BASE + "/resource-tree/" + entity_id + "?" + urllib.parse.urlencode({
         "targetType": "live", "$version": API_VERSION,
-    }), timeout=timeout, token=token)
+    }), timeout=timeout, token=token, context=f"{platform} live detail {code}", progress=progress)
     if (tree.get("root") != entity_id or tree.get("target") != {"targetType": "live"}
             or not isinstance(tree.get("resources"), list)
             or not all(isinstance(row, dict) for row in tree["resources"])):
@@ -251,18 +309,27 @@ def _live_product(code, seller, token, timeout, platform="azure"):
                     url=PLATFORM_URL_TEMPLATES[platform].format(code=code))
 
 
-def list_products(*, platform="azure", timeout=30, progress=None):
+def list_products(*, platform="azure", timeout=REQUEST_TIMEOUT, progress=None):
     """Enumerate one publisher using its own immutable token and query scope."""
     _require_supplier(platform)
-    token = _access_token(timeout, platform)
+    token = _access_token(timeout, platform, progress)
     seller = _seller_products(token, timeout, progress, platform)
     public = _public_codes(timeout, progress, platform)
     if public - seller.keys():
         raise InventoryError("Azure public VM products are missing from the authenticated seller inventory")
     # Only public candidates need resource-tree reads. Never expose contacts, audiences or images.
     with ThreadPoolExecutor(max_workers=4) as executor:
-        jobs = [executor.submit(_live_product, code, seller[code], token, timeout, platform) for code in sorted(public)]
-        products = [job.result() for job in jobs]
+        codes = sorted(public)
+        jobs = [executor.submit(_live_product, code, seller[code], token, timeout, platform, progress) for code in codes]
+        products = []
+        for index, (code, job) in enumerate(zip(codes, jobs), 1):
+            try:
+                products.append(job.result())
+            except InventoryError as error:
+                context = f"{platform} live detail {code}"
+                raise InventoryError(str(error) if str(error).startswith(context) else f"{context}: {error}") from None
+            if progress:
+                progress(f"{platform} live details: {index}/{len(jobs)}")
     result = [product for product in products if product is not None]
     if progress:
         progress(f"{platform}: {len(seller)} seller VMs, {len(public)} public candidates, {len(result)} live public VMs")

@@ -205,6 +205,27 @@ scope. Repeated/malformed pages, duplicate identities and any failed detail read
 block a complete inventory. No additional SDK or Catalog API key is needed for
 this implementation. Credentials are documented in [cloud-connector.md](cloud-connector.md).
 
+Azure requests use a **60-second per-attempt** socket timeout and at most **three
+attempts total** per request (initial request plus two retries). Timeouts,
+connection interruptions, temporary DNS lookup failures, incomplete response
+reads and HTTP `408`, `429`, `500`, `502`, `503`, `504` are retried. Authentication
+token acquisition uses the same transient-only retry policy; no product write
+or publication requests are involved. A successful page/detail is not fetched
+again just because another request retried.
+
+Backoff starts at 2 then 4 seconds plus up to one second of jitter. `Retry-After`
+seconds and HTTP dates are honored within a 60-second delay ceiling; malformed,
+negative or oversized-invalid header values do not create an unbounded wait.
+Permission/authentication failures (`400`, `401`, `403`), missing resources,
+redirects, TLS/certificate failures, invalid JSON and unknown schemas are not
+retried. Exhaustion still fails the entire selected inventory and prevents its
+matrix write; it never silently drops the failing product.
+
+Progress identifies the selected account (`azure`/`azure-vmlab`), authentication,
+seller/catalog page, or live-detail product code, plus the retry attempt/delay.
+Live-detail completion counts are also emitted. Errors and retry logs omit raw
+request URLs, continuation tokens, credentials and response bodies.
+
 `azure` selects `websoft9inc` / `Websoft9`; `azure-vmlab` selects
 `vmlabinc1613642184700` / `VMLAB INC.`. Both read their own supplier metadata
 from `config/marketplace.json` and retain the selected platform in snapshots.

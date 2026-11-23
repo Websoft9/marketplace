@@ -52,6 +52,8 @@ jobs:
         run: python -m pip install --disable-pip-version-check '.[aws,aliyun]'
 
       - name: Check AWS role configuration
+        id: aws_config
+        continue-on-error: true
         if: env.PLATFORM == 'aws' || env.PLATFORM == 'all'
         env:
           AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
@@ -66,7 +68,9 @@ jobs:
           fi
 
       - name: Configure AWS credentials with GitHub OIDC
-        if: env.PLATFORM == 'aws' || env.PLATFORM == 'all'
+        id: aws_auth
+        continue-on-error: true
+        if: (env.PLATFORM == 'aws' || env.PLATFORM == 'all') && steps.aws_config.outcome == 'success'
         uses: aws-actions/configure-aws-credentials@v6.3.0
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
@@ -74,6 +78,8 @@ jobs:
           role-session-name: MarketplaceOfferCodesMatrix-${{ github.run_id }}
 
       - name: Check Aliyun role configuration
+        id: aliyun_config
+        continue-on-error: true
         if: env.PLATFORM == 'aliyun' || env.PLATFORM == 'all'
         env:
           ALIYUN_ROLE_ARN: ${{ vars.ALIYUN_ROLE_ARN }}
@@ -85,7 +91,9 @@ jobs:
           fi
 
       - name: Configure Aliyun credentials with GitHub OIDC
-        if: env.PLATFORM == 'aliyun' || env.PLATFORM == 'all'
+        id: aliyun_auth
+        continue-on-error: true
+        if: (env.PLATFORM == 'aliyun' || env.PLATFORM == 'all') && steps.aliyun_config.outcome == 'success'
         uses: aliyun/configure-aliyun-credentials-action@1e5248c8d5d93a8781ac344a68e19a43341e79e6 # v1.1.0
         with:
           role-to-assume: ${{ vars.ALIYUN_ROLE_ARN }}
@@ -94,7 +102,9 @@ jobs:
           audience: sts.aliyuncs.com
 
       - name: Expose Aliyun credential names
-        if: env.PLATFORM == 'aliyun' || env.PLATFORM == 'all'
+        id: aliyun_export
+        continue-on-error: true
+        if: (env.PLATFORM == 'aliyun' || env.PLATFORM == 'all') && steps.aliyun_auth.outcome == 'success'
         run: |
           {
             echo "ALIYUN_ACCESS_KEY_ID=$ALIBABA_CLOUD_ACCESS_KEY_ID"
@@ -103,7 +113,9 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Report Aliyun caller identity
-        if: env.PLATFORM == 'aliyun' || env.PLATFORM == 'all'
+        # Diagnostic only; a failed STS identity check must not suppress other clouds.
+        continue-on-error: true
+        if: (env.PLATFORM == 'aliyun' || env.PLATFORM == 'all') && steps.aliyun_export.outcome == 'success'
         run: |
           python3 - <<'PY'
           import json
@@ -162,6 +174,8 @@ jobs:
       # overwrites the shared ALIBABA_CLOUD_* variables with the international
       # account's values, while ALIYUN_* is already preserved for China.
       - name: Check Alibaba Cloud International role configuration
+        id: alibabacloud_config
+        continue-on-error: true
         if: env.PLATFORM == 'alibabacloud' || env.PLATFORM == 'all'
         env:
           ROLE_ARN: ${{ vars.ALIBABACLOUD_ROLE_ARN || vars.ALIBABA_CLOUD_ROLE_ARN }}
@@ -187,7 +201,9 @@ jobs:
           fi
 
       - name: Configure Alibaba Cloud International credentials with GitHub OIDC
-        if: env.PLATFORM == 'alibabacloud' || env.PLATFORM == 'all'
+        id: alibabacloud_auth
+        continue-on-error: true
+        if: (env.PLATFORM == 'alibabacloud' || env.PLATFORM == 'all') && steps.alibabacloud_config.outcome == 'success'
         uses: aliyun/configure-aliyun-credentials-action@1e5248c8d5d93a8781ac344a68e19a43341e79e6 # v1.1.0
         with:
           role-to-assume: ${{ vars.ALIBABACLOUD_ROLE_ARN || vars.ALIBABA_CLOUD_ROLE_ARN }}
@@ -196,6 +212,8 @@ jobs:
           audience: sts.aliyuncs.com
 
       - name: Check Azure publisher credentials
+        id: azure_config
+        continue-on-error: true
         if: env.PLATFORM == 'azure' || env.PLATFORM == 'all'
         env:
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID || vars.AZURE_TENANT_ID }}
@@ -211,6 +229,8 @@ jobs:
           done
 
       - name: Check Azure VMLab publisher credentials
+        id: azure_vmlab_config
+        continue-on-error: true
         if: env.PLATFORM == 'azure-vmlab' || env.PLATFORM == 'all'
         env:
           AZURE_VMLAB_TENANT_ID: ${{ secrets.AZURE_VMLAB_TENANT_ID || vars.AZURE_VMLAB_TENANT_ID }}
@@ -226,7 +246,13 @@ jobs:
           done
 
       - name: Generate offer-code matrix
+        id: generate_matrix
         env:
+          AWS_READY: ${{ steps.aws_auth.outcome == 'success' }}
+          ALIYUN_READY: ${{ steps.aliyun_export.outcome == 'success' }}
+          ALIBABACLOUD_READY: ${{ steps.alibabacloud_auth.outcome == 'success' }}
+          AZURE_READY: ${{ steps.azure_config.outcome == 'success' }}
+          AZURE_VMLAB_READY: ${{ steps.azure_vmlab_config.outcome == 'success' }}
           AZURE_TENANT_ID: ${{ (env.PLATFORM == 'azure' || env.PLATFORM == 'all') && (secrets.AZURE_TENANT_ID || vars.AZURE_TENANT_ID) || '' }}
           AZURE_CLIENT_ID: ${{ (env.PLATFORM == 'azure' || env.PLATFORM == 'all') && (secrets.AZURE_CLIENT_ID || vars.AZURE_CLIENT_ID) || '' }}
           AZURE_CLIENT_SECRET: ${{ (env.PLATFORM == 'azure' || env.PLATFORM == 'all') && secrets.AZURE_CLIENT_SECRET || '' }}
@@ -235,7 +261,9 @@ jobs:
           AZURE_VMLAB_CLIENT_SECRET: ${{ (env.PLATFORM == 'azure-vmlab' || env.PLATFORM == 'all') && secrets.AZURE_VMLAB_CLIENT_SECRET || '' }}
         run: |
           set -uo pipefail
+          echo "complete=false" >> "$GITHUB_OUTPUT"
           mkdir -p "$MATRIX_DIR"
+          : > "$MATRIX_DIR/platform-status.tsv"
 
           case "$PLATFORM" in
             # Both Huawei sites use public guest seller search: no credential exchange
@@ -250,6 +278,30 @@ jobs:
           for current in "${platforms[@]}"; do
             echo "Generating matrix for ${current}..."
             report="$MATRIX_DIR/generation-${current}.json"
+            ready=true
+            case "$current" in
+              aws) ready="$AWS_READY" ;;
+              aliyun) ready="$ALIYUN_READY" ;;
+              alibabacloud) ready="$ALIBABACLOUD_READY" ;;
+              azure) ready="$AZURE_READY" ;;
+              azure-vmlab) ready="$AZURE_VMLAB_READY" ;;
+            esac
+            if [[ "$ready" != "true" ]]; then
+              echo "::error::${current} credential setup failed; only this platform is skipped. Continuing other platforms."
+              python3 - "$current" "$report" <<'PY'
+          import json
+          import sys
+
+          error = {"code": "CredentialSetupFailed", "message": "Platform credential setup failed; see its configuration/authentication step. No inventory queried or matrix mappings written."}
+          with open(sys.argv[2], "w", encoding="utf-8") as report:
+              json.dump({"schemaVersion": 1, "platform": sys.argv[1], "written": False,
+                         "checked": 0, "matched": 0, "unresolved": [], "products": [],
+                         "inventory": {"complete": False, "errors": [error]}, "errors": []}, report, indent=2)
+          PY
+              printf '%s\t%s\n' "$current" "credential_setup_failed" >> "$MATRIX_DIR/platform-status.tsv"
+              status=1
+              continue
+            fi
             if ! mk offer-codes gen \
               --platform "$current" \
               --output "$MATRIX_FILE" \
@@ -262,6 +314,8 @@ jobs:
           try:
               report = json.load(open(sys.argv[1], encoding="utf-8"))
           except (OSError, ValueError):
+              sys.exit(0)
+          if not isinstance(report, dict):
               sys.exit(0)
           messages = []
           for section in ("inventory", "matching"):
@@ -283,6 +337,9 @@ jobs:
               print("No structured error details were emitted.")
           PY
               status=1
+              printf '%s\t%s\n' "$current" "generation_failed" >> "$MATRIX_DIR/platform-status.tsv"
+            else
+              printf '%s\t%s\n' "$current" "success" >> "$MATRIX_DIR/platform-status.tsv"
             fi
           done
 
@@ -296,6 +353,25 @@ jobs:
             status=1
           fi
 
+          python3 - "$status" <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          directory = Path(os.environ["MATRIX_DIR"])
+          states = dict(line.split("\t", 1) for line in (directory / "platform-status.tsv").read_text().splitlines())
+          complete = sys.argv[1] == "0"
+          (directory / "run-status.json").write_text(json.dumps({
+              "schemaVersion": 1, "complete": complete, "platforms": states,
+              "combinedPublishEligible": complete,
+          }, indent=2) + "\n", encoding="utf-8")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"complete={str(complete).lower()}\n")
+          PY
+          if [[ "$status" != "0" ]]; then
+            echo "::error::One or more platforms or matrix verification failed. All selected platforms were attempted; artifacts contain diagnostics. R2 publication is blocked to protect the complete matrix."
+          fi
           exit "$status"
 
       - name: Summarize generation results
@@ -316,14 +392,22 @@ jobs:
 
           rows = []
           error_lines = []
+          try:
+              run_status = json.loads((directory / "run-status.json").read_text(encoding="utf-8"))
+          except (OSError, ValueError):
+              run_status = {}
+          if not isinstance(run_status, dict):
+              run_status = {}
           for platform in platforms:
               path = directory / f"generation-{platform}.json"
               try:
                   report = json.loads(path.read_text(encoding="utf-8"))
+                  if not isinstance(report, dict):
+                      raise ValueError("generation report must be an object")
               except (OSError, ValueError):
                   rows.append((platform, "failed", "-", "-", "-", "-"))
                   continue
-              status = "ok" if report.get("written") else "not written"
+              status = run_status.get("platforms", {}).get(platform, "ok" if report.get("written") else "not written")
               rows.append((
                   platform,
                   status,
@@ -358,6 +442,10 @@ jobs:
               "| " + " | ".join(str(value) for value in row) + " |"
               for row in rows
           )
+          lines.extend(["", "### Publication eligibility",
+                        "All selected platforms and matrix verification succeeded; eligible for the R2 publish step."
+                        if run_status.get("combinedPublishEligible") is True else
+                        "R2 publication blocked: at least one selected platform or matrix verification failed, or generation did not finish. Successful platform results and failure reports remain in the GitHub artifact; the published complete matrix is not overwritten."])
           if error_lines:
               lines.extend(["", "### Errors", *error_lines])
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
@@ -382,6 +470,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Publish matrix to Cloudflare R2
+        if: success() && steps.generate_matrix.outputs.complete == 'true'
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_R2_SECRET_ID: ${{ secrets.CLOUDFLARE_R2_SECRET_ID || vars.CLOUDFLARE_R2_SECRET_ID }}

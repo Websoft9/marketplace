@@ -113,6 +113,12 @@ Local usage: `mk --env-file .secrets/azure.env store products --platform azure -
 For the Matrix Action configure `AZURE_TENANT_ID` and `AZURE_CLIENT_ID` as Actions
 secrets or variables, and `AZURE_CLIENT_SECRET` as an **Actions secret**. Credentials
 are scoped to the check/generation steps, not passed to third-party OIDC actions.
+The Matrix Action isolates account setup failures: it records a failed platform
+and continues other accounts, while preserving a failed final run and blocking
+R2 publication. Authentication requests retry only transient network/throttling
+failures; bad client credentials/permissions are not retried. See
+[store-products.md](store-products.md) for timeouts and retry limits and
+[offer-codes.md](offer-codes.md) for per-platform status artifacts.
 No secret/token or raw seller response is printed or written. The public Catalog
 `/offers` interface used for visibility is unauthenticated; the newer `/products`
 API and its API key are not used. See [store-products.md](store-products.md).

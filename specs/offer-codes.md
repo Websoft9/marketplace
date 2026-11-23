@@ -195,6 +195,46 @@ to `artifact/cloud_data/matrix/azure/`, while VMLab-only runs publish to
 `artifact/cloud_data/matrix/azure-vmlab/`, protecting the combined matrix. The site
 uses each platform's generation report configured by its `productsArtifact`.
 
+### Matrix Action failure isolation and publication gate
+
+The generation loop attempts every selected platform sequentially. A CLI failure
+sets a final failure status but does **not** break the loop: for example a VMLab
+detail timeout does not suppress later `huaweiyun` or `huaweicloud` generation.
+Azure transient requests are retried as documented in [store-products.md](store-products.md).
+
+Platform-specific credential checks/OIDC steps use `continue-on-error` so one
+account's setup failure does not suppress unrelated setup/generation. Dependent
+steps and the generator check the **original step outcome**, not the post-continue
+`conclusion`. A failed setup marks only its own platform `credential_setup_failed`;
+its adapter is not called, and it cannot borrow stale/other-account environment
+credentials. A small `generation-<platform>.json` failure report is emitted for
+that account even though no query or matrix write was attempted. The Aliyun caller
+identity report is diagnostic only. Shared checkout/install failures, cancellation
+or a job timeout can still prevent generation; platform isolation is not a promise
+to continue after failure of common prerequisites.
+
+The artifact adds `platform-status.tsv` (per-platform `success`,
+`credential_setup_failed` or `generation_failed`) and `run-status.json`
+(`schemaVersion: 1`, `complete`, `platforms`, `combinedPublishEligible`). Successful
+CLI execution means a matrix write, not that every product matched an application;
+unresolved products still follow the existing partial-matching contract.
+
+The generation step still exits nonzero if any selected platform or final matrix
+verification failed. `continue-on-error` does **not** make an incomplete run green.
+Summary/backup cleanup/GitHub artifact upload retain their `always()` behavior;
+the summary distinguishes platform generation status from publication eligibility.
+A partial `matrix.json` and all available success/failure reports remain available
+for diagnostics in the GitHub artifact, but are not advertised as a complete run.
+Mechanical verification of that partial matrix does not prove all platforms ran.
+
+R2 publication requires both prior step success and the explicit generation
+`complete=true` output. This gate applies to single-platform as well as `all`
+runs: any selected-platform or verification failure leaves the existing R2 files
+untouched. No partial per-platform report is uploaded separately in that failure
+case. On a successful run the full artifact directory, including status manifests,
+is uploaded as before. Eligibility is not confirmation of successful R2 upload;
+the separate publish step can still fail on endpoint, credentials or permissions.
+
 ### Fact input and matching report
 
 There are three distinct stages: **store facts → application matching → matrix

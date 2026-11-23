@@ -3,10 +3,14 @@ from __future__ import annotations
 import copy
 import io
 import json
+import socket
+import ssl
 import unittest
 import urllib.error
 import urllib.parse
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
 from unittest import mock
 
 from cli import azure_market as azure
@@ -274,6 +278,125 @@ class AzurePaginationTests(unittest.TestCase):
 
 
 class AzureHttpTests(unittest.TestCase):
+    def setUp(self):
+        patcher = mock.patch.object(azure.time, "sleep")
+        self.sleep = patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_timeout_retry_succeeds_and_logs_safe_stage_and_attempt(self):
+        opener = mock.Mock()
+        opener.open.side_effect = [TimeoutError("SECRET signed request"),
+                                  urllib.error.URLError(TimeoutError("SECRET")),
+                                  io.BytesIO(b'{"value": []}')]
+        progress = mock.Mock()
+        with mock.patch("urllib.request.build_opener", return_value=opener), \
+                mock.patch.object(azure.random, "uniform", return_value=0):
+            result = azure._request_json("https://graph.microsoft.com?SECRET", timeout=60, token="SECRET",
+                                         context="azure-vmlab live detail vmlabinc1613642184700.odoo", progress=progress)
+        self.assertEqual(result, {"value": []})
+        self.assertEqual(opener.open.call_count, 3)
+        self.assertEqual(self.sleep.call_args_list, [mock.call(2), mock.call(4)])
+        logs = str(progress.call_args_list)
+        self.assertIn("azure-vmlab live detail vmlabinc1613642184700.odoo", logs)
+        self.assertIn("retry 2/3", logs)
+        self.assertNotIn("SECRET", logs)
+        self.assertNotIn("https://", logs)
+
+    def test_all_retryable_http_statuses_retry_then_succeed(self):
+        for status in sorted(azure.RETRYABLE_STATUS):
+            self.sleep.reset_mock()
+            opener = mock.Mock()
+            opener.open.side_effect = [urllib.error.HTTPError("https://SECRET", status, "SECRET", {"Retry-After": "7"},
+                                                            io.BytesIO(b"SECRET")), io.BytesIO(b'{"value": []}')]
+            with self.subTest(status=status), mock.patch("urllib.request.build_opener", return_value=opener):
+                azure._request_json("https://graph.microsoft.com", timeout=60)
+            self.sleep.assert_called_once_with(7)
+            self.assertEqual(opener.open.call_count, 2)
+
+    def test_auth_permission_redirect_and_not_found_errors_are_not_retried(self):
+        for status in (301, 302, 307, 400, 401, 403, 404, 409):
+            opener = mock.Mock()
+            opener.open.side_effect = urllib.error.HTTPError("https://SECRET", status, "SECRET", {}, io.BytesIO(b"SECRET"))
+            with self.subTest(status=status), mock.patch("urllib.request.build_opener", return_value=opener):
+                with self.assertRaisesRegex(InventoryError, "attempts=1/3"):
+                    azure._request_json("https://graph.microsoft.com", timeout=60)
+            self.assertEqual(opener.open.call_count, 1)
+        self.sleep.assert_not_called()
+
+    def test_retry_exhaustion_remains_fatal_and_sanitized(self):
+        opener = mock.Mock()
+        opener.open.side_effect = TimeoutError("SECRET")
+        with mock.patch("urllib.request.build_opener", return_value=opener):
+            with self.assertRaises(InventoryError) as caught:
+                azure._request_json("https://graph.microsoft.com?SECRET", timeout=60,
+                                    context="azure-vmlab live detail vmlabinc1613642184700.odoo")
+        self.assertIn("TimeoutError; attempts=3/3", str(caught.exception))
+        self.assertIn("azure-vmlab live detail", str(caught.exception))
+        self.assertNotIn("SECRET", str(caught.exception))
+        self.assertEqual(opener.open.call_count, 3)
+        self.assertEqual(self.sleep.call_count, 2)
+
+    def test_retry_after_date_invalid_negative_and_oversized_headers_are_bounded(self):
+        future = format_datetime(datetime.now(timezone.utc) + timedelta(seconds=20), usegmt=True)
+        with mock.patch.object(azure.random, "uniform", return_value=0):
+            self.assertGreaterEqual(azure._retry_delay(1, future), 18)
+            for value in ("invalid SECRET", "-3", "NaN", "inf", "999999999999999999999999"):
+                self.assertEqual(azure._retry_delay(1, value), 2)
+            self.assertEqual(azure._retry_delay(1, "1000"), 60)
+
+    def test_transient_connection_and_dns_retry_but_tls_and_permanent_dns_do_not(self):
+        for error in (ConnectionResetError("SECRET"), socket.gaierror(socket.EAI_AGAIN, "SECRET")):
+            opener = mock.Mock()
+            opener.open.side_effect = [urllib.error.URLError(error), io.BytesIO(b'{}')]
+            with mock.patch("urllib.request.build_opener", return_value=opener):
+                self.assertEqual(azure._request_json("https://graph.microsoft.com", timeout=60), {})
+            self.assertEqual(opener.open.call_count, 2)
+        self.sleep.reset_mock()
+        for error in (ssl.SSLCertVerificationError("SECRET"), socket.gaierror(socket.EAI_NONAME, "SECRET")):
+            opener = mock.Mock()
+            opener.open.side_effect = urllib.error.URLError(error)
+            with mock.patch("urllib.request.build_opener", return_value=opener):
+                with self.assertRaises(InventoryError):
+                    azure._request_json("https://graph.microsoft.com", timeout=60)
+            self.assertEqual(opener.open.call_count, 1)
+        self.sleep.assert_not_called()
+
+    def test_token_acquisition_also_retries_transient_errors_without_logging_credentials(self):
+        opener = mock.Mock()
+        opener.open.side_effect = [TimeoutError("SECRET"), io.BytesIO(b'{"access_token":"PRIVATE TOKEN"}')]
+        progress = mock.Mock()
+        with mock.patch.dict("os.environ", {"AZURE_VMLAB_TENANT_ID": "tenant", "AZURE_VMLAB_CLIENT_ID": "client",
+                                           "AZURE_VMLAB_CLIENT_SECRET": "SECRET"}, clear=True), \
+                mock.patch("urllib.request.build_opener", return_value=opener):
+            self.assertEqual(azure._access_token(60, "azure-vmlab", progress), "PRIVATE TOKEN")
+        self.assertIn("azure-vmlab authentication", str(progress.call_args_list))
+        self.assertNotIn("SECRET", str(progress.call_args_list))
+        self.assertNotIn("PRIVATE TOKEN", str(progress.call_args_list))
+
+    def test_default_timeout_and_live_detail_context(self):
+        self.assertEqual(azure.REQUEST_TIMEOUT, 60)
+        with mock.patch.object(azure, "_request_json", return_value=tree()) as request:
+            azure._live_product(CODE, seller(), "SECRET", 60)
+        self.assertEqual(request.call_args.kwargs["context"], "azure live detail " + CODE)
+
+    def test_live_detail_retry_integrates_with_complete_store_inventory_and_fails_closed_on_exhaustion(self):
+        for failures, complete in ((1, True), (3, False)):
+            opener = mock.Mock()
+            opener.open.side_effect = ([TimeoutError("SECRET")] * failures
+                                      + [io.BytesIO(json.dumps(tree()).encode())])
+            with self.subTest(failures=failures), \
+                    mock.patch.object(azure, "_access_token", return_value="SECRET"), \
+                    mock.patch.object(azure, "_seller_products", return_value={CODE: seller()}), \
+                    mock.patch.object(azure, "_public_codes", return_value={CODE}), \
+                    mock.patch("urllib.request.build_opener", return_value=opener):
+                result = store.query_platform("azure")
+            self.assertEqual(result["complete"], complete, result)
+            self.assertEqual(result["count"], 1 if complete else 0)
+            self.assertNotIn("SECRET", json.dumps(result))
+            if not complete:
+                self.assertEqual(result["products"], [])
+                self.assertIn("azure live detail " + CODE, result["errors"][0]["message"])
+
     def test_errors_never_expose_response_request_or_token(self):
         for error in (RuntimeError("SECRET signed request"),
                       urllib.error.HTTPError("https://SECRET", 401, "SECRET", {}, io.BytesIO(b'SECRET')),
@@ -297,6 +420,8 @@ class AzureHttpTests(unittest.TestCase):
                 with self.assertRaises(InventoryError) as caught:
                     azure._request_json("https://graph.microsoft.com", timeout=30)
             self.assertNotIn("SECRET", str(caught.exception))
+            self.assertEqual(opener.open.call_count, 1)
+        self.sleep.assert_not_called()
 
     def test_workflow_includes_both_azure_publishers_and_separate_secrets(self):
         workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/offer-codes-matrix.yml").read_text()

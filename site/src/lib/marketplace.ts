@@ -1,17 +1,10 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-const PLATFORM_KEYS = [
-  "aliyun",
-  "alibabacloud",
-  "huaweiyun",
-  "huaweicloud",
-  "azure",
-  "azure-vmlab",
-  "aws",
-] as const;
-
-export type PlatformKey = (typeof PLATFORM_KEYS)[number];
+// Product platforms are intentionally not hardcoded: every entry in
+// config/marketplace.json with a urlTemplate becomes a site platform, so new
+// clouds (for example huaweiyun and huaweicloud) need no site code change.
+export type PlatformKey = string;
 export type AppStatus = "listed" | "unlisted" | "outside";
 
 export interface StoreConfig {
@@ -166,16 +159,10 @@ const SOURCES_CONFIG_PATH =
 const SOURCES_CONFIG = JSON.parse(readFileSync(SOURCES_CONFIG_PATH, "utf8")) as SourcesConfig;
 
 function isProductPlatform(platform: PlatformConfig): platform is ProductPlatformConfig {
-  return (
-    typeof platform.urlTemplate === "string" &&
-    (PLATFORM_KEYS as readonly string[]).includes(platform.key)
-  );
+  return typeof platform.urlTemplate === "string";
 }
 
 for (const platform of CONFIG.platforms) {
-  if (platform.urlTemplate && !isProductPlatform(platform)) {
-    throw new Error(`Unknown product platform: ${platform.key}`);
-  }
   if (platform.urlTemplate && !platform.urlTemplate.includes("{code}")) {
     throw new Error(`Platform ${platform.key} URL template must include {code}`);
   }
@@ -296,9 +283,10 @@ export const ALL_PLATFORMS = CONFIG.platforms;
 const PLATFORM_URL_TEMPLATES = Object.fromEntries(
   PRODUCT_PLATFORMS.map((platform) => [platform.key, platform.urlTemplate]),
 ) as Record<PlatformKey, string>;
+const PRODUCT_PLATFORM_KEYS = new Set(PRODUCT_PLATFORMS.map((platform) => platform.key));
 
 function isProductPlatformKey(value: string): value is PlatformKey {
-  return (PLATFORM_KEYS as readonly string[]).includes(value);
+  return PRODUCT_PLATFORM_KEYS.has(value);
 }
 
 function routePlatform(sourceKey: string, code: string): PlatformKey | undefined {
