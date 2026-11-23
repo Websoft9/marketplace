@@ -400,7 +400,7 @@ class GenerateCliTests(unittest.TestCase):
                          [entry("odoo", ["bad", "keep", "new"])])
 
     def test_unsupported_cloud_exits_before_fetching(self):
-        result = self.invoke("--platform", "huaweicloud")
+        result = self.invoke("--platform", "googlecloud")
         self.assertNotEqual(result.exit_code, 0)
         self.fetch.assert_not_called()
 

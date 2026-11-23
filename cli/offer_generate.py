@@ -12,7 +12,11 @@ from pathlib import Path
 from . import azure_market, offer_codes, offer_resolve
 
 
-PLATFORMS = {"aws": "AWS", "aliyun": "Aliyun", "alibabacloud": "Alibaba Cloud", "azure": "Azure", "azure-vmlab": "Azure (VMLab)"}
+PLATFORMS = {
+    "aws": "AWS", "aliyun": "Aliyun", "alibabacloud": "Alibaba Cloud",
+    "azure": "Azure", "azure-vmlab": "Azure (VMLab)", "huaweiyun": "Huawei Cloud China",
+    "huaweicloud": "Huawei Cloud International",
+}
 
 
 def generate(products, identities, previous, *, platform="aws", codes=None):

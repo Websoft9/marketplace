@@ -8,11 +8,11 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import alibabacloud_market, aliyun_market, aws_inventory, azure_market
+from . import alibabacloud_market, aliyun_market, aws_inventory, azure_market, huaweiyun_market
 from .marketplace import PLATFORM_URL_TEMPLATES
 from .store_models import InventoryError, Product
 
-PLATFORMS = ("aws", "aliyun", "alibabacloud", "azure", "azure-vmlab")
+PLATFORMS = ("aws", "aliyun", "alibabacloud", "azure", "azure-vmlab", "huaweiyun", "huaweicloud")
 VISIBILITIES = ("public",)
 PRODUCT_FACT_FIELDS = (
     "platform", "storeId", "provider", "code", "entityId", "title", "shortDescription",
@@ -40,10 +40,22 @@ def collect_products(platform, *, profile=None, visibility="public", progress=No
         return azure_market.list_products(progress=progress)
     if platform == "azure-vmlab":
         return azure_market.list_products(platform=platform, progress=progress)
+    if platform == "huaweiyun":
+        return huaweiyun_market.list_products(progress=progress)
+    if platform == "huaweicloud":
+        return huaweiyun_market.list_products(platform=platform, progress=progress)
     return alibabacloud_market.list_products(progress=progress)
 
 
 def _scope(platform):
+    if platform in huaweiyun_market.PLATFORMS:
+        store_id, name = huaweiyun_market.supplier(platform)
+        endpoint, flow, prefix, _ = huaweiyun_market.source(platform)
+        return {
+            "id": store_id, "provider": name,
+            "url": "https://marketplace.huaweicloud.com" + prefix + "/seller/" + store_id,
+            "ownershipEvidence": f"Public {platform} seller search seller_id/corporation_name/corporation_url (not credential ownership)",
+        }, [endpoint + f" ({platform} guest seller search, flow_id={flow})"]
     if platform in azure_market.PLATFORMS:
         supplier_id, supplier_name = azure_market.supplier(platform)
         return {
@@ -76,6 +88,7 @@ def query_platform(platform, *, profile=None, visibility="public", progress=None
     started = time.monotonic()
     store, sources = _scope(platform)
     evidence = ("AWS Description.Visibility or AmiProductSummary.Visibility == Public" if platform == "aws"
+                else huaweiyun_market.visibility_evidence(platform) if platform in huaweiyun_market.PLATFORMS
                 else azure_market.VISIBILITY_EVIDENCE if platform in azure_market.PLATFORMS
                 else "DescribeProducts intersection with store images, hiddenForCloudMarket == 0"
                 if platform == "aliyun"
@@ -189,6 +202,8 @@ def inventory_products(inventory, platform):
                 or (row.get("url") is not None and not isinstance(row["url"], str))):
             raise InventoryError("inventory contains malformed, nonpublic, duplicate or wrong-store product facts")
         entities.add(row["entityId"])
+        if platform in huaweiyun_market.PLATFORMS and not huaweiyun_market.valid_identity(row["code"], row["entityId"]):
+            raise InventoryError(f"{platform} inventory contains malformed public content identity")
         if platform in azure_market.PLATFORMS and not azure_market.valid_identity(row["code"], row["entityId"], platform):
             raise InventoryError("Azure inventory contains wrong-publisher or malformed product identity")
         products.append(Product(

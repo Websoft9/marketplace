@@ -78,13 +78,15 @@ GOOGLE_APPLICATION_CREDENTIALS=
 """,
     "huaweicloud": """\
 # --- Huawei Cloud International ---
-# Backend listing adapter is not implemented yet.
+# Public store inventory/matrix needs no account, credentials or OIDC.
+# Legacy optional fields below are not consumed by this public query path.
 HUAWEICLOUD_ACCESS_KEY_ID=
 HUAWEICLOUD_ACCESS_KEY_SECRET=
 """,
     "huaweiyun": """\
 # --- Huawei Cloud China ---
-# Backend listing adapter is not implemented yet.
+# Store inventory/matrix uses the public seller search; it does not consume credentials.
+# Keep these for future authenticated seller APIs; never send them to the guest endpoint.
 HUAWEICLOUD_ACCESS_KEY_ID=
 HUAWEICLOUD_ACCESS_KEY_SECRET=
 """,

@@ -17,6 +17,9 @@ mk --env-file .secrets/aws.env store products --platform aws --json
 mk --env-file .secrets/alibabacloud.env store products --platform alibabacloud --json
 mk --env-file .secrets/azure.env store products --platform azure --json
 mk --env-file .secrets/azure-vmlab.env store products --platform azure-vmlab --json
+# Huawei China public seller search does not need credentials.
+mk store products --platform huaweiyun --json
+mk store products --platform huaweicloud --json
 
 # Multiple selections are repeatable; platform order is preserved and duplicates removed.
 # Configure the selected clouds' credentials in the process environment beforehand.
@@ -26,7 +29,7 @@ mk store products --platform all --json
 mk store products --platform aws --visibility public --json
 ```
 
-`all` means the **implemented adapters**: `aws`, `aliyun`, `alibabacloud`, `azure`, `azure-vmlab`, in
+`all` means the **implemented adapters**: `aws`, `aliyun`, `alibabacloud`, `azure`, `azure-vmlab`, `huaweiyun`, `huaweicloud`, in
 that order. It does not claim support for all clouds in `config/marketplace.json`.
 Other platform keys are rejected before network calls. `all` cannot be combined
 with another selection. `--profile NAME` selects an AWS seller profile and is
@@ -48,11 +51,14 @@ delisted products. Absence from the result is not proof of delisting.
 | `alibabacloud` | Websoft9, store `2116499` | `DescribeProducts` `Code`, `Name`, `ShortDescription` | Intersection with the publisher's public store image codes and `deliveryMethod == Image` |
 | `azure` | Websoft9, publisher `websoft9inc` only | Product Ingestion VM `identity.externalId` and durable `id`; live English `listing.title/shortDescription` | Intersection with public Catalog VM offers, live generally-available submission and at least one visible public plan |
 | `azure-vmlab` | VMLAB INC., publisher `vmlabinc1613642184700` only | Same Product Ingestion/live VM facts using the VMLab account | Same public Catalog/live checks scoped to the VMLab publisher |
+| `huaweiyun` | 长沙网久软件有限公司, seller `b8f57c06a0f7e39f4e206560e71afd76` | Official public China seller search `id`, `title`, `hcontent` | Guest seller search with verified owner fields, `delivery_code=vm.image`, observed `content_status=1` and `hidden=0` |
+| `huaweicloud` | 长沙网久软件有限公司 (display name Websoft9), seller `791bea8ce08849cf9ae4ec61c27e8435` | Official public international seller search `id`, `title`, `content_abstract` | International guest seller search with verified owner and `/intl` URLs, same observed image/visibility flags |
 
 Platform supplier IDs, names and the Aliyun supplier UID are maintained in
 `config/marketplace.json` under each platform's `supplier` object. The Aliyun and
 Alibaba Cloud International adapters validate that metadata before querying.
 Azure also validates its configured `supplier.id/name` before querying.
+Both Huawei sites validate the selected platform's `supplier.id/name` before querying.
 
 AWS `SELF` is a scope, not a seller profile ID. The command does **not** assume
 that arbitrary AWS credentials belong to the configured Websoft9 seller profile.
@@ -82,6 +88,84 @@ calls are made.
 `StoreVisible` is an evidence label, **not an invented OpenAPI publication
 status**. Both Alibaba storefront endpoints are unversioned website interfaces;
 schema changes, blocking or unverified ownership/visibility fail closed.
+
+### Huawei Cloud China (`huaweiyun`)
+
+`cli/huaweiyun_market.py` uses the public guest search endpoint called by the
+[official seller page](https://marketplace.huaweicloud.com/seller/b8f57c06a0f7e39f4e206560e71afd76):
+
+```text
+POST https://mkpdata.huaweicloud.com/api/marketplace/user/api/mkp-web-guest/global/rest/mkp/v1/mkpsearchengineservice/search
+```
+
+The request follows the seller page's actual interface: `flow_id=101000`,
+`filter.seller_id` from configuration, `sort=onshelfDesc`, `offset` starting at
+zero and `limit=10`. It requires `error_code == "00000000"` and collects all
+`pagination.items` pages through `total`, including non-image products so that
+the total is checked before local image filtering. Every row must match the
+configured `seller_id`, `corporation_name`, `corporation_url=/seller/<seller>`
+and `url=/contents/<id>`. The public content UUID `id` is both `code` and
+`entityId`. `OFFI...` offering IDs, SKU codes and IMS image IDs are not substitutes.
+
+Only `delivery_code=vm.image` with strict integer `hidden=0` and
+`content_status=1` is returned. These are **observed public storefront flags**,
+not an invented official OpenAPI status enumeration; unknown states fail closed.
+Explicitly hidden images and non-image products are excluded. Plain `title` and
+the storefront short description `hcontent` supply the facts. HTML highlighting
+is removed and entities decoded from `hcontent`; no app or version is inferred
+by the store adapter. Results use `visibility=StoreVisible`, not an invented
+authenticated publication status.
+
+This source was verified against the seller page's published JavaScript on
+2026-11-23. It is an unversioned website interface, with no assumed SDK/OpenAPI
+stability guarantee. This first adapter is **public-store-only**: it does not
+claim authenticated account ownership, enumerate drafts or prove a missing
+product is delisted. No authenticated seller-list API was verified for this
+implementation. AK/SK, security tokens, OIDC credentials and cookies are neither
+required nor sent. No unrelated IAM/IMS API is called merely to consume credentials.
+
+The collection fails on malformed/missing flags, wrong owner, bad code/URL,
+duplicate identities, truncated or oversized pages, changing totals, network
+failures, or more than 1000 pages. Redirects are disabled and errors are sanitized;
+earlier pages are not emitted as complete after any later-page failure.
+Snapshots additionally require UUID codes with matching `entityId` and the
+configured seller metadata. Generation replaces only `productID.huaweiyun`,
+preserving international and other-platform mappings.
+
+### Huawei Cloud International (`huaweicloud`)
+
+The same module `cli/huaweiyun_market.py` takes `platform=huaweicloud` without
+mutating global state. Its source was separately verified using the
+[international seller page](https://marketplace.huaweicloud.com/intl/seller/791bea8ce08849cf9ae4ec61c27e8435)
+and the page's published JavaScript on 2026-11-23:
+
+```text
+POST https://searchrec.marketplace-intl.huaweicloud.com/rest/mkp/v1/mkpsearchengineservice/search
+```
+
+The international request uses `flow_id=101002`, the configured international
+`filter.seller_id`, `offset`, `limit=10`, and `x-language: zh-cn`, matching the
+actual page request; the flow supplies English product text. Unlike China,
+the page sends no explicit sort. Both sites' stable totals, full page lengths,
+identity uniqueness and pagination limits are checked identically.
+
+International owner checks require `seller_id=791bea8ce08849cf9ae4ec61c27e8435`,
+`corporation_name=长沙网久软件有限公司`,
+`corporation_url=/intl/seller/<seller>`, and `url=/intl/contents/<UUID>`.
+The display name `Websoft9` is not substituted for the legal `corporation_name`.
+The site must return `title` and **`content_abstract`**, not China's `hcontent`;
+no summary fallback is made across sites. The plain international abstract is
+retained verbatim, while China continues stripping search-highlighting HTML.
+Public `vm.image` / `hidden=0` / `content_status=1` filtering and UUID code rules
+are identical to China's. Unknown/missing evidence or a wrong-site response
+blocks a complete result; there is no fallback to China's host or store.
+
+Store and snapshot results keep `platform=huaweicloud`, the international
+supplier and source evidence. International generation replaces only
+`productID.huaweicloud`, preserving `productID.huaweiyun` and every other cloud.
+Both platforms can be queried concurrently without credentials. Account,
+AK/SK, security tokens, OIDC, login cookies and authenticated seller access are
+not needed. The public website-interface limitations above apply to both sites.
 
 ### Azure (Websoft9 and VMLab)
 

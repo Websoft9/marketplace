@@ -66,6 +66,14 @@ class ConfigTests(unittest.TestCase):
             "id": "vmlabinc1613642184700",
             "name": "VMLAB INC.",
         })
+        self.assertEqual(app_list.PLATFORM_SUPPLIERS["huaweiyun"], {
+            "id": "b8f57c06a0f7e39f4e206560e71afd76",
+            "name": "长沙网久软件有限公司",
+        })
+        self.assertEqual(app_list.PLATFORM_SUPPLIERS["huaweicloud"], {
+            "id": "791bea8ce08849cf9ae4ec61c27e8435",
+            "name": "长沙网久软件有限公司",
+        })
 
 
 class LinkTests(unittest.TestCase):

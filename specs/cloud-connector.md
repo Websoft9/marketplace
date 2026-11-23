@@ -36,6 +36,11 @@ Fill only the blanks.
   for the Websoft9 Partner Center publisher (`websoft9inc`).
 - `azure-vmlab` writes the same local `AZURE_*` keys to `azure-vmlab.env` for
   the independent VMLab account; the CLI loads these as `AZURE_VMLAB_*`.
+- `huaweiyun` retains local `HUAWEICLOUD_ACCESS_KEY_ID/SECRET` fields for future
+  authenticated use; current store inventory/matrix uses the public guest search
+  and does not consume them.
+- `huaweicloud` also uses public international seller search without an account
+  or credentials; its legacy optional env template is not needed for store/matrix.
 - Cloud files contain only that cloud's credentials; services are never mixed
   into a cloud file.
 
@@ -69,6 +74,31 @@ or put the CLI option inside `ARGS` as shown above.
 
 ## AWS 
 GitHub Actions authenticates to AWS through GitHub OIDC and assumes a least-privilege IAM role, so no long-lived AWS access keys are stored in the repository. Trust policies must use this repository's immutable subject prefix `repo:Websoft9@36851177/marketplace@326841278` and allow only the intended branch or environment.
+
+## Huawei Cloud China and International (`huaweiyun`, `huaweicloud`)
+
+The current store query and code generator use the official public seller guest
+search endpoint, not an authenticated seller-list OpenAPI. They do not consume
+local AK/SK or temporary credentials, so the Matrix Action does not request
+Huawei OIDC tokens or require Huawei repository variables for this path.
+Existing cloud-side OIDC configuration and local `.secrets/huaweiyun.env` values
+are left untouched; no credentials are forwarded to the public endpoint.
+This integration does **not** validate those credentials, the configured OIDC
+trust or seller backend permissions. Do not equate public seller metadata with
+proof of the caller's account identity. See [store-products.md](store-products.md)
+for source/schema limitations and completeness checks.
+
+Both `mk store products --platform huaweiyun --json` and
+`mk offer-codes gen --platform huaweiyun --dry-run --json` work without secrets.
+Loading `.secrets/huaweiyun.env` explicitly remains supported but has no effect
+on this adapter. International queries likewise work with
+`mk store products --platform huaweicloud --json` and
+`mk offer-codes gen --platform huaweicloud --dry-run --json`, **without** an env
+file, account or OIDC configuration. Both platforms are included in the Matrix
+Action's `all`, using separate verified public sources. Authenticated product
+updates remain unsupported. A future authenticated seller adapter must verify the
+actual Marketplace API, required permissions and its STS-token support before
+claiming OIDC-backed inventory; generic Huawei IAM/IMS access is not equivalent.
 
 ## Azure Marketplace (Websoft9 and VMLab)
 

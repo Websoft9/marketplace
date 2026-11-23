@@ -301,7 +301,7 @@ class AzureHttpTests(unittest.TestCase):
     def test_workflow_includes_both_azure_publishers_and_separate_secrets(self):
         workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/offer-codes-matrix.yml").read_text()
         self.assertIn("- azure", workflow)
-        self.assertIn("platforms=(aws aliyun alibabacloud azure azure-vmlab)", workflow)
+        self.assertIn("platforms=(aws aliyun alibabacloud azure azure-vmlab huaweiyun huaweicloud)", workflow)
         self.assertIn("AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}", workflow)
         self.assertIn("- azure-vmlab", workflow)
         self.assertIn("AZURE_VMLAB_CLIENT_SECRET: ${{ secrets.AZURE_VMLAB_CLIENT_SECRET }}", workflow)

@@ -110,7 +110,12 @@
           "label": "华为云店铺",
           "url": "https://marketplace.huaweicloud.com/seller/b8f57c06a0f7e39f4e206560e71afd76"
         }
-      ]
+      ],
+      "productsArtifact": "https://artifact.websoft9.com/cloud_data/matrix/generation-huaweiyun.json",
+      "supplier": {
+        "id": "b8f57c06a0f7e39f4e206560e71afd76",
+        "name": "长沙网久软件有限公司"
+      }
     },
     {
       "key": "huaweicloud",
@@ -123,7 +128,12 @@
           "label": "HUAWEICLOUD 店铺",
           "url": "https://marketplace.huaweicloud.com/intl/seller/791bea8ce08849cf9ae4ec61c27e8435"
         }
-      ]
+      ],
+      "productsArtifact": "https://artifact.websoft9.com/cloud_data/matrix/generation-huaweicloud.json",
+      "supplier": {
+        "id": "791bea8ce08849cf9ae4ec61c27e8435",
+        "name": "长沙网久软件有限公司"
+      }
     }
   ],
   "routing": {

@@ -58,10 +58,21 @@ mk --env-file .secrets/azure.env offer-codes gen --platform azure --json
 mk --env-file .secrets/azure-vmlab.env store products --platform azure-vmlab --json > vmlab-inventory.json
 mk offer-codes gen --platform azure-vmlab --inventory vmlab-inventory.json --dry-run --json
 mk --env-file .secrets/azure-vmlab.env offer-codes gen --platform azure-vmlab --json
+
+# Huawei Cloud China: public seller inventory, no credentials required.
+mk store products --platform huaweiyun --json > huaweiyun-inventory.json
+mk offer-codes gen --platform huaweiyun --inventory huaweiyun-inventory.json --dry-run --json
+mk offer-codes gen --platform huaweiyun --json
+
+# Huawei Cloud International: no account, secrets or OIDC required.
+mk store products --platform huaweicloud --json > huaweicloud-inventory.json
+mk offer-codes gen --platform huaweicloud --inventory huaweicloud-inventory.json --dry-run --json
+mk offer-codes gen --platform huaweicloud --json
 ```
 
 - AWS (`aws`), Aliyun China (`aliyun`), Alibaba Cloud International
-  (`alibabacloud`) and Azure (`azure` for Websoft9, `azure-vmlab` for VMLab) generation are implemented; other platforms fail before any
+  (`alibabacloud`), Azure (`azure` for Websoft9, `azure-vmlab` for VMLab) and
+  Huawei Cloud China (`huaweiyun`) and International (`huaweicloud`) generation are implemented; other platforms fail before any
   network call or write. The generator and CLI share one supported-platform
   registry and one matching/report/write implementation. AWS credentials use
   the normal AWS provider chain. `--profile` applies only to AWS and is rejected
@@ -147,6 +158,31 @@ matrix codes. See [store-products.md](store-products.md) for source versions,
 visibility checks and website-interface limitations. Azure inventory snapshots
 must also contain valid configured-publisher codes and `product/<UUID>` IDs.
 No Azure listing update, offer creation or publishing API is implemented.
+
+Huawei China uses the public seller guest-search facts documented in
+[store-products.md](store-products.md), not authenticated seller OpenAPI. Its
+code is the `/contents/<UUID>` public content ID, never `OFFI...`, SKU or IMS
+image identifiers. `huaweiyun` full runs replace only `productID.huaweiyun`;
+international `huaweicloud` mappings and every other cloud remain unchanged.
+The shared matching/report and live/snapshot generation paths apply unchanged,
+including preservation of unmatched products in the generation report, no write
+for empty/failed/unresolved inventories, and dry-run/targeted generation.
+The Matrix Action includes `huaweiyun` in both its selector and `all`. It needs
+no Huawei credential/OIDC step for this public source and adds
+`generation-huaweiyun.json` to the artifact/R2 directory. Huawei-only runs publish
+under `artifact/cloud_data/matrix/huaweiyun/`; all-cloud runs include that report
+under `artifact/cloud_data/matrix/`. `huaweiyun.productsArtifact` uses the latter.
+
+Huawei International uses the separately verified public international seller
+search (`flow_id=101002`), English `title/content_abstract` and `/intl/contents/<UUID>`
+URLs. It needs no account or credentials and never falls back to China.
+`huaweicloud` full runs replace only `productID.huaweicloud`, preserving China
+and all other mappings; targeted/snapshot/dry-run and failure protections use
+the same generation service. Its selector and `all` in the Matrix Action produce
+`generation-huaweicloud.json` alongside the other reports. All-cloud R2 uploads
+place it under `artifact/cloud_data/matrix/`; international-only uploads use
+`artifact/cloud_data/matrix/huaweicloud/`. The site's
+`huaweicloud.productsArtifact` points at the combined report location.
 
 `.github/workflows/offer-codes-matrix.yml` offers `azure` and `azure-vmlab` and
 includes both in `all`, sequentially merging their separate publisher scopes.

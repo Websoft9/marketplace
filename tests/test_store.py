@@ -54,6 +54,9 @@ class StoreQueryTests(unittest.TestCase):
             if platform == "azure-vmlab":
                 return [Product("vmlabinc1613642184700.odoo", "product/00000000-0000-0000-0000-000000000002",
                                 "Unknown app", "summary", "StoreVisible")]
+            if platform in ("huaweiyun", "huaweicloud"):
+                code = "00000000-0000-0000-0000-000000000001"
+                return [Product(code, code, "Unknown app", "summary", "StoreVisible")]
             return [Product("code", "entity", "Unknown app", "summary",
                             "Public" if platform == "aws" else "StoreVisible")]
 
@@ -62,14 +65,14 @@ class StoreQueryTests(unittest.TestCase):
         self.assertEqual(result.exit_code, 1, result.output)
         report = json.loads(result.stdout)
         self.assertFalse(report["complete"])
-        self.assertEqual(report["count"], 4)
+        self.assertEqual(report["count"], 6)
         self.assertEqual([r["platform"] for r in report["results"]], list(store.PLATFORMS))
         failed = report["results"][1]
         self.assertFalse(failed["complete"])
         self.assertEqual(failed["products"], [])
         self.assertEqual(failed["errors"][0]["code"], "InventoryError")
         self.assertIn("visibility unverified", failed["errors"][0]["message"])
-        self.assertEqual(collect.call_count, 5)
+        self.assertEqual(collect.call_count, 7)
         self.assertIn("progress", result.stderr)
 
     def test_unknown_sdk_errors_are_not_stringified(self):
@@ -110,7 +113,7 @@ class StoreQueryTests(unittest.TestCase):
         self.assertEqual(collect.call_count, 2)
 
     def test_invalid_selection_fails_before_network(self):
-        for args in (["--platform", "huaweicloud"],
+        for args in (["--platform", "googlecloud"],
                      ["--platform", "all", "--platform", "aws"],
                      ["--platform", "aliyun", "--profile", "seller"]):
             with mock.patch.object(store, "collect_products") as collect:
