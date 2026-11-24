@@ -22,6 +22,8 @@ from typing import Any
 from . import marketplace
 
 REQUIRED_PLATFORMS = ("aliyun", "huaweiyun", "alibabacloud", "huaweicloud", "azure", "aws")
+# Additive column: old published matrices remain valid without Google Cloud.
+STANDARD_PLATFORMS = REQUIRED_PLATFORMS + ("googlecloud",)
 REQUIRED_FIELDS = ("id", "productID", "type", "applications")
 OPTIONAL_FIELDS = ("variants",)
 KNOWN_TYPES = frozenset({"app", "websoft9"})
@@ -39,6 +41,7 @@ CODE_PATTERNS: dict[str, re.Pattern[str]] = {
     ),
     "azure": re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$"),
     "aws": re.compile(r"^[a-z0-9]{24,25}$"),
+    "googlecloud": re.compile(r"^[a-z][a-z0-9-]*/[a-z0-9][a-z0-9-]*$"),
 }
 
 # Canonical length where the vendor format is fixed but legacy values exist.
@@ -237,7 +240,7 @@ def verify(
                         "missing platform key",
                     )
             for platform in product_ids:
-                if platform not in REQUIRED_PLATFORMS:
+                if platform not in STANDARD_PLATFORMS:
                     _issue(
                         issues, "warning", source, app_id, f"productID.{platform}",
                         "platform key is not part of the standard set",
@@ -877,10 +880,10 @@ def _add_codes(
         raise ValueError("--app must be a non-empty application id")
     if not platform:
         raise ValueError("--platform must be a non-empty platform key")
-    if platform not in REQUIRED_PLATFORMS:
+    if platform not in STANDARD_PLATFORMS:
         raise ValueError(
             f"unknown platform {platform!r}; expected one of "
-            + ", ".join(REQUIRED_PLATFORMS)
+            + ", ".join(STANDARD_PLATFORMS)
         )
     requested = _normalize(codes)
     if not requested:

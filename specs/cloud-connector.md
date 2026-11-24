@@ -40,7 +40,10 @@ Fill only the blanks.
   authenticated use; current store inventory/matrix uses the public guest search
   and does not consume them.
 - `huaweicloud` also uses public international seller search without an account
-  or credentials; its legacy optional env template is not needed for store/matrix.
+   or credentials; its legacy optional env template is not needed for store/matrix.
+- `googlecloud` store/listing queries and matrix generation use public console
+  browse, without account credentials, ADC or OIDC. No env file is needed;
+  any legacy Google credential template is unrelated to this read-only adapter.
 - Cloud files contain only that cloud's credentials; services are never mixed
   into a cloud file.
 
@@ -99,6 +102,19 @@ Action's `all`, using separate verified public sources. Authenticated product
 updates remain unsupported. A future authenticated seller adapter must verify the
 actual Marketplace API, required permissions and its STS-token support before
 claiming OIDC-backed inventory; generic Huawei IAM/IMS access is not equivalent.
+
+## Google Cloud Marketplace (`googlecloud`)
+
+`mk offer list --platform googlecloud --json` (or `mk store products`) and
+`mk offer-codes gen --platform googlecloud --dry-run --json` need no Google
+account, service-account JSON file, ADC, token, OIDC or SDK. They use the
+unauthenticated Websoft9 public console store, validating the configured partner
+and publisher namespace. The console's public frontend bootstrap key is read
+at runtime, kept only in memory and never included in output. The Matrix Action
+includes Google Cloud in `all` without a credential setup step. This does not
+validate any account/producer permission and does not implement listing writes.
+See [store-products.md](store-products.md) for the verified interface and its
+fail-closed schema/pagination checks.
 
 ## Azure Marketplace (Websoft9 and VMLab)
 

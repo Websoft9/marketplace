@@ -68,7 +68,7 @@ class ListCommandTests(unittest.TestCase):
 
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn(
-            "| 应用 | Azure | Azure (by VMLab) | AWS | 阿里云 | Alibaba Cloud | 华为云 | Huawei Cloud |",
+            "| 应用 | Azure | Azure (by VMLab) | AWS | 阿里云 | Alibaba Cloud | Google Cloud | 华为云 | Huawei Cloud |",
             result.output,
         )
         self.assertIn("Elasticsearch", result.output)

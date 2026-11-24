@@ -15,11 +15,16 @@ from .. import offer_assets
 from .. import offer_report
 from .. import offer_resolve
 from ..marketplace import CATALOG_URL, CONFIGURED_PLATFORMS, OFFER_SOURCE, VERSIONS_URL, catalog_default_path
+from .store import products_command
 
 
 @click.group("offer")
 def offer_command() -> None:
-    """Generate, compare and publish AWS AMI listing metadata."""
+    """List marketplace offers; generate, compare and publish AWS AMI metadata."""
+
+
+# One read-only inventory implementation and JSON contract for both entry points.
+offer_command.add_command(products_command, "list")
 
 
 def single_app(_ctx, _param, value):

@@ -144,10 +144,10 @@ class OfferCodesVerifyTests(unittest.TestCase):
         )
 
     def test_unknown_platform_is_warning(self):
-        path = self.write("offer.json", [entry("a", googlecloud=["abc"])])
+        path = self.write("offer.json", [entry("a", unknowncloud=["abc"])])
         result = self.invoke(path)
         self.assertEqual(result.exit_code, 0, result.output)
-        self.assertIn("productID.googlecloud", result.output)
+        self.assertIn("productID.unknowncloud", result.output)
         self.assertIn("not part of the standard set", result.output)
 
     def test_bad_id_pattern_is_warning(self):

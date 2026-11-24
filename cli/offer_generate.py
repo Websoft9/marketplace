@@ -16,6 +16,7 @@ PLATFORMS = {
     "aws": "AWS", "aliyun": "Aliyun", "alibabacloud": "Alibaba Cloud",
     "azure": "Azure", "azure-vmlab": "Azure (VMLab)", "huaweiyun": "Huawei Cloud China",
     "huaweicloud": "Huawei Cloud International",
+    "googlecloud": "Google Cloud",
 }
 
 
@@ -110,7 +111,7 @@ def generate(products, identities, previous, *, platform="aws", codes=None):
         for value in (product.code, product.alternate_code, product.entity_id) if value
     }
     for entry in by_id.values():
-        values = entry["productID"][matrix_platform]
+        values = entry["productID"].get(matrix_platform, [])
         touched = selected_aliases if codes else set(values)
         if platform in azure_market.PLATFORMS:
             # Both publishers share one column, but regeneration replaces only its own scope.
@@ -123,7 +124,7 @@ def generate(products, identities, previous, *, platform="aws", codes=None):
             "id": app, "productID": {key: [] for key in offer_codes.REQUIRED_PLATFORMS},
             "type": "app", "applications": [app],
         })
-        entry["productID"][matrix_platform].append(code)
+        entry["productID"].setdefault(matrix_platform, []).append(code)
     result = sorted(by_id.values(), key=lambda entry: entry["id"])
     for entry in result:
         for key in entry["productID"]:

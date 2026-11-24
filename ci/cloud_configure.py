@@ -71,10 +71,11 @@ AZURE_CLIENT_SECRET=
 """,
     "googlecloud": """\
 # --- Google Cloud ---
-# Prefer Application Default Credentials; never commit a service-account key.
+# Public store/offer list and matrix generation need no account, ADC or OIDC.
+# Legacy optional fields for future authenticated use; never commit a key.
 GOOGLE_CLOUD_PROJECT=
 GOOGLE_APPLICATION_CREDENTIALS=
-# The current repository integration does not use these credentials.
+# The public Marketplace adapter does not consume these credentials.
 """,
     "huaweicloud": """\
 # --- Huawei Cloud International ---

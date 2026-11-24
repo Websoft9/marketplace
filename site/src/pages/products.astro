@@ -16,16 +16,23 @@ const dateFormatter = new Intl.DateTimeFormat("zh-CN", {
   timeZone: "Asia/Shanghai",
 });
 const generatedLabel = dateFormatter.format(generatedAt);
-const sourceRank = (platform: (typeof platforms)[number]) =>
-  platform.source === "artifact"
-    ? 0
-    : platform.source === "matrix"
-      ? 1
-      : 2;
+const platformOrder = [
+  "aws",
+  "azure",
+  "azure-vmlab",
+  "googlecloud",
+  "alibabacloud",
+  "aliyun",
+  "huaweicloud",
+  "huaweiyun",
+];
+const platformOrderIndex = new Map(
+  platformOrder.map((key, index) => [key, index]),
+);
 const orderedPlatforms = [...platforms].sort(
   (a, b) =>
-    sourceRank(a) - sourceRank(b) ||
-    b.stats.total - a.stats.total ||
+    (platformOrderIndex.get(a.platform) ?? platformOrder.length) -
+      (platformOrderIndex.get(b.platform) ?? platformOrder.length) ||
     a.label.localeCompare(b.label, "zh-CN"),
 );
 const totalWithApp = totals.matched + totals.mapped;

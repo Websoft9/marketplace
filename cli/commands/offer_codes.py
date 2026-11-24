@@ -461,8 +461,7 @@ def find_command(
 @click.option("--app", required=True, metavar="APP",
               help="Application id or applications alias that should own the code(s).")
 @click.option("--platform", required=True, metavar="PLATFORM",
-              help="Platform key: aliyun, huaweiyun, alibabacloud, huaweicloud, "
-                   "azure or aws.")
+              help=f"Platform key: {', '.join(offer_codes.STANDARD_PLATFORMS)}.")
 @click.option("--code", "code_list", multiple=True, metavar="CODE",
               help="Code to add, repeated or comma-separated.")
 @click.option("--label", "label_list", multiple=True, metavar="[CODE=]LABEL",

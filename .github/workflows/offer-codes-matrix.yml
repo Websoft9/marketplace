@@ -22,6 +22,7 @@ on:
           - azure-vmlab
           - huaweiyun
           - huaweicloud
+          - googlecloud
 
 permissions:
   contents: read
@@ -268,8 +269,8 @@ jobs:
           case "$PLATFORM" in
             # Both Huawei sites use public guest seller search: no credential exchange
             # or OIDC is needed, and no credentials are sent to that website interface.
-            all) platforms=(aws aliyun alibabacloud azure azure-vmlab huaweiyun huaweicloud) ;;
-            aws|aliyun|alibabacloud|azure|azure-vmlab|huaweiyun|huaweicloud) platforms=("$PLATFORM") ;;
+            all) platforms=(aws aliyun alibabacloud azure azure-vmlab huaweiyun huaweicloud googlecloud) ;;
+            aws|aliyun|alibabacloud|azure|azure-vmlab|huaweiyun|huaweicloud|googlecloud) platforms=("$PLATFORM") ;;
             *) echo "::error::Unsupported platform: $PLATFORM"; exit 2 ;;
           esac
           printf '%s\n' "${platforms[@]}" > "$MATRIX_DIR/platforms.txt"

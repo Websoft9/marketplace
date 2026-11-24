@@ -68,11 +68,17 @@ mk offer-codes gen --platform huaweiyun --json
 mk store products --platform huaweicloud --json > huaweicloud-inventory.json
 mk offer-codes gen --platform huaweicloud --inventory huaweicloud-inventory.json --dry-run --json
 mk offer-codes gen --platform huaweicloud --json
+
+# Google Cloud: public Websoft9 VM listings; no credentials required.
+mk offer list --platform googlecloud --json > googlecloud-inventory.json
+mk offer-codes gen --platform googlecloud --inventory googlecloud-inventory.json --dry-run --json
+mk offer-codes gen --platform googlecloud --json
 ```
 
 - AWS (`aws`), Aliyun China (`aliyun`), Alibaba Cloud International
   (`alibabacloud`), Azure (`azure` for Websoft9, `azure-vmlab` for VMLab) and
-  Huawei Cloud China (`huaweiyun`) and International (`huaweicloud`) generation are implemented; other platforms fail before any
+   Huawei Cloud China (`huaweiyun`), International (`huaweicloud`) and Google Cloud
+   (`googlecloud`) generation are implemented; other platforms fail before any
   network call or write. The generator and CLI share one supported-platform
   registry and one matching/report/write implementation. AWS credentials use
   the normal AWS provider chain. `--profile` applies only to AWS and is rejected
@@ -194,6 +200,31 @@ All-cloud runs publish to `artifact/cloud_data/matrix/`; Azure-only runs publish
 to `artifact/cloud_data/matrix/azure/`, while VMLab-only runs publish to
 `artifact/cloud_data/matrix/azure-vmlab/`, protecting the combined matrix. The site
 uses each platform's generation report configured by its `productsArtifact`.
+
+### Google Cloud inventory and compatibility
+
+Google Cloud uses the verified unauthenticated public console browse interface,
+not an authenticated seller-list API. Source, owner/VM evidence, bootstrap,
+pagination and interface limitations are in [store-products.md](store-products.md).
+Codes retain the complete `productDisplayName`, including the publisher namespace
+(`websoft9-public/<product>`); UUIDs remain separate `entityId` values.
+
+Full runs replace only `productID.googlecloud`; other cloud mappings and existing
+application metadata are preserved. Targeted runs change only successfully
+resolved selected codes. Existing matrices **without** `googlecloud` remain
+valid: it is a recognized optional column, not a new required field on every
+historical entry. Generation adds it when needed; find/add/remove/replace/verify
+can consume it normally. No old mapping is used to infer application identity,
+and the generic hosting-platform offer may remain unmatched against an
+application-only catalog; it is retained in the report rather than invented as
+an application mapping.
+
+The Matrix Action selector and `all` include `googlecloud`, with no Google
+credential step. Its report is `generation-googlecloud.json`; combined runs
+publish under `artifact/cloud_data/matrix/`, Google-only runs under
+`artifact/cloud_data/matrix/googlecloud/`. `googlecloud.productsArtifact` uses
+the combined location. The existing all-selected-platforms-success gate still
+blocks R2 publication on Google query/schema/matching failures.
 
 ### Matrix Action failure isolation and publication gate
 
@@ -503,7 +534,7 @@ mk offer-codes remove --app APP --platform PLATFORM --code CODE[,CODE] \
   explicitly use `--skip-catalog-check`, which is recorded in the output;
 - only maintains entries with `type: "app"`; other types must be edited by hand;
 - requires `--platform` to be one of `aliyun`, `huaweiyun`, `alibabacloud`,
-  `huaweicloud`, `azure` or `aws`;
+  `huaweicloud`, `azure`, `aws` or `googlecloud`;
 - creates the entry when it is missing. A new entry can only be added when the
   source yields one document, because the target file is otherwise ambiguous;
 - refuses a code already owned by the same application, and a code owned by a
@@ -586,7 +617,7 @@ URL reachability, regional availability or purchase eligibility.
 
 AWS uses the Boto3 credential provider chain (environment, `AWS_PROFILE`, SSO,
 web identity, instance/container roles, etc.). Aliyun reads `ALIYUN_*`;
-`alibabacloud` needs none. Azure and Huawei adapters are not implemented
+`alibabacloud` needs none. Azure, Huawei and Google Cloud backend-audit adapters are not implemented
 and report `unsupported`.
 
 Use repeated/comma-separated `--app` and `--code`, and comma-separated

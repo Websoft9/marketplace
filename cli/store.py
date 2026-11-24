@@ -8,11 +8,11 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import alibabacloud_market, aliyun_market, aws_inventory, azure_market, huaweiyun_market
+from . import alibabacloud_market, aliyun_market, aws_inventory, azure_market, huaweiyun_market, googlecloud_market
 from .marketplace import PLATFORM_URL_TEMPLATES
 from .store_models import InventoryError, Product
 
-PLATFORMS = ("aws", "aliyun", "alibabacloud", "azure", "azure-vmlab", "huaweiyun", "huaweicloud")
+PLATFORMS = ("aws", "aliyun", "alibabacloud", "azure", "azure-vmlab", "huaweiyun", "huaweicloud", "googlecloud")
 VISIBILITIES = ("public",)
 PRODUCT_FACT_FIELDS = (
     "platform", "storeId", "provider", "code", "entityId", "title", "shortDescription",
@@ -34,6 +34,8 @@ def collect_products(platform, *, profile=None, visibility="public", progress=No
     _validate_selection(platform, profile, visibility)
     if platform == "aws":
         return aws_inventory.list_aws_products(profile, public_only=True, progress=progress)
+    if platform == "googlecloud":
+        return googlecloud_market.list_products(progress=progress)
     if platform == "aliyun":
         return aliyun_market.list_aliyun_products(progress=progress)
     if platform == "azure":
@@ -48,6 +50,12 @@ def collect_products(platform, *, profile=None, visibility="public", progress=No
 
 
 def _scope(platform):
+    if platform == "googlecloud":
+        store_id, name = googlecloud_market.supplier()
+        return {
+            "id": store_id, "provider": name, "url": googlecloud_market.store_url(),
+            "ownershipEvidence": "Public console partner facet + subtitle + productDisplayName namespace (not credential ownership)",
+        }, ["https://console.cloud.google.com/marketplace/browse (public bootstrap)", googlecloud_market.STORE_API]
     if platform in huaweiyun_market.PLATFORMS:
         store_id, name = huaweiyun_market.supplier(platform)
         endpoint, flow, prefix, _ = huaweiyun_market.source(platform)
@@ -88,6 +96,7 @@ def query_platform(platform, *, profile=None, visibility="public", progress=None
     started = time.monotonic()
     store, sources = _scope(platform)
     evidence = ("AWS Description.Visibility or AmiProductSummary.Visibility == Public" if platform == "aws"
+                else googlecloud_market.VISIBILITY_EVIDENCE if platform == "googlecloud"
                 else huaweiyun_market.visibility_evidence(platform) if platform in huaweiyun_market.PLATFORMS
                 else azure_market.VISIBILITY_EVIDENCE if platform in azure_market.PLATFORMS
                 else "DescribeProducts intersection with store images, hiddenForCloudMarket == 0"
@@ -202,6 +211,8 @@ def inventory_products(inventory, platform):
                 or (row.get("url") is not None and not isinstance(row["url"], str))):
             raise InventoryError("inventory contains malformed, nonpublic, duplicate or wrong-store product facts")
         entities.add(row["entityId"])
+        if platform == "googlecloud" and not googlecloud_market.valid_identity(row["code"], row["entityId"]):
+            raise InventoryError("Google Cloud inventory contains wrong-publisher or malformed product identity")
         if platform in huaweiyun_market.PLATFORMS and not huaweiyun_market.valid_identity(row["code"], row["entityId"]):
             raise InventoryError(f"{platform} inventory contains malformed public content identity")
         if platform in azure_market.PLATFORMS and not azure_market.valid_identity(row["code"], row["entityId"], platform):

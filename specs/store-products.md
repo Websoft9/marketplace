@@ -20,6 +20,9 @@ mk --env-file .secrets/azure-vmlab.env store products --platform azure-vmlab --j
 # Huawei China public seller search does not need credentials.
 mk store products --platform huaweiyun --json
 mk store products --platform huaweicloud --json
+mk store products --platform googlecloud --json
+# Equivalent read-only offer entry point (same options and JSON contract).
+mk offer list --platform googlecloud --json
 
 # Multiple selections are repeatable; platform order is preserved and duplicates removed.
 # Configure the selected clouds' credentials in the process environment beforehand.
@@ -29,7 +32,7 @@ mk store products --platform all --json
 mk store products --platform aws --visibility public --json
 ```
 
-`all` means the **implemented adapters**: `aws`, `aliyun`, `alibabacloud`, `azure`, `azure-vmlab`, `huaweiyun`, `huaweicloud`, in
+`all` means the **implemented adapters**: `aws`, `aliyun`, `alibabacloud`, `azure`, `azure-vmlab`, `huaweiyun`, `huaweicloud`, `googlecloud`, in
 that order. It does not claim support for all clouds in `config/marketplace.json`.
 Other platform keys are rejected before network calls. `all` cannot be combined
 with another selection. `--profile NAME` selects an AWS seller profile and is
@@ -53,6 +56,7 @@ delisted products. Absence from the result is not proof of delisting.
 | `azure-vmlab` | VMLAB INC., publisher `vmlabinc1613642184700` only | Same Product Ingestion/live VM facts using the VMLab account | Same public Catalog/live checks scoped to the VMLab publisher |
 | `huaweiyun` | 长沙网久软件有限公司, seller `b8f57c06a0f7e39f4e206560e71afd76` | Official public China seller search `id`, `title`, `hcontent` | Guest seller search with verified owner fields, `delivery_code=vm.image`, observed `content_status=1` and `hidden=0` |
 | `huaweicloud` | 长沙网久软件有限公司 (display name Websoft9), seller `791bea8ce08849cf9ae4ec61c27e8435` | Official public international seller search `id`, `title`, `content_abstract` | International guest seller search with verified owner and `/intl` URLs, same observed image/visibility flags |
+| `googlecloud` | Websoft9, publisher namespace `websoft9-public` | Official public console browse `productDisplayName`, `productId`, `title`, `description` | Unauthenticated `LAUNCHER`, `isPrivateCatalog=false`, selected partner facet, subtitle/namespace checks and `Virtual machines` / `PackagedDeployment` cards |
 
 Platform supplier IDs, names and the Aliyun supplier UID are maintained in
 `config/marketplace.json` under each platform's `supplier` object. The Aliyun and
@@ -88,6 +92,56 @@ calls are made.
 `StoreVisible` is an evidence label, **not an invented OpenAPI publication
 status**. Both Alibaba storefront endpoints are unversioned website interfaces;
 schema changes, blocking or unverified ownership/visibility fail closed.
+
+### Google Cloud (`googlecloud`)
+
+`cli/googlecloud_market.py` uses the unauthenticated interface called by the
+[official Websoft9 store](https://console.cloud.google.com/marketplace/browse?filter=partner:Websoft9),
+verified on 2026-11-24:
+
+```text
+POST https://cloudconsole-pa.clients6.google.com/v3/entityServices/MarketplaceEntityService/entities/MARKETPLACE_BROWSE_PRODUCTS:get
+```
+
+This is an **unversioned console website interface**, not a documented seller
+OpenAPI or a claim that the caller owns a producer account. The request's
+`BrowseProductsRequest.parameters` fixes `locale=en_US`, `solutionScopeId=LAUNCHER`,
+`isPrivateCatalog=false`, an empty search query and the configured `partner`
+facet (`Websoft9`). No search-term/AI fallback or unscoped browse is accepted.
+Each response must confirm that exact selected partner in
+`selectedLabeledFacetValues`, return one `SEARCH_RESULT` shelf and an integer
+`totalCount`. Cards must independently match `subtitle=Websoft9` and the
+configured `websoft9-public/` namespace. Only `productType="Virtual machines"`
+with `familyType="PackagedDeployment"` becomes image inventory; other product
+types count toward complete pagination but are not emitted.
+
+The console HTML supplies a public frontend bootstrap key (`LjgHrc`). The CLI
+retrieves it afresh into memory and sends it only as `X-Goog-Api-Key` to the
+fixed Google endpoint; it never hardcodes, saves, logs or exposes it in reports.
+No Google account, service-account key, ADC, OAuth token, OIDC, cookies or new
+SDK dependency is required or consumed. Requests disable redirects, use a
+30-second timeout, and sanitize errors without raw URLs/response bodies.
+
+`productDisplayName` is the public matrix code, for example
+`websoft9-public/websoft9-r89xi`; the separate UUID `productId` remains
+`entityId`. Service names, image names, license IDs and project IDs alone are
+not substitutes. Public links use
+`https://console.cloud.google.com/marketplace/product/{code}`. Title and short
+description come directly from the card; long descriptions do not participate
+in application matching. Visibility is `StoreVisible`, not an invented seller
+publication status. Public discovery does not prove purchase eligibility,
+enumerate drafts/private listings or prove delisting by absence.
+
+Pagination follows opaque `nextPageToken` with observed 40-card pages; it checks
+stable totals, exact page lengths, unique codes/UUIDs, token consistency and a
+1000-page ceiling. Missing totals/scope evidence, recommendations instead of
+search results, schema drift, malformed fields, duplicate identities or any
+later-page failure invalidate the entire platform, never a successful partial
+inventory. Snapshot ingestion checks the configured owner, code namespace and
+UUID independently. Matrix generation shares all normal live/snapshot,
+matching, dry-run, partial-match and atomic-write safeguards. Authenticated
+listing edits, `offer resolve`, plan/apply and backend `listing-check` remain
+unsupported for Google Cloud.
 
 ### Huawei Cloud China (`huaweiyun`)
 

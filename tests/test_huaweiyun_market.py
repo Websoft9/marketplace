@@ -260,14 +260,14 @@ class HuaweiCliTests(unittest.TestCase):
 
     def test_profile_and_unsupported_platform_fail_before_network(self):
         with mock.patch.object(market, "list_products") as network:
-            for args in (("--profile", "aws"), ("--platform", "googlecloud")):
+            for args in (("--profile", "aws"), ("--platform", "unsupported-cloud")):
                 self.assertNotEqual(self.generate(*args).exit_code, 0)
         network.assert_not_called()
 
     def test_workflow_includes_china_without_credential_requirement(self):
         workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/offer-codes-matrix.yml").read_text()
         self.assertIn("- huaweiyun", workflow)
-        self.assertIn("platforms=(aws aliyun alibabacloud azure azure-vmlab huaweiyun huaweicloud)", workflow)
+        self.assertIn("platforms=(aws aliyun alibabacloud azure azure-vmlab huaweiyun huaweicloud googlecloud)", workflow)
         self.assertIn("- huaweicloud", workflow)
         self.assertNotIn("secrets.HUAWEICLOUD_ACCESS_KEY", workflow)
 

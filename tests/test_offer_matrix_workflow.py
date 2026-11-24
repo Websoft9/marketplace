@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 WORKFLOW = Path(__file__).resolve().parents[1] / ".github/workflows/offer-codes-matrix.yml"
-PLATFORMS = ["aws", "aliyun", "alibabacloud", "azure", "azure-vmlab", "huaweiyun", "huaweicloud"]
+PLATFORMS = ["aws", "aliyun", "alibabacloud", "azure", "azure-vmlab", "huaweiyun", "huaweicloud", "googlecloud"]
 
 
 def step_text(name):
@@ -84,6 +84,7 @@ class MatrixFailureIsolationTests(unittest.TestCase):
         self.assertEqual(status["platforms"]["azure-vmlab"], "generation_failed")
         self.assertEqual(status["platforms"]["huaweiyun"], "success")
         self.assertEqual(status["platforms"]["huaweicloud"], "success")
+        self.assertEqual(status["platforms"]["googlecloud"], "success")
         self.assertIn("complete=false", (self.root / "outputs").read_text())
         self.assertEqual(self.run_step("Summarize generation results").returncode, 0)
         summary = (self.root / "summary").read_text()
@@ -131,13 +132,13 @@ class MatrixFailureIsolationTests(unittest.TestCase):
         self.assertEqual(self.run_step("Summarize generation results").returncode, 0)
 
     def test_single_public_platform_does_not_depend_on_any_credentials(self):
-        self.env["PLATFORM"] = "huaweicloud"
+        self.env["PLATFORM"] = "googlecloud"
         for key in list(self.env):
             if key.endswith("_READY"):
                 self.env[key] = "false"
         result = self.run_step("Generate offer-code matrix")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.status()["platforms"], {"huaweicloud": "success"})
+        self.assertEqual(self.status()["platforms"], {"googlecloud": "success"})
 
     def test_workflow_gates_auth_by_outcome_but_only_publishes_complete_generation(self):
         checks = ["Check AWS role configuration", "Configure AWS credentials with GitHub OIDC",

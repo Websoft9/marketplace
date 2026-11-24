@@ -91,6 +91,12 @@
       "key": "googlecloud",
       "label": "Google Cloud",
       "description": "Google Cloud Marketplace",
+      "urlTemplate": "https://console.cloud.google.com/marketplace/product/{code}",
+      "productsArtifact": "https://artifact.websoft9.com/cloud_data/matrix/generation-googlecloud.json",
+      "supplier": {
+        "id": "websoft9-public",
+        "name": "Websoft9"
+      },
       "searchUrlPrefix": "https://console.cloud.google.com/marketplace/browse?q=",
       "stores": [
         {
