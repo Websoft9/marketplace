@@ -1,5 +1,6 @@
 ---
 import "../styles/global.css";
+import { CATALOG_URL, OFFER_URL } from "../lib/config";
 
 interface Props {
   title?: string;
@@ -24,6 +25,19 @@ const route =
 const isOverview = route === "/";
 const isApps = route === "/apps" || route.startsWith("/apps/");
 const isProducts = route === "/products" || route.startsWith("/products/");
+const dataOrigins = [...new Set([CATALOG_URL, OFFER_URL].map((url) => new URL(url).origin))];
+const footerLinks = [
+  {
+    label: "GitHub",
+    href: "https://github.com/Websoft9/marketplace",
+    title: "打开 Websoft9/marketplace 仓库",
+  },
+  {
+    label: "Contentful",
+    href: "https://app.contentful.com/",
+    title: "打开 Contentful",
+  },
+];
 ---
 
 <!doctype html>
@@ -32,12 +46,24 @@ const isProducts = route === "/products" || route.startsWith("/products/");
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content={description} />
+    {dataOrigins.map((origin) => (
+      <link rel="preconnect" href={origin} crossorigin />
+    ))}
     <link rel="icon" type="image/svg+xml" href={faviconHref} />
     <title>{title}</title>
+    <script is:inline>
+      try {
+        if (localStorage.getItem("w9mp:sidebar-collapsed") === "1") {
+          document.documentElement.classList.add("sidebar-collapsed");
+        }
+      } catch {
+        /* localStorage may be unavailable */
+      }
+    </script>
   </head>
   <body>
     <div class="shell">
-      <aside class="sidebar">
+      <aside class="sidebar" id="sidebar">
         <a class="brand" href={homeHref}>
           <span class="brand-mark">W9</span>
           <span class="brand-copy">
@@ -47,33 +73,105 @@ const isProducts = route === "/products" || route.startsWith("/products/");
         </a>
 
         <nav class="nav" aria-label="主导航">
-          <a class:list={["nav-item", { active: isOverview }]} href={homeHref}>
+          <a
+            class:list={["nav-item", { active: isOverview }]}
+            href={homeHref}
+            title="总览"
+            aria-label="总览"
+          >
             <span class="nav-dot"></span>
-            总览
+            <span class="nav-label">总览</span>
           </a>
-          <a class:list={["nav-item", { active: isApps }]} href={appsHref}>
+          <a
+            class:list={["nav-item", { active: isProducts }]}
+            href={productsHref}
+            title="商品列表"
+            aria-label="商品列表"
+          >
             <span class="nav-dot"></span>
-            应用列表
+            <span class="nav-label">商品列表</span>
           </a>
-          <a class:list={["nav-item", { active: isProducts }]} href={productsHref}>
+          <a
+            class:list={["nav-item", { active: isApps }]}
+            href={appsHref}
+            title="应用列表"
+            aria-label="应用列表"
+          >
             <span class="nav-dot"></span>
-            商品列表
+            <span class="nav-label">应用列表</span>
           </a>
         </nav>
 
-        <div class="sidebar-note">
-          <span class="eyebrow">数据说明</span>
-          <p>页面在构建时直接读取公开的应用目录、offer 矩阵和商品制品，生成静态 HTML。</p>
-        </div>
+        <button
+          class="sidebar-toggle"
+          type="button"
+          data-sidebar-toggle
+          aria-controls="sidebar"
+          aria-expanded="true"
+          aria-label="收起菜单"
+          title="收起菜单"
+        >
+          <svg
+            class="sidebar-toggle-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="m15 18-6-6 6-6"></path>
+          </svg>
+          <span class="sidebar-toggle-label">收起菜单</span>
+        </button>
       </aside>
 
       <main class="main">
         <slot />
         <footer class="footer">
-          <span>Websoft9 Marketplace Dashboard</span>
-          <span>Built with Astro</span>
+          <nav class="footer-links" aria-label="相关链接">
+            {footerLinks.map((link) => (
+              <a href={link.href} target="_blank" rel="noreferrer" title={link.title}>
+                {link.label}
+              </a>
+            ))}
+          </nav>
         </footer>
       </main>
     </div>
+
+    <script>
+      const STORAGE_KEY = "w9mp:sidebar-collapsed";
+      const root = document.documentElement;
+      const toggle =
+        document.querySelector<HTMLButtonElement>("[data-sidebar-toggle]");
+      const toggleLabel = document.querySelector<HTMLElement>(
+        ".sidebar-toggle-label",
+      );
+
+      function applyCollapsed(collapsed: boolean): void {
+        root.classList.toggle("sidebar-collapsed", collapsed);
+        if (!toggle) return;
+
+        const label = collapsed ? "展开菜单" : "收起菜单";
+        toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+        toggle.setAttribute("aria-label", label);
+        toggle.setAttribute("title", label);
+        if (toggleLabel) toggleLabel.textContent = label;
+      }
+
+      applyCollapsed(root.classList.contains("sidebar-collapsed"));
+
+      toggle?.addEventListener("click", () => {
+        const collapsed = !root.classList.contains("sidebar-collapsed");
+        applyCollapsed(collapsed);
+        try {
+          localStorage.setItem(STORAGE_KEY, collapsed ? "1" : "0");
+        } catch {
+          /* localStorage may be unavailable */
+        }
+      });
+    </script>
   </body>
 </html>

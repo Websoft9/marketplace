@@ -2,23 +2,10 @@
 import DashboardLayout from "../layouts/DashboardLayout.astro";
 import StatCard from "../components/StatCard.astro";
 import StoreLinks from "../components/StoreLinks.astro";
-import {
-  CATALOG_URL,
-  OFFER_SOURCE,
-  OFFER_SOURCE_IS_URL,
-  loadMarketplaceData,
-} from "../lib/marketplace";
+import { CATALOG_URL, OFFER_URL, OVERVIEW_PLATFORMS } from "../lib/config";
 
-const { stats, generatedAt } = await loadMarketplaceData();
-const listingRate = stats.catalog
-  ? Math.round((stats.listed / stats.catalog) * 100)
-  : 0;
-const appsHref = `${import.meta.env.BASE_URL.replace(/\/+$/, "")}/apps`;
-const generatedLabel = new Intl.DateTimeFormat("zh-CN", {
-  dateStyle: "medium",
-  timeStyle: "short",
-  timeZone: "Asia/Shanghai",
-}).format(generatedAt);
+const basePath = import.meta.env.BASE_URL.replace(/\/+$/, "");
+const appsHref = `${basePath}/apps`;
 ---
 
 <DashboardLayout
@@ -34,16 +21,19 @@ const generatedLabel = new Intl.DateTimeFormat("zh-CN", {
       </p>
     </div>
     <div class="header-meta">
-      <span class="build-pill">构建时间 {generatedLabel}</span>
+      <span class="build-pill" data-data-status>正在加载数据（首次需从上游下载）…</span>
+      <button class="button" type="button" data-refresh>刷新</button>
       <a class="button" href={appsHref}>查看应用列表</a>
     </div>
   </header>
 
+  <div class="data-alert" data-data-alert hidden></div>
+
   <section class="stats-grid" aria-label="应用统计">
-    <StatCard label="商品目录应用" value={stats.catalog} hint="product_en.json" tone="blue" />
-    <StatCard label="已上架" value={stats.listed} hint="至少有一个 Marketplace 商品" tone="green" />
-    <StatCard label="未上架" value={stats.unlisted} hint="目录中但暂无商品" tone="amber" />
-    <StatCard label="目录外商品" value={stats.outside} hint="offer-codes 中存在但无 Trademark" tone="slate" />
+    <StatCard label="商品目录应用" value="—" hint="product_en.json" tone="blue" statKey="catalog" />
+    <StatCard label="已上架" value="—" hint="至少有一个 Marketplace 商品" tone="green" statKey="listed" />
+    <StatCard label="未上架" value="—" hint="目录中但暂无商品" tone="amber" statKey="unlisted" />
+    <StatCard label="目录外商品" value="—" hint="offer-codes 中存在但无 Trademark" tone="slate" statKey="outside" />
   </section>
 
   <section class="insight-grid">
@@ -53,29 +43,24 @@ const generatedLabel = new Intl.DateTimeFormat("zh-CN", {
           <h2>平台覆盖</h2>
           <p>按已上架应用统计各 Marketplace 的覆盖数量。</p>
         </div>
-        <span class="subtle">上架率 {listingRate}%</span>
+        <span class="subtle" data-listing-rate>上架率 —</span>
       </div>
       <div class="coverage-list">
-        {stats.platformCounts.map((platform) => {
-          const percentage = stats.listed
-            ? Math.round((platform.count / stats.listed) * 100)
-            : 0;
-          return (
-            <div class="coverage-row">
-              <div class="coverage-meta">
-                <span>
-                  <strong>{platform.label}</strong>
-                  <StoreLinks stores={platform.stores} />
-                  <small>{platform.description}</small>
-                </span>
-                <span>{platform.count}</span>
-              </div>
-              <div class="bar" aria-hidden="true">
-                <span style={`width: ${percentage}%`}></span>
-              </div>
+        {OVERVIEW_PLATFORMS.map((platform) => (
+          <div class="coverage-row" data-coverage={platform.key}>
+            <div class="coverage-meta">
+              <span>
+                <strong>{platform.label}</strong>
+                <StoreLinks stores={platform.stores ?? []} />
+                <small>{platform.description}</small>
+              </span>
+              <span data-coverage-count>—</span>
             </div>
-          );
-        })}
+            <div class="bar" aria-hidden="true">
+              <span data-coverage-bar style="width: 0%"></span>
+            </div>
+          </div>
+        ))}
       </div>
     </article>
 
@@ -83,28 +68,22 @@ const generatedLabel = new Intl.DateTimeFormat("zh-CN", {
       <div class="panel-heading">
         <div>
           <h2>数据源</h2>
-          <p>构建时直接读取，不在浏览器中发起跨域请求。</p>
+          <p>页面加载时由浏览器直接获取公开 JSON，并保存在本地缓存中。</p>
         </div>
       </div>
       <div class="source-list">
-        {OFFER_SOURCE_IS_URL ? (
-          <a class="source-item" href={OFFER_SOURCE} target="_blank" rel="noreferrer">
-            <span class="source-name">matrix.json</span>
-            <span class="source-desc">商品编码与云平台映射</span>
-          </a>
-        ) : (
-          <div class="source-item">
-            <span class="source-name">本地 offer-codes</span>
-            <span class="source-desc">商品编码与云平台映射（本地覆盖）</span>
-          </div>
-        )}
+        <a class="source-item" href={OFFER_URL} target="_blank" rel="noreferrer">
+          <span class="source-name">matrix.json</span>
+          <span class="source-desc">商品编码与云平台映射</span>
+        </a>
         <a class="source-item" href={CATALOG_URL} target="_blank" rel="noreferrer">
           <span class="source-name">product_en.json</span>
           <span class="source-desc">应用目录与 Trademark</span>
         </a>
       </div>
       <p class="source-note">
-        商品编码在构建时从 `config/sources.json` 的 `sources.offer-codes.url` 制品读取；应用目录从 `sources.catalog.url` 抓取。
+        数据源地址来自 `config/sources.json`（应用目录为 `sources.catalog.url`，商品编码为
+        `sources.offer-codes.url`）。浏览器使用本地缓存和条件请求检查更新，数据变化后无需重新构建站点。
       </p>
     </article>
   </section>
@@ -113,10 +92,79 @@ const generatedLabel = new Intl.DateTimeFormat("zh-CN", {
     <div>
       <span class="eyebrow">Applications</span>
       <h2>需要查看具体应用？</h2>
-      <p>
-        应用列表包含 {stats.catalog} 个目录应用和 {stats.outside} 个目录外商品，可按状态、平台和关键字筛选。
+      <p data-cta-text>
+        应用列表包含目录应用和目录外商品，可按状态、平台和关键字筛选。
       </p>
     </div>
     <a class="button primary" href={appsHref}>打开应用列表</a>
   </section>
 </DashboardLayout>
+
+<script>
+  import { loadMarketplaceData } from "../lib/client/data";
+  import {
+    describeStatus,
+    errorMessage,
+    hideDataError,
+    setText,
+    showDataError,
+    wireRefreshButtons,
+  } from "../lib/client/dom";
+  import type { MarketplaceData } from "../lib/marketplace";
+  import type { ResourceMeta } from "../lib/client/cache";
+
+  const statusEl = document.querySelector<HTMLElement>("[data-data-status]");
+  const alertEl = document.querySelector<HTMLElement>("[data-data-alert]");
+  const coverageRows = new Map(
+    Array.from(document.querySelectorAll<HTMLElement>("[data-coverage]")).map(
+      (row) => [row.dataset.coverage ?? "", row],
+    ),
+  );
+
+  function updateStatus(status: ResourceMeta): void {
+    if (!statusEl) return;
+    statusEl.textContent = describeStatus(status);
+    statusEl.classList.toggle("is-stale", status.stale);
+  }
+
+  function render(data: MarketplaceData, status: ResourceMeta): void {
+    const { stats } = data;
+    setText(document, "[data-stat='catalog']", stats.catalog);
+    setText(document, "[data-stat='listed']", stats.listed);
+    setText(document, "[data-stat='unlisted']", stats.unlisted);
+    setText(document, "[data-stat='outside']", stats.outside);
+
+    const listingRate = stats.catalog
+      ? Math.round((stats.listed / stats.catalog) * 100)
+      : 0;
+    setText(document, "[data-listing-rate]", `上架率 ${listingRate}%`);
+
+    for (const platform of stats.platformCounts) {
+      const row = coverageRows.get(platform.key);
+      if (!row) continue;
+      const percentage = stats.listed
+        ? Math.round((platform.count / stats.listed) * 100)
+        : 0;
+      setText(row, "[data-coverage-count]", platform.count);
+      const bar = row.querySelector<HTMLElement>("[data-coverage-bar]");
+      if (bar) bar.style.width = `${percentage}%`;
+    }
+
+    const cta = document.querySelector<HTMLElement>("[data-cta-text]");
+    if (cta) {
+      cta.textContent = `应用列表包含 ${stats.catalog} 个目录应用和 ${stats.outside} 个目录外商品，可按状态、平台和关键字筛选。`;
+    }
+
+    updateStatus(status);
+
+    hideDataError(alertEl);
+  }
+  wireRefreshButtons();
+
+  loadMarketplaceData({ onUpdate: render, onRefresh: updateStatus })
+    .then(({ data, status }) => render(data, status))
+    .catch((error: unknown) => {
+      if (statusEl) statusEl.textContent = "数据加载失败";
+      showDataError(alertEl, errorMessage(error));
+    });
+</script>

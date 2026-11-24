@@ -1,14 +1,12 @@
 import {
-  ALL_PLATFORMS,
-  PLATFORMS,
-  fetchJson,
-  loadMarketplaceData,
-  type CatalogProduct,
+  isProductPlatform,
   type PlatformConfig,
   type PlatformKey,
   type ProductPlatformConfig,
   type StoreConfig,
-} from "./marketplace";
+} from "./config";
+import type { CatalogProduct, MarketplaceData } from "./marketplace";
+import { asString, asUrl, asWebsiteUrl, isRecord } from "./value";
 
 export type ProductMatchStatus = "matched" | "mapped" | "unmatched";
 export type ProductSource = "artifact" | "matrix" | "unavailable";
@@ -73,12 +71,6 @@ export interface PlatformProductsTotals {
   apps: number;
 }
 
-export interface PlatformProductsData {
-  platforms: PlatformProductData[];
-  generatedAt: Date;
-  totals: PlatformProductsTotals;
-}
-
 interface ArtifactProduct {
   code?: unknown;
   title?: unknown;
@@ -91,7 +83,7 @@ interface ArtifactProduct {
   appMatch?: unknown;
 }
 
-interface GenerationArtifact {
+export interface GenerationArtifact {
   platform?: unknown;
   products?: unknown;
   inventory?: unknown;
@@ -99,7 +91,7 @@ interface GenerationArtifact {
   visibility?: unknown;
 }
 
-interface MatrixEntry {
+export interface MatrixEntry {
   appId: string;
   appName: string;
   appInCatalog: boolean;
@@ -108,8 +100,8 @@ interface MatrixEntry {
   url?: string;
 }
 
-interface ArtifactLoad {
-  platform: ProductPlatformConfig;
+export interface ArtifactLoad {
+  platform: PlatformConfig;
   artifact?: GenerationArtifact;
   error?: string;
 }
@@ -123,24 +115,12 @@ interface ParsedArtifact {
   warnings: string[];
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function asString(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
-}
-
-function asUrl(value: unknown): string | undefined {
-  const url = asString(value);
-  return url && url.startsWith("https://") ? url : undefined;
-}
-
-function asWebsiteUrl(value: unknown): string | undefined {
-  const url = asString(value);
-  return url && /^https?:\/\//.test(url) ? url : undefined;
+/** Validates the top-level shape of a generation report before parsing it. */
+export function parseArtifactPayload(value: unknown): GenerationArtifact {
+  if (!isRecord(value)) {
+    throw new Error("商品制品必须是 JSON 对象。");
+  }
+  return value as GenerationArtifact;
 }
 
 function normalizeCode(code: string): string {
@@ -407,45 +387,25 @@ function buildUnavailablePlatform(
   };
 }
 
-async function loadArtifact(
-  platform: ProductPlatformConfig,
-): Promise<ArtifactLoad> {
-  if (!platform.productsArtifact) return { platform };
-
-  try {
-    const artifact = await fetchJson<unknown>(platform.productsArtifact);
-    if (!isRecord(artifact)) {
-      throw new Error("商品制品不是 JSON 对象");
-    }
-    return { platform, artifact: artifact as GenerationArtifact };
-  } catch (error) {
-    return {
-      platform,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
-}
-
-let platformProductsPromise: Promise<PlatformProductsData> | undefined;
-
-async function buildPlatformProducts(): Promise<PlatformProductsData> {
-  const [marketplace, artifactLoads] = await Promise.all([
-    loadMarketplaceData(),
-    Promise.all(PLATFORMS.map((platform) => loadArtifact(platform))),
-  ]);
-
+/**
+ * Builds the product-code to application lookup used to enrich generation
+ * reports and to fall back to the offer matrix when an artifact is missing.
+ */
+export function buildMatrixByPlatform(
+  marketplace: MarketplaceData,
+): Map<PlatformKey, Map<string, MatrixEntry>> {
   const catalogByKey = new Map(
     marketplace.catalog.map((product) => [product.key, product]),
   );
   const matrixByPlatform = new Map<PlatformKey, Map<string, MatrixEntry>>();
 
   for (const row of marketplace.rows) {
-    for (const platform of PLATFORMS) {
-      for (const link of row.links[platform.key]) {
+    for (const [platformKey, links] of Object.entries(row.links)) {
+      for (const link of links) {
         const codeKey = normalizeCode(link.code);
         if (!codeKey) continue;
 
-        const entries = matrixByPlatform.get(platform.key) ?? new Map();
+        const entries = matrixByPlatform.get(platformKey) ?? new Map();
         if (entries.has(codeKey)) continue;
 
         const entry: MatrixEntry = {
@@ -457,55 +417,68 @@ async function buildPlatformProducts(): Promise<PlatformProductsData> {
           url: link.url,
         };
         entries.set(codeKey, entry);
-        matrixByPlatform.set(platform.key, entries);
+        matrixByPlatform.set(platformKey, entries);
       }
     }
   }
 
-  const platforms: PlatformProductData[] = PLATFORMS.map((platform) => {
-    const load = artifactLoads.find((item) => item.platform.key === platform.key);
-    const matrix = matrixByPlatform.get(platform.key);
-    const artifactUrl = platform.productsArtifact;
+  return matrixByPlatform;
+}
 
-    if (!artifactUrl) {
-      return buildMatrixPlatform(platform, matrix, {
-        status: "missing",
-        message:
-          "该平台未在 config/marketplace.json 中配置 productsArtifact。",
-      });
-    }
+export function catalogByKey(
+  catalog: CatalogProduct[],
+): Map<string, CatalogProduct> {
+  return new Map(catalog.map((product) => [product.key, product]));
+}
 
-    if (!load || load.error || !load.artifact) {
-      return buildMatrixPlatform(platform, matrix, {
-        status: "error",
-        message: `商品制品加载失败：${load?.error ?? "未知错误"}`,
-      });
-    }
-
-    const parsed = parseArtifact(
-      platform,
-      load.artifact,
-      matrix ?? new Map(),
-      catalogByKey,
-    );
-    if (!parsed) {
-      return buildMatrixPlatform(platform, matrix, {
-        status: "error",
-        message: "商品制品不完整或格式无效。",
-      });
-    }
-
-    return buildArtifactPlatform(platform, parsed);
-  });
-
-  const productPlatformKeys = new Set(PLATFORMS.map((platform) => platform.key));
-  for (const platform of ALL_PLATFORMS) {
-    if (!productPlatformKeys.has(platform.key as PlatformKey)) {
-      platforms.push(buildUnavailablePlatform(platform));
-    }
+/** Builds one platform view from the offer matrix and an optional artifact. */
+export function buildPlatformData(
+  platform: PlatformConfig,
+  matrixByPlatform: Map<PlatformKey, Map<string, MatrixEntry>>,
+  products: Map<string, CatalogProduct>,
+  load?: ArtifactLoad,
+): PlatformProductData {
+  if (!isProductPlatform(platform)) {
+    return buildUnavailablePlatform(platform);
   }
 
-  const totals: PlatformProductsTotals = {
+  const matrix = matrixByPlatform.get(platform.key);
+  const artifactUrl = platform.productsArtifact;
+
+  if (!artifactUrl) {
+    return buildMatrixPlatform(platform, matrix, {
+      status: "missing",
+      message: "该平台未在 config/marketplace.json 中配置 productsArtifact。",
+    });
+  }
+
+  if (!load || load.error || !load.artifact) {
+    return buildMatrixPlatform(platform, matrix, {
+      status: "error",
+      message: `商品制品加载失败：${load?.error ?? "未知错误"}`,
+    });
+  }
+
+  const parsed = parseArtifact(
+    platform,
+    load.artifact,
+    matrix ?? new Map(),
+    products,
+  );
+  if (!parsed) {
+    return buildMatrixPlatform(platform, matrix, {
+      status: "error",
+      message: "商品制品不完整或格式无效。",
+    });
+  }
+
+  return buildArtifactPlatform(platform, parsed);
+}
+
+export function buildTotals(
+  platforms: PlatformProductData[],
+): PlatformProductsTotals {
+  return {
     platforms: platforms.length,
     products: platforms.reduce((sum, platform) => sum + platform.stats.total, 0),
     matched: platforms.reduce((sum, platform) => sum + platform.stats.matched, 0),
@@ -520,10 +493,4 @@ async function buildPlatformProducts(): Promise<PlatformProductsData> {
       ),
     ).size,
   };
-
-  return { platforms, generatedAt: new Date(), totals };
-}
-
-export function loadPlatformProducts(): Promise<PlatformProductsData> {
-  return (platformProductsPromise ??= buildPlatformProducts());
 }

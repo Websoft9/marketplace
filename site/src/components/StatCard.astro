@@ -4,13 +4,14 @@ interface Props {
   value: number | string;
   hint?: string;
   tone?: "blue" | "green" | "amber" | "slate";
+  statKey?: string;
 }
 
-const { label, value, hint, tone = "slate" } = Astro.props;
+const { label, value, hint, tone = "slate", statKey } = Astro.props;
 ---
 
 <article class:list={["stat-card", `tone-${tone}`]}>
   <span class="stat-label">{label}</span>
-  <strong class="stat-value">{value}</strong>
+  <strong class="stat-value" data-stat={statKey}>{value}</strong>
   {hint && <span class="stat-hint">{hint}</span>}
 </article>

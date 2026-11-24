@@ -1,24 +1,6 @@
 ---
 import DashboardLayout from "../layouts/DashboardLayout.astro";
-import ProductActions from "../components/ProductActions.astro";
-import {
-  PLATFORMS,
-  loadMarketplaceData,
-  rowStatus,
-} from "../lib/marketplace";
-
-const { rows, generatedAt } = await loadMarketplaceData();
-const basePath = import.meta.env.BASE_URL.replace(/\/+$/, "");
-const statusLabels = {
-  listed: "已上架",
-  unlisted: "未上架",
-  outside: "目录外",
-} as const;
-const generatedLabel = new Intl.DateTimeFormat("zh-CN", {
-  dateStyle: "medium",
-  timeStyle: "short",
-  timeZone: "Asia/Shanghai",
-}).format(generatedAt);
+import { PLATFORMS } from "../lib/config";
 ---
 
 <DashboardLayout
@@ -34,7 +16,8 @@ const generatedLabel = new Intl.DateTimeFormat("zh-CN", {
       </p>
     </div>
     <div class="header-meta">
-      <span class="build-pill">构建时间 {generatedLabel}</span>
+      <span class="build-pill" data-data-status>正在加载数据（首次需从上游下载）…</span>
+      <button class="button" type="button" data-refresh>刷新</button>
       <a
         class="button"
         href="https://github.com/Websoft9/manufacture"
@@ -46,12 +29,15 @@ const generatedLabel = new Intl.DateTimeFormat("zh-CN", {
     </div>
   </header>
 
+  <div class="data-alert" data-data-alert hidden></div>
+
   <section class="panel table-panel">
     <div class="table-toolbar">
       <div>
         <h2>应用列表</h2>
         <p class="table-summary">
-          显示 <strong id="visible-count">{rows.length}</strong> / {rows.length} 个应用
+          显示 <strong id="visible-count">—</strong> /
+          <span data-total-count>—</span> 个应用
         </p>
       </div>
       <div class="filters">
@@ -85,6 +71,10 @@ const generatedLabel = new Intl.DateTimeFormat("zh-CN", {
       </div>
     </div>
 
+    <div class="panel-loading" data-apps-loading>
+      正在加载应用目录与商品编码矩阵…首次加载需要从上游下载应用目录，之后会使用浏览器本地缓存。
+    </div>
+
     <div class="table-scroll">
       <table>
         <thead>
@@ -96,71 +86,7 @@ const generatedLabel = new Intl.DateTimeFormat("zh-CN", {
             ))}
           </tr>
         </thead>
-        <tbody>
-          {rows.map((row) => {
-            const status = rowStatus(row);
-            const platforms = PLATFORMS.filter(
-              (platform) => row.links[platform.key].length > 0,
-            )
-              .map((platform) => platform.key)
-              .join(",");
-            const searchText = [
-              row.name,
-              row.key,
-              ...Object.values(row.links)
-                .flat()
-                .map((link) => link.code),
-            ]
-              .join(" ")
-              .toLowerCase();
-            return (
-              <tr
-                data-app-row
-                data-status={status}
-                data-platforms={platforms}
-                data-search={searchText}
-              >
-                <td class="app-cell">
-                  <span class="app-cell-head">
-                    {row.inCatalog ? (
-                      <a
-                        class="app-name app-link"
-                        href={`${basePath}/apps/${row.key}`}
-                        title={`查看 ${row.name} 详情`}
-                      >
-                        {row.name}
-                      </a>
-                    ) : (
-                      <span class="app-name">{row.name}</span>
-                    )}
-                    {row.inCatalog ? (
-                      <a
-                        class="app-detail-link"
-                        href={`${basePath}/apps/${row.key}`}
-                      >
-                        详情
-                      </a>
-                    ) : null}
-                  </span>
-                  <span class="app-key">{row.key}</span>
-                </td>
-                <td>
-                  <span class:list={["status", `status-${status}`]}>
-                    {statusLabels[status]}
-                  </span>
-                </td>
-                {PLATFORMS.map((platform) => (
-                  <td>
-                    <ProductActions
-                      links={row.links[platform.key]}
-                      platformLabel={platform.label}
-                    />
-                  </td>
-                ))}
-              </tr>
-            );
-          })}
-        </tbody>
+        <tbody data-apps-body></tbody>
       </table>
     </div>
     <div id="empty-state" class="empty-state" hidden>
@@ -170,18 +96,136 @@ const generatedLabel = new Intl.DateTimeFormat("zh-CN", {
 </DashboardLayout>
 
 <script>
+  import { PLATFORMS } from "../lib/config";
+  import { loadMarketplaceData } from "../lib/client/data";
+  import {
+    describeStatus,
+    errorMessage,
+    html,
+    hideDataError,
+    setContent,
+    setText,
+    showDataError,
+    wireCopyButtons,
+    wireRefreshButtons,
+    type SafeHtml,
+  } from "../lib/client/dom";
+  import { rowStatus, type AppRow, type ProductLink } from "../lib/marketplace";
+  import type { ResourceMeta } from "../lib/client/cache";
+
+  const basePath = import.meta.env.BASE_URL.replace(/\/+$/, "");
+  const statusLabels = {
+    listed: "已上架",
+    unlisted: "未上架",
+    outside: "目录外",
+  } as const;
+
   const search = document.getElementById("app-search") as HTMLInputElement | null;
-  const statusFilter = document.getElementById("status-filter") as HTMLSelectElement | null;
+  const statusFilter = document.getElementById(
+    "status-filter",
+  ) as HTMLSelectElement | null;
   const platformFilter = document.getElementById(
     "platform-filter",
   ) as HTMLSelectElement | null;
   const visibleCount = document.getElementById("visible-count");
   const emptyState = document.getElementById("empty-state");
-  const tableRows = Array.from(
-    document.querySelectorAll<HTMLTableRowElement>("tr[data-app-row]"),
-  );
+  const loading = document.querySelector<HTMLElement>("[data-apps-loading]");
+  const tbody = document.querySelector<HTMLTableSectionElement>("[data-apps-body]");
+  const statusEl = document.querySelector<HTMLElement>("[data-data-status]");
+  const alertEl = document.querySelector<HTMLElement>("[data-data-alert]");
 
-  function applyFilters() {
+  let tableRows: HTMLTableRowElement[] = [];
+
+  function detailHref(key: string): string {
+    return `${basePath}/apps/detail/?key=${encodeURIComponent(key)}`;
+  }
+
+  function productActions(
+    links: ProductLink[],
+    platformLabel: string,
+  ): SafeHtml {
+    const first = links[0];
+    if (!first) return html`<span class="empty-cell">—</span>`;
+
+    const codes = links.map((link) => link.code);
+    const copyTitle =
+      links.length > 1
+        ? `复制全部 ${links.length} 个 code：${codes.join(", ")}`
+        : `复制 code：${codes[0]}`;
+
+    return html`
+      <span class="platform-cell">
+        <a
+          class="platform-check"
+          href="${first.url}"
+          target="_blank"
+          rel="noreferrer"
+          aria-label="打开 ${platformLabel} 商品"
+          title="打开 ${platformLabel} 商品；悬停后可复制 code"
+        >
+          ✔
+        </a>
+        <button
+          class="platform-copy"
+          type="button"
+          data-copy="${codes.join("\n")}"
+          aria-label="复制 ${platformLabel} 商品 code"
+          title="${copyTitle}"
+        >
+          复制
+        </button>
+      </span>
+    `;
+  }
+
+  function appRow(row: AppRow): SafeHtml {
+    const status = rowStatus(row);
+    const platforms = PLATFORMS.filter(
+      (platform) => (row.links[platform.key] ?? []).length > 0,
+    )
+      .map((platform) => platform.key)
+      .join(",");
+    const searchText = [
+      row.name,
+      row.key,
+      ...Object.values(row.links)
+        .flat()
+        .map((link) => link.code),
+    ]
+      .join(" ")
+      .toLowerCase();
+    const href = detailHref(row.key);
+
+    return html`
+      <tr
+        data-app-row
+        data-status="${status}"
+        data-platforms="${platforms}"
+        data-search="${searchText}"
+      >
+        <td class="app-cell">
+          <span class="app-cell-head">
+            ${row.inCatalog
+              ? html`<a class="app-name app-link" href="${href}" title="查看 ${row.name} 详情">${row.name}</a>`
+              : html`<span class="app-name">${row.name}</span>`}
+            ${row.inCatalog
+              ? html`<a class="app-detail-link" href="${href}">详情</a>`
+              : ""}
+          </span>
+          <span class="app-key">${row.key}</span>
+        </td>
+        <td>
+          <span class="status status-${status}">${statusLabels[status]}</span>
+        </td>
+        ${PLATFORMS.map(
+          (platform) =>
+            html`<td>${productActions(row.links[platform.key] ?? [], platform.label)}</td>`,
+        )}
+      </tr>
+    `;
+  }
+
+  function applyFilters(): void {
     if (!search || !statusFilter || !platformFilter) return;
 
     const term = search.value.trim().toLowerCase();
@@ -205,44 +249,40 @@ const generatedLabel = new Intl.DateTimeFormat("zh-CN", {
     if (emptyState) emptyState.hidden = visible !== 0;
   }
 
+  function updateStatus(status: ResourceMeta): void {
+    if (!statusEl) return;
+    statusEl.textContent = describeStatus(status);
+    statusEl.classList.toggle("is-stale", status.stale);
+  }
+
+  function renderRows(rows: AppRow[], status: ResourceMeta): void {
+    setContent(tbody, html`${rows.map((row) => appRow(row))}`);
+    tableRows = Array.from(
+      tbody?.querySelectorAll<HTMLTableRowElement>("tr[data-app-row]") ?? [],
+    );
+    if (loading) loading.hidden = true;
+
+    setText(document, "[data-total-count]", rows.length);
+    applyFilters();
+
+    updateStatus(status);
+    hideDataError(alertEl);
+  }
+
   search?.addEventListener("input", applyFilters);
   statusFilter?.addEventListener("change", applyFilters);
   platformFilter?.addEventListener("change", applyFilters);
+  wireCopyButtons();
+  wireRefreshButtons();
 
-  async function copyText(text: string) {
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(text);
-      return;
-    }
-
-    const textarea = document.createElement("textarea");
-    textarea.value = text;
-    textarea.setAttribute("readonly", "");
-    textarea.style.position = "fixed";
-    textarea.style.opacity = "0";
-    document.body.appendChild(textarea);
-    textarea.select();
-    document.execCommand("copy");
-    textarea.remove();
-  }
-
-  document.addEventListener("click", async (event) => {
-    if (!(event.target instanceof Element)) return;
-    const button = event.target.closest<HTMLButtonElement>("[data-copy]");
-    const code = button?.dataset.copy;
-    if (!button || !code) return;
-
-    const original = button.textContent;
-    try {
-      await copyText(code);
-      button.textContent = "已复制";
-      button.classList.add("copied");
-    } catch {
-      button.textContent = "复制失败";
-    }
-    window.setTimeout(() => {
-      button.textContent = original;
-      button.classList.remove("copied");
-    }, 1200);
-  });
+  loadMarketplaceData({
+    onUpdate: (data, status) => renderRows(data.rows, status),
+    onRefresh: updateStatus,
+  })
+    .then(({ data, status }) => renderRows(data.rows, status))
+    .catch((error: unknown) => {
+      if (loading) loading.hidden = true;
+      if (statusEl) statusEl.textContent = "数据加载失败";
+      showDataError(alertEl, errorMessage(error));
+    });
 </script>

@@ -1,0 +1,40 @@
+---
+import DashboardLayout from "../layouts/DashboardLayout.astro";
+
+const basePath = import.meta.env.BASE_URL.replace(/\/+$/, "");
+const homeHref = basePath || "/";
+---
+
+<DashboardLayout
+  title="页面不存在 | Websoft9 Marketplace"
+  description="请求的页面不存在，请返回 Websoft9 Marketplace 总览。"
+>
+  <header class="page-header">
+    <div>
+      <span class="eyebrow">404 / Not Found</span>
+      <h1>页面不存在</h1>
+      <p class="lede">
+        这个地址没有对应的静态页面。应用详情现在是动态路由
+        <code>/apps/detail/?key=&lt;key&gt;</code>，旧链接会自动跳转。
+      </p>
+    </div>
+    <div class="header-meta">
+      <a class="button primary" href={homeHref}>返回总览</a>
+    </div>
+  </header>
+</DashboardLayout>
+
+<script>
+  // Hosts that serve 404.html (GitHub Pages, Cloudflare Pages) also deliver it
+  // for legacy /apps/<key> bookmarks; forward those to the dynamic detail page.
+  const base = import.meta.env.BASE_URL.replace(/\/+$/, "");
+  const prefix = `${base}/apps/`;
+  if (location.pathname.startsWith(prefix)) {
+    const key = decodeURIComponent(
+      location.pathname.slice(prefix.length).replace(/\/+$/, ""),
+    );
+    if (key && !key.includes("/") && key !== "detail") {
+      location.replace(`${base}/apps/detail/?key=${encodeURIComponent(key)}`);
+    }
+  }
+</script>

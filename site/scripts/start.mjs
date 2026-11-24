@@ -16,10 +16,15 @@ function parsePort(value) {
 
 function requestedPort(args) {
   let port = parsePort(process.env.PORT) ?? defaultPort;
+  let preview = false;
   const forwarded = [];
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
+    if (arg === "--preview") {
+      preview = true;
+      continue;
+    }
     if (arg === "--port") {
       port = parsePort(args[index + 1]) ?? port;
       index += 1;
@@ -36,7 +41,7 @@ function requestedPort(args) {
     forwarded.push(arg);
   }
 
-  return { port, forwarded };
+  return { port, forwarded, preview };
 }
 
 function canBind(port, host) {
@@ -67,8 +72,29 @@ async function findPort(startPort) {
   return undefined;
 }
 
-const { port: preferredPort, forwarded } = requestedPort(process.argv.slice(2));
+const {
+  port: preferredPort,
+  forwarded,
+  preview,
+} = requestedPort(process.argv.slice(2));
 const port = await findPort(preferredPort);
+
+// Expose the server on the LAN unless the caller passed their own --host.
+const hasHostFlag = forwarded.some(
+  (arg) => arg === "--host" || arg === "-H" || arg.startsWith("--host="),
+);
+const hasAllowedHostsFlag = forwarded.some(
+  (arg) => arg === "--allowed-hosts" || arg.startsWith("--allowed-hosts="),
+);
+const hostArgs = [
+  ...(hasHostFlag ? [] : ["--host"]),
+  ...(hasAllowedHostsFlag ? [] : ["--allowed-hosts"]),
+];
+
+if (preview && !existsSync(join(siteRoot, "dist"))) {
+  console.error(`No site build found in ${join(siteRoot, "dist")}. Run "npm run build" first.`);
+  process.exit(1);
+}
 
 if (!port) {
   console.error(
@@ -89,15 +115,23 @@ if (!existsSync(astroBin)) {
   process.exit(1);
 }
 
+const mode = preview ? "preview" : "site";
 if (port !== preferredPort) {
-  console.log(`Port ${preferredPort} is in use; starting the site on port ${port}.`);
+  console.log(`Port ${preferredPort} is in use; starting the ${mode} on port ${port}.`);
 } else {
-  console.log(`Starting the site on port ${port}.`);
+  console.log(`Starting the ${mode} on port ${port}.`);
 }
 
 const child = spawn(
   astroBin,
-  ["dev", "--port", String(port), "--ignore-lock", ...forwarded],
+  [
+    preview ? "preview" : "dev",
+    "--port",
+    String(port),
+    "--ignore-lock",
+    ...hostArgs,
+    ...forwarded,
+  ],
   {
     cwd: siteRoot,
     env: process.env,

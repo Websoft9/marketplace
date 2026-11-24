@@ -1,5 +1,7 @@
 name: Deploy site to GitHub Pages
 
+# The dashboard fetches marketplace data in the browser, so upstream data
+# publications do not require a rebuild; only site and config changes do.
 on:
   push:
     branches: [main]

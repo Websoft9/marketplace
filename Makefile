@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install site cli test test-main test-ci test-offers cloud-configure opencode opencode-clear branch-update
+.PHONY: help install site site-preview cli test test-main test-ci test-offers cloud-configure opencode opencode-clear branch-update
 
 PYTHON ?= python3
 ARGS ?=
@@ -35,7 +35,8 @@ help:
 	@printf '$(DIM)%s$(RESET)\n' '──────────────────────────────'
 	@printf '  %-18s %s\n' 'help' 'show available local development targets'
 	@printf '  %-18s %s\n' 'install' 'create .venv and install the CLI with all optional integration extras'
-	@printf '  %-18s %s\n' 'site' 'start the Astro site in the foreground; uses the next free port if 9001 is busy'
+	@printf '  %-18s %s\n' 'site' 'start the Astro site in the foreground on the LAN; uses the next free port if 9001 is busy'
+	@printf '  %-18s %s\n' 'site-preview' 'build and preview the static site on the LAN; starts from port 9001 like site'
 	@printf '  %-18s %s\n' 'cli' 'enter the mk CLI shell (ARGS: one-shot command; cloud=aws loads .secrets/aws.env)'
 	@printf '\n$(HEADING)%s$(RESET)\n' 'TESTING'
 	@printf '$(DIM)%s$(RESET)\n' '──────────────────────────────'
@@ -65,6 +66,10 @@ install:
 site:
 	@command -v npm >/dev/null 2>&1 || { printf 'error: npm is not installed\n' >&2; exit 1; }
 	@cd site && npm start -- $(ARGS)
+
+site-preview:
+	@command -v npm >/dev/null 2>&1 || { printf 'error: npm is not installed\n' >&2; exit 1; }
+	@cd site && npm run build && npm run start-preview -- $(ARGS)
 
 cli:
 	@if [ -n "$(ENV_FILE)" ] && [ ! -f "$(ENV_FILE)" ]; then \
