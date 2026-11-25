@@ -16,6 +16,7 @@ const basePath = base.replace(/\/+$/, "");
 const homeHref = base;
 const appsHref = `${basePath}/apps`;
 const productsHref = `${basePath}/products`;
+const toolsHref = `${basePath}/tools`;
 const faviconHref = `${base}favicon.svg`;
 const pathname = Astro.url.pathname.replace(/\/+$/, "") || "/";
 const route =
@@ -25,19 +26,22 @@ const route =
 const isOverview = route === "/";
 const isApps = route === "/apps" || route.startsWith("/apps/");
 const isProducts = route === "/products" || route.startsWith("/products/");
+const isTools = route === "/tools" || route.startsWith("/tools/");
 const dataOrigins = [...new Set([CATALOG_URL, OFFER_URL].map((url) => new URL(url).origin))];
 const footerLinks = [
   {
     label: "GitHub",
     href: "https://github.com/Websoft9/marketplace",
     title: "打开 Websoft9/marketplace 仓库",
+    icon: "github",
   },
   {
     label: "Contentful",
     href: "https://app.contentful.com/",
     title: "打开 Contentful",
+    icon: "contentful",
   },
-];
+] as const;
 ---
 
 <!doctype html>
@@ -85,20 +89,29 @@ const footerLinks = [
           <a
             class:list={["nav-item", { active: isProducts }]}
             href={productsHref}
-            title="商品列表"
-            aria-label="商品列表"
+            title="商品"
+            aria-label="商品"
           >
             <span class="nav-dot"></span>
-            <span class="nav-label">商品列表</span>
+            <span class="nav-label">商品</span>
           </a>
           <a
             class:list={["nav-item", { active: isApps }]}
             href={appsHref}
-            title="应用列表"
-            aria-label="应用列表"
+            title="应用"
+            aria-label="应用"
           >
             <span class="nav-dot"></span>
-            <span class="nav-label">应用列表</span>
+            <span class="nav-label">应用</span>
+          </a>
+          <a
+            class:list={["nav-item", { active: isTools }]}
+            href={toolsHref}
+            title="工具"
+            aria-label="工具"
+          >
+            <span class="nav-dot"></span>
+            <span class="nav-label">工具</span>
           </a>
         </nav>
 
@@ -133,6 +146,25 @@ const footerLinks = [
           <nav class="footer-links" aria-label="相关链接">
             {footerLinks.map((link) => (
               <a href={link.href} target="_blank" rel="noreferrer" title={link.title}>
+                {link.icon === "github" ? (
+                  <svg
+                    class="footer-icon"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" />
+                  </svg>
+                ) : (
+                  <svg
+                    class="footer-icon"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <path d="M21.875 16.361c-.043-.048-1.067-1.18-2.365-1.19-.68 0-1.288.283-1.815.858-.773.842-2.35 1.85-4.25 1.921-1.598.059-3.085-.548-4.423-1.805-1.644-1.544-2.155-4.016-1.302-6.297.834-2.23 2.752-3.616 5.131-3.707l.044-.004c.024-.003 2.302-.258 4.325 1.548.17.185 1.154 1.197 2.475 1.228.823.018 1.586-.336 2.27-1.055.602-.632.87-1.342.797-2.112-.154-1.61-1.806-2.876-2.03-3.04-.212-.184-1.878-1.578-4.476-2.294-2.52-.695-6.42-.853-10.685 2.349a7.31 7.31 0 0 0-.557.49c-.28.208-.523.462-.716.753a12.469 12.469 0 0 0-3.064 8.677c.207 6.283 5.265 9.293 5.646 9.51.262.17 2.906 1.81 6.495 1.809 2.106 0 4.538-.565 7.005-2.322.248-.138 1.714-1.012 2.103-2.52.23-.894.042-1.815-.562-2.737l-.046-.06zm-16.932 1.97c0-1.09.887-1.977 1.977-1.977s1.977.886 1.977 1.977c0 1.09-.887 1.977-1.977 1.977s-1.977-.887-1.977-1.977zm.139-13.657c.236-.275.451-.498.628-.67a1.965 1.965 0 0 1 1.088-.329c1.09 0 1.977.887 1.977 1.977S7.888 7.63 6.798 7.63s-1.977-.887-1.977-1.977c0-.356.096-.69.261-.978zM13.249.999c3.954 0 6.657 2.336 6.826 2.486l.043.034c.42.3 1.532 1.301 1.63 2.324.044.469-.126.898-.52 1.313-.477.5-.983.752-1.504.738-.964-.019-1.743-.887-1.76-.905l-.042-.044c-2.292-2.063-4.83-1.855-5.13-1.822a6.82 6.82 0 0 0-3.012.818 3 3 0 0 0-2.34-3.214C9.543 1.45 11.516.999 13.248.999zM3.884 6.34a3 3 0 0 0 2.914 2.31c.122 0 .24-.01.358-.024a7.336 7.336 0 0 0-.39.866c-.75 2.003-.59 4.14.359 5.854-.068-.005-.136-.01-.205-.01a2.999 2.999 0 0 0-2.967 2.6 10.075 10.075 0 0 1-1.7-5.288 11.43 11.43 0 0 1 1.63-6.309zM21.497 18.9c-.3 1.174-1.615 1.89-1.627 1.896l-.058.036c-6.287 4.499-12.137.667-12.382.502l-.036-.022a2.848 2.848 0 0 1-.034-.02 2.998 2.998 0 0 0 2.543-3.228c1.124.64 2.336.951 3.58.906 2.214-.083 4.057-1.264 4.962-2.25.327-.356.67-.53 1.048-.53h.005c.762.004 1.46.688 1.593.826.421.658.558 1.291.406 1.884z" />
+                  </svg>
+                )}
                 {link.label}
               </a>
             ))}

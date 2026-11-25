@@ -2,10 +2,10 @@
 import DashboardLayout from "../layouts/DashboardLayout.astro";
 import { ALL_PLATFORMS } from "../lib/config";
 
-const basePath = import.meta.env.BASE_URL.replace(/\/+$/, "");
-const appsHref = `${basePath}/apps`;
 const offerUpdateHref =
   "https://github.com/Websoft9/marketplace/actions/workflows/offer-update.yml";
+const productListUpdateHref =
+  "https://github.com/Websoft9/marketplace/actions/workflows/offer-codes-matrix.yml";
 const metadataIssueHref = "https://github.com/Websoft9/marketplace/issues";
 const platformOrder = [
   "aws",
@@ -40,8 +40,93 @@ const orderedPlatforms = [...ALL_PLATFORMS].sort(
     </div>
     <div class="header-meta">
       <span class="build-pill" data-data-status>正在加载数据（首次需从上游下载）…</span>
-      <button class="button" type="button" data-refresh>刷新</button>
-      <a class="button" href={appsHref}>应用列表</a>
+      <div class="view-switch" role="group" aria-label="展示方式">
+        <button
+          type="button"
+          data-view-mode="table"
+          aria-pressed="true"
+          aria-label="表格视图"
+          title="表格视图"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+            <path d="M3 10h18"></path>
+            <path d="M9 4v16"></path>
+          </svg>
+        </button>
+        <button
+          type="button"
+          data-view-mode="grid"
+          aria-pressed="false"
+          aria-label="网格视图"
+          title="网格视图"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
+            <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
+            <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
+            <rect x="14" y="14" width="7" height="7" rx="1.5"></rect>
+          </svg>
+        </button>
+      </div>
+      <button
+        class="button icon-button"
+        type="button"
+        data-refresh
+        aria-label="刷新数据"
+        title="刷新数据"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
+          <path d="M21 3v6h-6"></path>
+        </svg>
+      </button>
+      <a
+        class="button icon-button"
+        href={productListUpdateHref}
+        target="_blank"
+        rel="noreferrer"
+        aria-label="更新商品列表"
+        title="更新商品列表"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M12 3v12"></path>
+          <path d="m7 10 5 5 5-5"></path>
+          <path d="M5 21h14"></path>
+        </svg>
+      </a>
     </div>
   </header>
 
@@ -133,6 +218,7 @@ const orderedPlatforms = [...ALL_PLATFORMS].sort(
     <a
       role="menuitem"
       data-action="search"
+      data-href-template="{searchUrl}"
       href="#"
       target="_blank"
       rel="noreferrer"
@@ -170,12 +256,15 @@ const orderedPlatforms = [...ALL_PLATFORMS].sort(
     type SafeHtml,
   } from "../lib/client/dom";
   import type { ResourceMeta } from "../lib/client/cache";
+  import { wireRowActionsMenu } from "../lib/client/rowActions";
   import type { PlatformProductData, PlatformProductRow } from "../lib/products";
   import type { StoreConfig } from "../lib/config";
   import { buildTotals } from "../lib/products";
 
   type SortKey = "title" | "app";
+  type ViewMode = "table" | "grid";
 
+  const VIEW_STORAGE_KEY = "w9mp:product-view";
   const basePath = import.meta.env.BASE_URL.replace(/\/+$/, "");
   const sortDatasetKey: Record<SortKey, string> = {
     title: "sortTitle",
@@ -192,6 +281,19 @@ const orderedPlatforms = [...ALL_PLATFORMS].sort(
   const actionsMenu = document.querySelector<HTMLElement>(
     "[data-row-actions-menu]",
   );
+  const viewButtons = Array.from(
+    document.querySelectorAll<HTMLButtonElement>("[data-view-mode]"),
+  );
+
+  function storedViewMode(): ViewMode {
+    try {
+      return localStorage.getItem(VIEW_STORAGE_KEY) === "grid" ? "grid" : "table";
+    } catch {
+      return "table";
+    }
+  }
+
+  let viewMode: ViewMode = storedViewMode();
 
   const panels = new Map<string, HTMLElement>();
   const platformData = new Map<string, PlatformProductData>();
@@ -199,8 +301,25 @@ const orderedPlatforms = [...ALL_PLATFORMS].sort(
   const panelReady = new Set<string>();
 
   let currentKey: string | undefined;
-  let openActionsToggle: HTMLButtonElement | null = null;
   let lastStatus: ResourceMeta = { fetchedAt: 0, stale: false };
+
+  function syncView(): void {
+    for (const button of viewButtons) {
+      button.setAttribute(
+        "aria-pressed",
+        button.dataset.viewMode === viewMode ? "true" : "false",
+      );
+    }
+
+    for (const panel of panels.values()) {
+      const tableScroll = panel.querySelector<HTMLElement>(
+        ".product-table-scroll",
+      );
+      const grid = panel.querySelector<HTMLElement>("[data-product-grid]");
+      if (tableScroll) tableScroll.hidden = viewMode !== "table";
+      if (grid) grid.hidden = viewMode !== "grid";
+    }
+  }
 
   function reportStatus(status: ResourceMeta): void {
     lastStatus = {
@@ -273,7 +392,7 @@ const orderedPlatforms = [...ALL_PLATFORMS].sort(
       <article class="stat-card tone-${tone}">
         <span class="stat-label">${label}</span>
         <strong class="stat-value">${value}</strong>
-        <span class="stat-hint">${hint}</span>
+        ${hint ? html`<span class="stat-hint">${hint}</span>` : ""}
         ${extra ?? ""}
       </article>
     `;
@@ -422,6 +541,114 @@ const orderedPlatforms = [...ALL_PLATFORMS].sort(
     `;
   }
 
+  function productCard(
+    row: PlatformProductRow,
+    index: number,
+    searchUrlPrefix: string | undefined,
+  ): SafeHtml {
+    const searchText = [
+      row.title,
+      row.appId,
+      row.appName,
+      row.code,
+      row.shortDescription,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    const searchTerm = row.appName ?? row.title;
+    const searchHref = searchUrlPrefix
+      ? `${searchUrlPrefix}${encodeURIComponent(searchTerm)}`
+      : "";
+
+    return html`
+      <article
+        class="product-card"
+        data-product-card
+        data-index="${index}"
+        data-search="${searchText}"
+        data-match="${row.matchStatus}"
+        data-sort-title="${row.title.toLowerCase()}"
+        data-sort-app="${(row.appName ?? row.appId ?? "").toLowerCase()}"
+        data-code="${row.code}"
+      >
+        <div class="product-card-title">
+          <span class="product-card-heading">
+            ${row.url
+              ? html`
+                  <a
+                    href="${row.url}"
+                    target="_blank"
+                    rel="noreferrer"
+                    title="${row.shortDescription ?? ""}"
+                  >${row.title}</a>
+                `
+              : html`<span title="${row.shortDescription ?? ""}">${row.title}</span>`}
+          </span>
+          <button
+            class="row-actions-toggle"
+            type="button"
+            data-actions-toggle
+            data-search-url="${searchHref}"
+            aria-haspopup="menu"
+            aria-expanded="false"
+            aria-label="${row.title} 操作"
+            title="操作"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <circle cx="12" cy="5" r="1.7"></circle>
+              <circle cx="12" cy="12" r="1.7"></circle>
+              <circle cx="12" cy="19" r="1.7"></circle>
+            </svg>
+          </button>
+        </div>
+
+        <div class="product-card-code">
+          <code class="product-code" title="${row.code}">${row.code}</code>
+          <button
+            class="icon-copy-button"
+            type="button"
+            data-copy="${row.code}"
+            aria-label="复制商品 code ${row.code}"
+            title="复制商品 code ${row.code}"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.9"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="9" y="9" width="11" height="11" rx="2"></rect>
+              <path d="M5 15V6a2 2 0 0 1 2-2h9"></path>
+            </svg>
+          </button>
+        </div>
+
+        <div class="product-card-app">
+          ${row.appId
+            ? html`
+                <span class="product-card-app-label">应用</span>
+                ${row.appInCatalog
+                  ? html`
+                      <a
+                        href="${basePath}/apps/detail/?key=${encodeURIComponent(row.appId)}"
+                        title="查看 ${row.appName ?? row.appId} 应用详情"
+                      >${row.appId}</a>
+                    `
+                  : html`<code>${row.appId}</code>`}
+                ${row.appName && row.appName !== row.appId
+                  ? html`<span class="product-card-app-name">${row.appName}</span>`
+                  : ""}
+              `
+            : html`<span class="empty-cell">未关联应用</span>`}
+        </div>
+      </article>
+    `;
+  }
+
   function marketplaceName(store: StoreConfig): string {
     return store.label
       .replace(/\s*店铺$/, "")
@@ -450,11 +677,11 @@ const orderedPlatforms = [...ALL_PLATFORMS].sort(
 
   function panelMarkup(platform: PlatformProductData): SafeHtml {
     const sourceHint =
-      platform.source === "artifact"
-        ? "来自在线商品制品"
-        : platform.source === "matrix"
-          ? "来自 offer 矩阵"
-          : "无可用商品数据源";
+      platform.source === "matrix"
+        ? "来自 offer 矩阵"
+        : platform.source === "unavailable"
+          ? "无可用商品数据源"
+          : "";
     const emptyMessage =
       platform.rows.length > 0
         ? "没有匹配的商品，请调整搜索或筛选条件。"
@@ -532,6 +759,12 @@ const orderedPlatforms = [...ALL_PLATFORMS].sort(
         </table>
       </div>
 
+      <div class="product-grid" data-product-grid>
+        ${platform.rows.map((row, index) =>
+          productCard(row, index, platform.searchUrlPrefix),
+        )}
+      </div>
+
       <div class="empty-state" data-product-empty hidden=${platform.rows.length > 0}>
         ${emptyMessage}
       </div>
@@ -550,6 +783,7 @@ const orderedPlatforms = [...ALL_PLATFORMS].sort(
     const panel = panelElement(key);
     setContent(panel, panelMarkup(data));
     setupPanel(panel);
+    syncView();
     panelReady.add(key);
   }
 
@@ -631,6 +865,10 @@ const orderedPlatforms = [...ALL_PLATFORMS].sort(
     const body = tbody;
 
     const rows = Array.from(body.rows);
+    const cards = Array.from(
+      panel.querySelectorAll<HTMLElement>("[data-product-card]"),
+    );
+    const grid = panel.querySelector<HTMLElement>("[data-product-grid]");
     const search = panel.querySelector<HTMLInputElement>("[data-product-search]");
     const status = panel.querySelector<HTMLSelectElement>("[data-product-status]");
     const visibleCount = panel.querySelector<HTMLElement>("[data-visible-count]");
@@ -661,11 +899,9 @@ const orderedPlatforms = [...ALL_PLATFORMS].sort(
       }
     }
 
-    function apply() {
-      const term = (search?.value ?? "").trim().toLowerCase();
-      const match = status?.value ?? "all";
+    function sortItems<T extends HTMLElement>(items: T[]): T[] {
       const datasetKey = sortDatasetKey[sortKey];
-      const sorted = rows.slice().sort((a, b) => {
+      return items.slice().sort((a, b) => {
         const aValue = a.dataset[datasetKey] ?? "";
         const bValue = b.dataset[datasetKey] ?? "";
         if (!aValue && bValue) return 1;
@@ -682,25 +918,41 @@ const orderedPlatforms = [...ALL_PLATFORMS].sort(
         const bIndex = Number(b.dataset.index ?? 0);
         return sortDir === "asc" ? aIndex - bIndex : bIndex - aIndex;
       });
+    }
 
-      const fragment = document.createDocumentFragment();
-      let visible = 0;
-
-      for (const row of sorted) {
+    function apply() {
+      const term = (search?.value ?? "").trim().toLowerCase();
+      const match = status?.value ?? "all";
+      const isVisible = (element: HTMLElement): boolean => {
         const matchesSearch =
-          term.length === 0 || (row.dataset.search ?? "").includes(term);
+          term.length === 0 ||
+          (element.dataset.search ?? "").includes(term);
         const matchesStatus =
           match === "all" ||
           (match === "matched"
-            ? row.dataset.match !== "unmatched"
-            : row.dataset.match === "unmatched");
-        const show = matchesSearch && matchesStatus;
+            ? element.dataset.match !== "unmatched"
+            : element.dataset.match === "unmatched");
+        return matchesSearch && matchesStatus;
+      };
+
+      const rowFragment = document.createDocumentFragment();
+      const cardFragment = document.createDocumentFragment();
+      let visible = 0;
+
+      for (const row of sortItems(rows)) {
+        const show = isVisible(row);
         row.hidden = !show;
         if (show) visible += 1;
-        fragment.appendChild(row);
+        rowFragment.appendChild(row);
       }
 
-      body.appendChild(fragment);
+      for (const card of sortItems(cards)) {
+        card.hidden = !isVisible(card);
+        cardFragment.appendChild(card);
+      }
+
+      body.appendChild(rowFragment);
+      grid?.appendChild(cardFragment);
       if (visibleCount) visibleCount.textContent = String(visible);
       if (empty) empty.hidden = visible !== 0;
       if (exportButton) exportButton.disabled = rows.length === 0;
@@ -776,61 +1028,6 @@ const orderedPlatforms = [...ALL_PLATFORMS].sort(
     link.click();
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
-  }
-
-  function closeActionsMenu(options: { focusToggle?: boolean } = {}) {
-    if (!actionsMenu || !openActionsToggle) return;
-    const toggle = openActionsToggle;
-    openActionsToggle = null;
-    actionsMenu.hidden = true;
-    toggle.setAttribute("aria-expanded", "false");
-    if (options.focusToggle) toggle.focus();
-  }
-
-  function positionActionsMenu(toggle: HTMLButtonElement) {
-    if (!actionsMenu) return;
-    const toggleRect = toggle.getBoundingClientRect();
-    const menuRect = actionsMenu.getBoundingClientRect();
-    let top = toggleRect.bottom + 6;
-    if (top + menuRect.height > window.innerHeight - 8) {
-      top = toggleRect.top - menuRect.height - 6;
-    }
-    const left = Math.max(
-      12,
-      Math.min(
-        toggleRect.right - menuRect.width,
-        window.innerWidth - menuRect.width - 12,
-      ),
-    );
-    actionsMenu.style.top = `${Math.max(12, top)}px`;
-    actionsMenu.style.left = `${left}px`;
-  }
-
-  function openActionsMenu(toggle: HTMLButtonElement) {
-    if (!actionsMenu) return;
-    if (openActionsToggle === toggle) {
-      closeActionsMenu();
-      return;
-    }
-
-    closeActionsMenu();
-    openActionsToggle = toggle;
-
-    const searchLink = actionsMenu.querySelector<HTMLAnchorElement>(
-      '[data-action="search"]',
-    );
-    const searchUrl = toggle.dataset.searchUrl ?? "";
-    if (searchLink) {
-      searchLink.hidden = searchUrl.length === 0;
-      searchLink.href = searchUrl || "#";
-    }
-
-    actionsMenu.hidden = false;
-    toggle.setAttribute("aria-expanded", "true");
-    positionActionsMenu(toggle);
-    actionsMenu
-      .querySelector<HTMLAnchorElement>('a[role="menuitem"]:not([hidden])')
-      ?.focus();
   }
 
   function debounce(fn: () => void, wait: number): () => void {
@@ -918,61 +1115,24 @@ const orderedPlatforms = [...ALL_PLATFORMS].sort(
     }
   });
 
-  document.addEventListener("click", (event) => {
-    if (!(event.target instanceof Element)) return;
-    const toggle = event.target.closest<HTMLButtonElement>(
-      "[data-actions-toggle]",
-    );
-    if (toggle) {
-      event.preventDefault();
-      openActionsMenu(toggle);
-      return;
-    }
-    if (!event.target.closest("[data-row-actions-menu]")) {
-      closeActionsMenu();
-    }
-  });
-
-  actionsMenu?.addEventListener("click", (event) => {
-    if (event.target instanceof Element && event.target.closest("a")) {
-      closeActionsMenu();
-    }
-  });
-
-  actionsMenu?.addEventListener("keydown", (event) => {
-    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-    const items = Array.from(
-      actionsMenu.querySelectorAll<HTMLAnchorElement>(
-        'a[role="menuitem"]:not([hidden])',
-      ),
-    );
-    if (items.length === 0) return;
-
-    const current =
-      document.activeElement instanceof HTMLAnchorElement
-        ? items.indexOf(document.activeElement)
-        : -1;
-    const step = event.key === "ArrowDown" ? 1 : -1;
-    const next =
-      current < 0
-        ? 0
-        : (current + step + items.length) % items.length;
-    event.preventDefault();
-    items[next]?.focus();
-  });
-
-  document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && openActionsToggle) {
-      event.preventDefault();
-      closeActionsMenu({ focusToggle: true });
-    }
-  });
-
-  window.addEventListener("scroll", () => closeActionsMenu(), true);
-  window.addEventListener("resize", () => closeActionsMenu());
-
   wireCopyButtons();
   wireRefreshButtons();
+  wireRowActionsMenu(actionsMenu);
+
+  for (const button of viewButtons) {
+    button.addEventListener("click", () => {
+      const mode = button.dataset.viewMode;
+      if (mode !== "table" && mode !== "grid") return;
+      viewMode = mode;
+      try {
+        localStorage.setItem(VIEW_STORAGE_KEY, viewMode);
+      } catch {
+        /* localStorage may be unavailable */
+      }
+      syncView();
+    });
+  }
+  syncView();
 
   const initialKey = decodeURIComponent(location.hash.replace(/^#/, ""));
   activate(initialKey || tabs[0]?.dataset.productTab);

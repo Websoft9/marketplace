@@ -1,0 +1,312 @@
+---
+import DashboardLayout from "../layouts/DashboardLayout.astro";
+
+const tools = [
+  {
+    id: "product-id",
+    name: "生成商品ID",
+    description: "为 Azure, Oracle Cloud 云市场商品生成随机 ID 字符串",
+    icon: [
+      "M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H22",
+      "m18 2 4 4-4 4",
+      "M2 6h1.9c1.5 0 2.9.9 3.6 2.2",
+      "M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8",
+      "m18 14 4 4-4 4",
+    ],
+  },
+];
+---
+
+<DashboardLayout
+  title="工具 | Websoft9 Marketplace"
+  description="Websoft9 Marketplace 常用小工具集合，在浏览器本地运行。"
+>
+  <header class="page-header">
+    <div>
+      <span class="eyebrow">Tools / Utilities</span>
+      <h1>工具</h1>
+      <p class="lede">
+        常用小工具集合，全部在浏览器本地运行。点击工具卡片，在弹窗中直接使用。
+      </p>
+    </div>
+    <div class="header-meta">
+      <span class="build-pill">{tools.length} 个工具</span>
+    </div>
+  </header>
+
+  <section class="panel tools-panel" aria-labelledby="tools-heading">
+    <div class="panel-heading">
+      <div>
+        <h2 id="tools-heading">全部工具</h2>
+        <p>点击任一卡片打开弹窗，无需下载或安装。</p>
+      </div>
+      <span class="subtle">{tools.length} 个</span>
+    </div>
+
+    <div class="tools-grid">
+      {tools.map((tool) => (
+        <button
+          class="tool-card"
+          type="button"
+          data-tool-open={tool.id}
+          data-tool-name={tool.name}
+          aria-haspopup="dialog"
+        >
+          <span class="tool-icon" aria-hidden="true">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.9"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              {tool.icon.map((path) => (
+                <path d={path}></path>
+              ))}
+            </svg>
+          </span>
+          <span class="tool-card-body">
+            <strong>{tool.name}</strong>
+            <span class="tool-card-desc">{tool.description}</span>
+          </span>
+          <svg
+            class="tool-card-arrow"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="m9 18 6-6-6-6"></path>
+          </svg>
+        </button>
+      ))}
+    </div>
+
+    <p class="tools-footnote">
+      工具只在当前浏览器中计算，不会上传或保存任何内容。
+    </p>
+  </section>
+
+  <dialog
+    class="tool-dialog"
+    data-tool-dialog
+    aria-labelledby="tool-dialog-title"
+  >
+    <div class="tool-dialog-panel">
+      <header class="tool-dialog-header">
+        <div>
+          <span class="eyebrow">Tool</span>
+          <h2 id="tool-dialog-title" data-tool-dialog-title></h2>
+        </div>
+        <button
+          class="tool-dialog-close"
+          type="button"
+          data-tool-close
+          aria-label="关闭"
+          title="关闭"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            aria-hidden="true"
+          >
+            <path d="M18 6 6 18"></path>
+            <path d="m6 6 12 12"></path>
+          </svg>
+        </button>
+      </header>
+      <div class="tool-dialog-body" data-tool-dialog-body></div>
+    </div>
+  </dialog>
+
+  <template data-tool-template="product-id">
+    <div class="tool-product-id" data-tool-product-id>
+      <div class="tool-output">
+        <code data-token aria-live="polite">—</code>
+        <button
+          class="icon-copy-button"
+          type="button"
+          data-copy
+          aria-label="复制商品 ID"
+          title="复制商品 ID"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.9"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <rect x="9" y="9" width="12" height="12" rx="2"></rect>
+            <path d="M5 15V5a2 2 0 0 1 2-2h10"></path>
+          </svg>
+        </button>
+      </div>
+      <p class="tool-hint">
+        8 位字符串，由 2 个数字和小写字母组成，第 1 位不是数字。
+      </p>
+      <div class="tool-actions">
+        <button class="button primary" type="button" data-tool-regenerate>
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.9"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
+            <path d="M21 3v6h-6"></path>
+          </svg>
+          重新生成
+        </button>
+        <span class="tool-status" data-tool-status aria-live="polite"></span>
+      </div>
+    </div>
+  </template>
+</DashboardLayout>
+
+<script>
+  import { wireCopyButtons } from "../lib/client/dom";
+
+  const LETTERS = "abcdefghijklmnopqrstuvwxyz";
+  const DIGITS = "0123456789";
+  const TOKEN_LENGTH = 8;
+  const DIGIT_COUNT = 2;
+
+  /** Uniform random integer in [0, max). */
+  function randomIndex(max: number): number {
+    const limit = 256 - (256 % max);
+    const buffer = new Uint8Array(1);
+    for (;;) {
+      crypto.getRandomValues(buffer);
+      const byte = buffer[0] ?? 0;
+      if (byte < limit) return byte % max;
+    }
+  }
+
+  function generateToken(): string {
+    const characters = [
+      ...Array.from(
+        { length: TOKEN_LENGTH - DIGIT_COUNT },
+        () => LETTERS[randomIndex(LETTERS.length)] ?? "",
+      ),
+      ...Array.from(
+        { length: DIGIT_COUNT },
+        () => DIGITS[randomIndex(DIGITS.length)] ?? "",
+      ),
+    ];
+
+    for (let index = characters.length - 1; index > 0; index -= 1) {
+      const swapIndex = randomIndex(index + 1);
+      const value = characters[index] ?? "";
+      characters[index] = characters[swapIndex] ?? "";
+      characters[swapIndex] = value;
+    }
+
+    // Product IDs cannot start with a digit, so move a letter to the front
+    // when the shuffle puts a digit first.
+    if (DIGITS.includes(characters[0] ?? "")) {
+      const letterIndex = characters.findIndex((character) =>
+        LETTERS.includes(character),
+      );
+      const value = characters[0] ?? "";
+      characters[0] = characters[letterIndex] ?? "";
+      characters[letterIndex] = value;
+    }
+
+    return characters.join("");
+  }
+
+  const dialog = document.querySelector<HTMLDialogElement>("[data-tool-dialog]");
+  const dialogBody = document.querySelector<HTMLElement>("[data-tool-dialog-body]");
+  const dialogTitle = document.querySelector<HTMLElement>("[data-tool-dialog-title]");
+  let lastTrigger: HTMLElement | null = null;
+
+  function mountProductId(root: ParentNode): void {
+    const tokenEl = root.querySelector<HTMLElement>("[data-token]");
+    const copyButton = root.querySelector<HTMLButtonElement>("[data-copy]");
+    const regenerate = root.querySelector<HTMLButtonElement>("[data-tool-regenerate]");
+    const status = root.querySelector<HTMLElement>("[data-tool-status]");
+    let statusTimer: number | undefined;
+
+    function refresh(announce = false): void {
+      const token = generateToken();
+      if (tokenEl) tokenEl.textContent = token;
+      if (copyButton) {
+        copyButton.dataset.copy = token;
+        const label = `复制商品 ID ${token}`;
+        copyButton.title = label;
+        copyButton.setAttribute("aria-label", label);
+      }
+      if (!status) return;
+
+      if (!announce) {
+        status.textContent = "";
+        return;
+      }
+      status.textContent = "已重新生成";
+      window.clearTimeout(statusTimer);
+      statusTimer = window.setTimeout(() => {
+        status.textContent = "";
+      }, 1600);
+    }
+
+    refresh();
+    regenerate?.addEventListener("click", () => refresh(true));
+  }
+
+  function mountTool(id: string): void {
+    if (!dialogBody) return;
+
+    const template = document.querySelector<HTMLTemplateElement>(
+      `[data-tool-template="${id}"]`,
+    );
+    dialogBody.replaceChildren();
+    if (!template) return;
+    dialogBody.append(template.content.cloneNode(true));
+
+    if (id === "product-id") mountProductId(dialogBody);
+  }
+
+  for (const trigger of document.querySelectorAll<HTMLElement>("[data-tool-open]")) {
+    trigger.addEventListener("click", () => {
+      if (!dialog) return;
+
+      lastTrigger = trigger;
+      if (dialogTitle) dialogTitle.textContent = trigger.dataset.toolName ?? "工具";
+
+      mountTool(trigger.dataset.toolOpen ?? "");
+      dialog.showModal();
+      dialog
+        .querySelector<HTMLButtonElement>("[data-tool-regenerate]")
+        ?.focus();
+    });
+  }
+
+  dialog?.querySelector("[data-tool-close]")?.addEventListener("click", () => {
+    dialog.close();
+  });
+
+  dialog?.addEventListener("click", (event) => {
+    if (event.target === dialog) dialog.close();
+  });
+
+  dialog?.addEventListener("close", () => {
+    dialogBody?.replaceChildren();
+    lastTrigger?.focus();
+    lastTrigger = null;
+  });
+
+  wireCopyButtons();
+</script>

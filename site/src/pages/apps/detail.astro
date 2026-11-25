@@ -25,8 +25,8 @@ const appsHref = `${basePath}/apps`;
 </DashboardLayout>
 
 <script>
-  import { PLATFORMS } from "../../lib/config";
   import { loadMarketplaceData } from "../../lib/client/data";
+  import { appDetailMarkup } from "../../lib/client/appDetail";
   import {
     describeStatus,
     errorMessage,
@@ -37,13 +37,8 @@ const appsHref = `${basePath}/apps`;
     wireRefreshButtons,
     type SafeHtml,
   } from "../../lib/client/dom";
-  import type {
-    AppRow,
-    CatalogProduct,
-    MarketplaceData,
-  } from "../../lib/marketplace";
+  import type { MarketplaceData } from "../../lib/marketplace";
   import type { ResourceMeta } from "../../lib/client/cache";
-  import { asWebsiteUrl } from "../../lib/value";
 
   const basePath = import.meta.env.BASE_URL.replace(/\/+$/, "");
   const appsHref = `${basePath}/apps`;
@@ -53,19 +48,6 @@ const appsHref = `${basePath}/apps`;
     'meta[name="description"]',
   );
   const key = (new URLSearchParams(location.search).get("key") ?? "").trim();
-
-  function textList(value: string[] | string | undefined): string[] {
-    if (Array.isArray(value)) {
-      return value.map((item) => item.trim()).filter(Boolean);
-    }
-    if (typeof value === "string") {
-      return value
-        .split(/[,;，；]/)
-        .map((item) => item.trim())
-        .filter(Boolean);
-    }
-    return [];
-  }
 
   function detailHref(appKey: string): string {
     return `${basePath}/apps/detail/?key=${encodeURIComponent(appKey)}`;
@@ -86,197 +68,6 @@ const appsHref = `${basePath}/apps`;
           重新选择应用。
         </p>
       </section>
-    `;
-  }
-
-  function detailMarkup(
-    product: CatalogProduct,
-    row: AppRow | undefined,
-    availableKeys: Set<string>,
-  ): SafeHtml {
-    const name = product.trademark ?? product.key;
-    const summary = product.summary ?? product.overview ?? "";
-    const logoUrl = asWebsiteUrl(product.logo?.imageurl);
-    const overview = product.overview?.trim() ?? "";
-    const description = product.description?.trim() ?? "";
-    const useCases = textList(product.usecases ?? product.useCases);
-    const keywords = textList(product.keywords);
-    const categories = (product.catalogCollection?.items ?? [])
-      .map((item) => item.title)
-      .filter((title): title is string => Boolean(title));
-    const versions = Array.from(
-      new Set((product.distribution ?? []).flatMap((entry) => entry.value ?? [])),
-    ).filter(Boolean);
-    const distributions = (product.distribution ?? [])
-      .map((entry) => entry.key)
-      .filter((entryKey): entryKey is string => Boolean(entryKey));
-    const website = asWebsiteUrl(product.websiteurl);
-    const relatedApps = (product.relatedAppsCollection?.items ?? []).filter(
-      (item): item is { key: string; trademark: string } =>
-        Boolean(item.key && item.trademark),
-    );
-    const platformLinks = row
-      ? PLATFORMS.map((platform) => ({
-          platform,
-          links: row.links[platform.key] ?? [],
-        })).filter((entry) => entry.links.length > 0)
-      : [];
-
-    return html`
-      <header class="page-header detail-header">
-        <div class="detail-identity">
-          ${logoUrl
-            ? html`<img
-                class="detail-logo"
-                src="${logoUrl}"
-                alt="${name} logo"
-                loading="lazy"
-                referrerpolicy="no-referrer"
-              />`
-            : html`<span class="detail-logo detail-logo-fallback">${name.slice(0, 2)}</span>`}
-          <div>
-            <span class="eyebrow">Application / Detail</span>
-            <h1>${name}</h1>
-            <p class="lede">${summary}</p>
-            <div class="detail-links">
-              ${categories.map((category) => html`<span class="chip">${category}</span>`)}
-              ${website
-                ? html`<a class="button" href="${website}" target="_blank" rel="noreferrer">官网</a>`
-                : ""}
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <div class="detail-grid">
-        <div class="detail-main">
-          <section class="panel detail-panel">
-            <div class="panel-heading">
-              <div>
-                <h2>应用介绍</h2>
-                <p>来自 product_en.json 的应用概述和说明。</p>
-              </div>
-            </div>
-            ${overview ? html`<p class="detail-copy">${overview}</p>` : ""}
-            ${description && description !== overview
-              ? html`<p class="detail-copy detail-copy-secondary">${description}</p>`
-              : ""}
-            ${!overview && !description
-              ? html`<p class="detail-copy">${summary}</p>`
-              : ""}
-          </section>
-
-          ${useCases.length > 0
-            ? html`
-                <section class="panel detail-panel">
-                  <div class="panel-heading">
-                    <div>
-                      <h2>Use Cases</h2>
-                      <p>适合使用 ${name} 的典型场景。</p>
-                    </div>
-                  </div>
-                  <p class="detail-copy">${useCases.join(", ")}</p>
-                </section>
-              `
-            : ""}
-
-          ${keywords.length > 0
-            ? html`
-                <section class="panel detail-panel">
-                  <div class="panel-heading">
-                    <div>
-                      <h2>Keywords</h2>
-                      <p>Marketplace 搜索关键词。</p>
-                    </div>
-                  </div>
-                  <div class="chip-list">
-                    ${keywords.map((keyword) => html`<span class="chip">${keyword}</span>`)}
-                  </div>
-                </section>
-              `
-            : ""}
-        </div>
-
-        <aside class="detail-side">
-          <section class="panel detail-panel">
-            <div class="panel-heading">
-              <div>
-                <h2>详情</h2>
-                <p>应用 key、版本和分类。</p>
-              </div>
-            </div>
-            <dl class="detail-facts">
-              <div>
-                <dt>Key</dt>
-                <dd><code>${product.key}</code></dd>
-              </div>
-              ${versions.length > 0
-                ? html`
-                    <div>
-                      <dt>Versions</dt>
-                      <dd>${versions.join(", ")}</dd>
-                    </div>
-                  `
-                : ""}
-              ${distributions.length > 0
-                ? html`
-                    <div>
-                      <dt>Distribution</dt>
-                      <dd>${distributions.join(", ")}</dd>
-                    </div>
-                  `
-                : ""}
-            </dl>
-          </section>
-
-          ${platformLinks.length > 0
-            ? html`
-                <section class="panel detail-panel">
-                  <div class="panel-heading">
-                    <div>
-                      <h2>Marketplace</h2>
-                      <p>该应用在各平台的上架链接。</p>
-                    </div>
-                  </div>
-                  <div class="detail-marketplaces">
-                    ${platformLinks.map(
-                      ({ platform, links }) => html`
-                        <div class="detail-marketplace">
-                          <strong>${platform.label}</strong>
-                          ${links.map(
-                            (link) => html`
-                              <a href="${link.url}" target="_blank" rel="noreferrer">${link.code}</a>
-                            `,
-                          )}
-                        </div>
-                      `,
-                    )}
-                  </div>
-                </section>
-              `
-            : ""}
-
-          ${relatedApps.length > 0
-            ? html`
-                <section class="panel detail-panel">
-                  <div class="panel-heading">
-                    <div>
-                      <h2>相关应用</h2>
-                      <p>同一应用目录中的关联应用。</p>
-                    </div>
-                  </div>
-                  <div class="chip-list">
-                    ${relatedApps.map((app) =>
-                      availableKeys.has(app.key)
-                        ? html`<a class="chip" href="${detailHref(app.key)}">${app.trademark}</a>`
-                        : html`<span class="chip">${app.trademark}</span>`,
-                    )}
-                  </div>
-                </section>
-              `
-            : ""}
-        </aside>
-      </div>
     `;
   }
 
@@ -309,7 +100,7 @@ const appsHref = `${basePath}/apps`;
       "content",
       product.summary ?? `Websoft9 Marketplace application: ${name}`,
     );
-    setContent(root, detailMarkup(product, row, availableKeys));
+    setContent(root, appDetailMarkup(product, row, availableKeys, detailHref));
     hideDataError(alertEl);
   }
 

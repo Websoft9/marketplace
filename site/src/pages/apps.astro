@@ -1,6 +1,9 @@
 ---
 import DashboardLayout from "../layouts/DashboardLayout.astro";
 import { PLATFORMS } from "../lib/config";
+
+const screenshotsHref =
+  "https://github.com/Websoft9/marketplace/actions/workflows/appstore-screenshots.yml";
 ---
 
 <DashboardLayout
@@ -17,15 +20,71 @@ import { PLATFORMS } from "../lib/config";
     </div>
     <div class="header-meta">
       <span class="build-pill" data-data-status>正在加载数据（首次需从上游下载）…</span>
-      <button class="button" type="button" data-refresh>刷新</button>
-      <a
-        class="button"
-        href="https://github.com/Websoft9/manufacture"
-        target="_blank"
-        rel="noreferrer"
+      <div class="view-switch" role="group" aria-label="展示方式">
+        <button
+          type="button"
+          data-app-view-mode="table"
+          aria-pressed="true"
+          aria-label="表格视图"
+          title="表格视图"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+            <path d="M3 10h18"></path>
+            <path d="M9 4v16"></path>
+          </svg>
+        </button>
+        <button
+          type="button"
+          data-app-view-mode="grid"
+          aria-pressed="false"
+          aria-label="网格视图"
+          title="网格视图"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
+            <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
+            <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
+            <rect x="14" y="14" width="7" height="7" rx="1.5"></rect>
+          </svg>
+        </button>
+      </div>
+      <button
+        class="button icon-button"
+        type="button"
+        data-refresh
+        aria-label="刷新数据"
+        title="刷新数据"
       >
-        GitHub
-      </a>
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
+          <path d="M21 3v6h-6"></path>
+        </svg>
+      </button>
     </div>
   </header>
 
@@ -42,17 +101,16 @@ import { PLATFORMS } from "../lib/config";
       </div>
       <div class="filters">
         <label class="field search-field">
-          <span>搜索</span>
           <input
             id="app-search"
             type="search"
             placeholder="应用名称、key 或商品 code"
+            aria-label="搜索应用"
             autocomplete="off"
           />
         </label>
         <label class="field">
-          <span>状态</span>
-          <select id="status-filter">
+          <select id="status-filter" aria-label="状态筛选">
             <option value="all">全部状态</option>
             <option value="listed">已上架</option>
             <option value="unlisted">未上架</option>
@@ -60,8 +118,7 @@ import { PLATFORMS } from "../lib/config";
           </select>
         </label>
         <label class="field">
-          <span>平台</span>
-          <select id="platform-filter">
+          <select id="platform-filter" aria-label="平台筛选">
             <option value="all">全部平台</option>
             {PLATFORMS.map((platform) => (
               <option value={platform.key}>{platform.label}</option>
@@ -75,7 +132,7 @@ import { PLATFORMS } from "../lib/config";
       正在加载应用目录与商品编码矩阵…首次加载需要从上游下载应用目录，之后会使用浏览器本地缓存。
     </div>
 
-    <div class="table-scroll">
+    <div class="table-scroll apps-table-scroll">
       <table>
         <thead>
           <tr>
@@ -84,15 +141,115 @@ import { PLATFORMS } from "../lib/config";
             {PLATFORMS.map((platform) => (
               <th scope="col">{platform.label}</th>
             ))}
+            <th scope="col">操作</th>
           </tr>
         </thead>
         <tbody data-apps-body></tbody>
       </table>
     </div>
+    <div class="apps-grid" data-apps-grid></div>
     <div id="empty-state" class="empty-state" hidden>
       没有匹配的应用，请调整搜索或筛选条件。
     </div>
   </section>
+
+  <div
+    class="row-actions-menu"
+    role="menu"
+    aria-label="应用操作"
+    data-row-actions-menu
+    hidden
+  >
+    <a
+      role="menuitem"
+      data-action="update-metadata"
+      data-href-template="https://github.com/Websoft9/marketplace/issues/new?template=update_app_basic_info.md&amp;title=Update%20apps%20basic%20info%20-%20{appId}"
+      target="_blank"
+      rel="noreferrer"
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.8"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M12 20h9"></path>
+        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
+      </svg>
+      更新应用元数据
+    </a>
+    <a
+      role="menuitem"
+      data-action="deploy"
+      data-href-template="https://github.com/Websoft9/docker-library/tree/main/apps/{appId}"
+      target="_blank"
+      rel="noreferrer"
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.8"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <path d="m21 8-9-5-9 5 9 5 9-5Z"></path>
+        <path d="m3 8 9 5 9-5"></path>
+        <path d="M3 8v8l9 5 9-5V8"></path>
+      </svg>
+      部署编排文件
+    </a>
+    <a
+      role="menuitem"
+      data-action="screenshots"
+      href={screenshotsHref}
+      target="_blank"
+      rel="noreferrer"
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.8"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3Z"></path>
+        <circle cx="12" cy="13" r="3.5"></circle>
+      </svg>
+      应用自动截图
+    </a>
+  </div>
+
+  <dialog class="app-dialog" data-app-dialog aria-label="应用详情">
+    <div class="app-dialog-shell">
+      <button
+        class="app-dialog-close"
+        type="button"
+        data-app-dialog-close
+        aria-label="关闭"
+        title="关闭"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          aria-hidden="true"
+        >
+          <path d="M18 6 6 18"></path>
+          <path d="m6 6 12 12"></path>
+        </svg>
+      </button>
+      <div class="app-dialog-body" data-app-dialog-body></div>
+    </div>
+  </dialog>
 </DashboardLayout>
 
 <script>
@@ -110,9 +267,21 @@ import { PLATFORMS } from "../lib/config";
     wireRefreshButtons,
     type SafeHtml,
   } from "../lib/client/dom";
-  import { rowStatus, type AppRow, type ProductLink } from "../lib/marketplace";
+  import {
+    rowStatus,
+    type AppRow,
+    type CatalogProduct,
+    type MarketplaceData,
+    type ProductLink,
+  } from "../lib/marketplace";
   import type { ResourceMeta } from "../lib/client/cache";
+  import { wireRowActionsMenu } from "../lib/client/rowActions";
+  import { appDetailMarkup } from "../lib/client/appDetail";
+  import { asWebsiteUrl } from "../lib/value";
 
+  type ViewMode = "table" | "grid";
+
+  const APP_VIEW_STORAGE_KEY = "w9mp:apps-view";
   const basePath = import.meta.env.BASE_URL.replace(/\/+$/, "");
   const statusLabels = {
     listed: "已上架",
@@ -133,8 +302,33 @@ import { PLATFORMS } from "../lib/config";
   const tbody = document.querySelector<HTMLTableSectionElement>("[data-apps-body]");
   const statusEl = document.querySelector<HTMLElement>("[data-data-status]");
   const alertEl = document.querySelector<HTMLElement>("[data-data-alert]");
+  const actionsMenu = document.querySelector<HTMLElement>(
+    "[data-row-actions-menu]",
+  );
+  const appDialog = document.querySelector<HTMLDialogElement>("[data-app-dialog]");
+  const appDialogBody = document.querySelector<HTMLElement>(
+    "[data-app-dialog-body]",
+  );
+  const appsGrid = document.querySelector<HTMLElement>("[data-apps-grid]");
+  const viewButtons = Array.from(
+    document.querySelectorAll<HTMLButtonElement>("[data-app-view-mode]"),
+  );
 
+  function storedViewMode(): ViewMode {
+    try {
+      return localStorage.getItem(APP_VIEW_STORAGE_KEY) === "grid"
+        ? "grid"
+        : "table";
+    } catch {
+      return "table";
+    }
+  }
+
+  let appViewMode: ViewMode = storedViewMode();
   let tableRows: HTMLTableRowElement[] = [];
+  let gridCards: HTMLElement[] = [];
+  let latestData: MarketplaceData | null = null;
+  let lastDetailTrigger: HTMLElement | null = null;
 
   function detailHref(key: string): string {
     return `${basePath}/apps/detail/?key=${encodeURIComponent(key)}`;
@@ -178,7 +372,21 @@ import { PLATFORMS } from "../lib/config";
     `;
   }
 
-  function appRow(row: AppRow): SafeHtml {
+  function appIcon(name: string, logoUrl: string | undefined): SafeHtml {
+    return logoUrl
+      ? html`<img
+          class="app-avatar"
+          src="${logoUrl}"
+          alt=""
+          loading="lazy"
+          referrerpolicy="no-referrer"
+        />`
+      : html`<span class="app-avatar app-avatar-fallback" aria-hidden="true"
+          >${name.slice(0, 2)}</span
+        >`;
+  }
+
+  function appRow(row: AppRow, product: CatalogProduct | undefined): SafeHtml {
     const status = rowStatus(row);
     const platforms = PLATFORMS.filter(
       (platform) => (row.links[platform.key] ?? []).length > 0,
@@ -195,6 +403,7 @@ import { PLATFORMS } from "../lib/config";
       .join(" ")
       .toLowerCase();
     const href = detailHref(row.key);
+    const logoUrl = asWebsiteUrl(product?.logo?.imageurl);
 
     return html`
       <tr
@@ -204,15 +413,22 @@ import { PLATFORMS } from "../lib/config";
         data-search="${searchText}"
       >
         <td class="app-cell">
-          <span class="app-cell-head">
-            ${row.inCatalog
-              ? html`<a class="app-name app-link" href="${href}" title="查看 ${row.name} 详情">${row.name}</a>`
-              : html`<span class="app-name">${row.name}</span>`}
-            ${row.inCatalog
-              ? html`<a class="app-detail-link" href="${href}">详情</a>`
-              : ""}
+          <span class="app-identity">
+            ${appIcon(row.name, logoUrl)}
+            <span class="app-cell-main">
+              <span class="app-cell-head">
+                ${row.inCatalog
+                  ? html`<a
+                      class="app-name app-link"
+                      href="${href}"
+                      data-app-detail="${row.key}"
+                      title="查看 ${row.name} 详情"
+                    >${row.name}</a>`
+                  : html`<span class="app-name">${row.name}</span>`}
+              </span>
+              <span class="app-key">${row.key}</span>
+            </span>
           </span>
-          <span class="app-key">${row.key}</span>
         </td>
         <td>
           <span class="status status-${status}">${statusLabels[status]}</span>
@@ -221,7 +437,107 @@ import { PLATFORMS } from "../lib/config";
           (platform) =>
             html`<td>${productActions(row.links[platform.key] ?? [], platform.label)}</td>`,
         )}
+        <td class="product-actions-cell">
+          <button
+            class="row-actions-toggle"
+            type="button"
+            data-actions-toggle
+            data-app-id="${row.key}"
+            aria-haspopup="menu"
+            aria-expanded="false"
+            aria-label="${row.name} 操作"
+            title="操作"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <circle cx="12" cy="5" r="1.7"></circle>
+              <circle cx="12" cy="12" r="1.7"></circle>
+              <circle cx="12" cy="19" r="1.7"></circle>
+            </svg>
+          </button>
+        </td>
       </tr>
+    `;
+  }
+
+  function appCard(row: AppRow, product: CatalogProduct | undefined): SafeHtml {
+    const status = rowStatus(row);
+    const platforms = PLATFORMS.filter(
+      (platform) => (row.links[platform.key] ?? []).length > 0,
+    );
+    const platformKeys = platforms.map((platform) => platform.key).join(",");
+    const searchText = [
+      row.name,
+      row.key,
+      ...Object.values(row.links)
+        .flat()
+        .map((link) => link.code),
+    ]
+      .join(" ")
+      .toLowerCase();
+    const href = detailHref(row.key);
+    const logoUrl = asWebsiteUrl(product?.logo?.imageurl);
+
+    return html`
+      <article
+        class="app-card"
+        data-app-card
+        data-status="${status}"
+        data-platforms="${platformKeys}"
+        data-search="${searchText}"
+      >
+        <div class="app-card-head">
+          ${appIcon(row.name, logoUrl)}
+          <span class="app-card-identity">
+            ${row.inCatalog
+              ? html`<a
+                  class="app-card-name"
+                  href="${href}"
+                  data-app-detail="${row.key}"
+                  title="查看 ${row.name} 详情"
+                >${row.name}</a>`
+              : html`<span class="app-card-name">${row.name}</span>`}
+            <span class="app-key">${row.key}</span>
+          </span>
+          <button
+            class="row-actions-toggle"
+            type="button"
+            data-actions-toggle
+            data-app-id="${row.key}"
+            aria-haspopup="menu"
+            aria-expanded="false"
+            aria-label="${row.name} 操作"
+            title="操作"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <circle cx="12" cy="5" r="1.7"></circle>
+              <circle cx="12" cy="12" r="1.7"></circle>
+              <circle cx="12" cy="19" r="1.7"></circle>
+            </svg>
+          </button>
+        </div>
+
+        <div class="app-card-status">
+          <span class="status status-${status}">${statusLabels[status]}</span>
+        </div>
+
+        <div class="app-card-platforms">
+          ${platforms.length > 0
+            ? platforms.map((platform) => {
+                const links = row.links[platform.key] ?? [];
+                const first = links[0];
+                return first
+                  ? html`<a
+                      class="app-platform-chip"
+                      href="${first.url}"
+                      target="_blank"
+                      rel="noreferrer"
+                      title="打开 ${platform.label} 商品"
+                    >${platform.label}${links.length > 1 ? ` · ${links.length}` : ""}</a>`
+                  : "";
+              })
+            : html`<span class="empty-cell">暂无上架平台</span>`}
+        </div>
+      </article>
     `;
   }
 
@@ -233,20 +549,44 @@ import { PLATFORMS } from "../lib/config";
     const platform = platformFilter.value;
     let visible = 0;
 
-    for (const row of tableRows) {
-      const platforms = (row.dataset.platforms || "").split(",");
+    const matches = (element: HTMLElement): boolean => {
+      const platforms = (element.dataset.platforms || "").split(",");
       const matchesSearch =
-        term.length === 0 || (row.dataset.search || "").includes(term);
-      const matchesStatus = status === "all" || row.dataset.status === status;
+        term.length === 0 || (element.dataset.search || "").includes(term);
+      const matchesStatus =
+        status === "all" || element.dataset.status === status;
       const matchesPlatform =
         platform === "all" || platforms.includes(platform);
-      const show = matchesSearch && matchesStatus && matchesPlatform;
+      return matchesSearch && matchesStatus && matchesPlatform;
+    };
+
+    for (const row of tableRows) {
+      const show = matches(row);
       row.hidden = !show;
       if (show) visible += 1;
     }
 
+    for (const card of gridCards) {
+      card.hidden = !matches(card);
+    }
+
     if (visibleCount) visibleCount.textContent = String(visible);
     if (emptyState) emptyState.hidden = visible !== 0;
+  }
+
+  function syncAppView(): void {
+    for (const button of viewButtons) {
+      button.setAttribute(
+        "aria-pressed",
+        button.dataset.appViewMode === appViewMode ? "true" : "false",
+      );
+    }
+
+    const tableScroll = document.querySelector<HTMLElement>(
+      ".apps-table-scroll",
+    );
+    if (tableScroll) tableScroll.hidden = appViewMode !== "table";
+    if (appsGrid) appsGrid.hidden = appViewMode !== "grid";
   }
 
   function updateStatus(status: ResourceMeta): void {
@@ -255,31 +595,123 @@ import { PLATFORMS } from "../lib/config";
     statusEl.classList.toggle("is-stale", status.stale);
   }
 
-  function renderRows(rows: AppRow[], status: ResourceMeta): void {
-    setContent(tbody, html`${rows.map((row) => appRow(row))}`);
+  function renderRows(data: MarketplaceData, status: ResourceMeta): void {
+    latestData = data;
+    const catalogByKey = new Map(
+      data.catalog.map((product) => [product.key, product]),
+    );
+    setContent(
+      tbody,
+      html`${data.rows.map((row) => appRow(row, catalogByKey.get(row.key)))}`,
+    );
+    setContent(
+      appsGrid,
+      html`${data.rows.map((row) => appCard(row, catalogByKey.get(row.key)))}`,
+    );
     tableRows = Array.from(
       tbody?.querySelectorAll<HTMLTableRowElement>("tr[data-app-row]") ?? [],
     );
+    gridCards = Array.from(
+      appsGrid?.querySelectorAll<HTMLElement>("[data-app-card]") ?? [],
+    );
     if (loading) loading.hidden = true;
 
-    setText(document, "[data-total-count]", rows.length);
+    setText(document, "[data-total-count]", data.rows.length);
     applyFilters();
+    syncAppView();
 
     updateStatus(status);
     hideDataError(alertEl);
   }
 
+  function openAppDetail(key: string, trigger: HTMLElement | null = null): void {
+    if (!appDialog || !appDialogBody || !latestData) return;
+
+    const product = latestData.catalog.find((item) => item.key === key);
+    if (!product) return;
+
+    const row = latestData.rows.find((item) => item.key === key);
+    const availableKeys = new Set(latestData.catalog.map((item) => item.key));
+    if (trigger) lastDetailTrigger = trigger;
+
+    setContent(
+      appDialogBody,
+      appDetailMarkup(product, row, availableKeys, detailHref),
+    );
+    appDialogBody.scrollTop = 0;
+
+    if (appDialog.open) return;
+    appDialog.showModal();
+    appDialog
+      .querySelector<HTMLButtonElement>("[data-app-dialog-close]")
+      ?.focus();
+  }
+
+  function wireDetailLinks(container: HTMLElement | null): void {
+    container?.addEventListener("click", (event) => {
+      if (!(event.target instanceof Element)) return;
+
+      const link = event.target.closest<HTMLAnchorElement>("[data-app-detail]");
+      if (!link) return;
+      event.preventDefault();
+      openAppDetail(link.dataset.appDetail ?? "", link);
+    });
+  }
+
+  wireDetailLinks(tbody);
+  wireDetailLinks(appsGrid);
+
+  appDialogBody?.addEventListener("click", (event) => {
+    if (!(event.target instanceof Element)) return;
+
+    const link = event.target.closest<HTMLAnchorElement>("[data-app-key]");
+    if (!link) return;
+    event.preventDefault();
+    openAppDetail(link.dataset.appKey ?? "");
+  });
+
+  appDialog
+    ?.querySelector("[data-app-dialog-close]")
+    ?.addEventListener("click", () => appDialog?.close());
+
+  appDialog?.addEventListener("click", (event) => {
+    if (event.target === appDialog) appDialog?.close();
+  });
+
+  appDialog?.addEventListener("close", () => {
+    appDialogBody?.replaceChildren();
+    lastDetailTrigger?.focus();
+    lastDetailTrigger = null;
+  });
+
   search?.addEventListener("input", applyFilters);
   statusFilter?.addEventListener("change", applyFilters);
   platformFilter?.addEventListener("change", applyFilters);
+
+  for (const button of viewButtons) {
+    button.addEventListener("click", () => {
+      const mode = button.dataset.appViewMode;
+      if (mode !== "table" && mode !== "grid") return;
+      appViewMode = mode;
+      try {
+        localStorage.setItem(APP_VIEW_STORAGE_KEY, appViewMode);
+      } catch {
+        /* localStorage may be unavailable */
+      }
+      syncAppView();
+    });
+  }
+  syncAppView();
+
   wireCopyButtons();
   wireRefreshButtons();
+  wireRowActionsMenu(actionsMenu);
 
   loadMarketplaceData({
-    onUpdate: (data, status) => renderRows(data.rows, status),
+    onUpdate: (data, status) => renderRows(data, status),
     onRefresh: updateStatus,
   })
-    .then(({ data, status }) => renderRows(data.rows, status))
+    .then(({ data, status }) => renderRows(data, status))
     .catch((error: unknown) => {
       if (loading) loading.hidden = true;
       if (statusEl) statusEl.textContent = "数据加载失败";
